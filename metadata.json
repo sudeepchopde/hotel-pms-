@@ -1,0 +1,8 @@
+{
+  "name": "SyncGuard PMS - Inventory Engine",
+  "description": "A high-performance Hotel Channel Manager and Property Management System simulation designed to eliminate overbookings using atomic updates and real-time OTA synchronization.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
