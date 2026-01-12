@@ -1,6 +1,6 @@
 import { Hotel, RoomType, OTAConnection, RateRulesConfig, Booking } from './types';
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = '/api';
 
 export const fetchHotels = async (): Promise<Hotel[]> => {
     const response = await fetch(`${API_BASE}/hotels`);
