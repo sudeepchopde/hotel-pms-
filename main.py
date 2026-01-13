@@ -1,14 +1,19 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict
-from backend.models import Hotel, RoomType, Booking, OTAConnection, RateRulesConfig
+from typing import List
+from sqlalchemy.orm import Session
 
-app = FastAPI()
+from backend.models import Hotel, RoomType, Booking, OTAConnection, RateRulesConfig
+from backend.database import get_db
+from backend.db_models import HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, RateRulesDB
+
+app = FastAPI(title="SyncGuard PMS API")
 
 # Configure CORS
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "*",  # Allow all origins for private server deployment
 ]
 
 app.add_middleware(
@@ -19,63 +24,150 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mock Data (Moved from App.tsx)
-HOTELS = [
-    Hotel(
-        id='h-1', 
-        name='Hotel Satsangi', 
-        location='Deoghar', 
-        color='indigo', 
-        otaConfig={'expedia': 'active', 'booking': 'active', 'mmt': 'active'}
+# Helper functions to convert DB models to Pydantic models
+def db_hotel_to_pydantic(db_hotel: HotelDB) -> Hotel:
+    return Hotel(
+        id=db_hotel.id,
+        name=db_hotel.name,
+        location=db_hotel.location,
+        color=db_hotel.color,
+        otaConfig=db_hotel.ota_config or {}
     )
-]
 
-ROOM_TYPES = [
-    RoomType(id='rt-1', name='Delux Room (AC)', totalCapacity=10, basePrice=4500, floorPrice=3000, ceilingPrice=8000, baseOccupancy=2, amenities=['WiFi', 'AC', 'TV'], roomNumbers=['101', '102', '103', '104', '105', '106', '107', '108', '109', '110'], extraBedCharge=1200),
-    RoomType(id='rt-2', name='Double Bed Room', totalCapacity=10, basePrice=2800, floorPrice=1800, ceilingPrice=5000, baseOccupancy=2, amenities=['WiFi', 'Fan'], roomNumbers=['201', '202', '203', '204', '205', '206', '207', '208', '209', '210'], extraBedCharge=800),
-    RoomType(id='rt-3', name='Single Bed Room', totalCapacity=5, basePrice=1800, floorPrice=1200, ceilingPrice=3000, baseOccupancy=1, amenities=['WiFi'], roomNumbers=['301', '302', '303', '304', '305'], extraBedCharge=500),
-    RoomType(id='rt-4', name='Dormitory', totalCapacity=3, basePrice=1200, floorPrice=800, ceilingPrice=2500, baseOccupancy=1, amenities=['WiFi', 'Locker'], roomNumbers=['D-1', 'D-2', 'D-3'], extraBedCharge=300),
-]
+def db_room_type_to_pydantic(db_room: RoomTypeDB) -> RoomType:
+    return RoomType(
+        id=db_room.id,
+        name=db_room.name,
+        totalCapacity=db_room.total_capacity,
+        basePrice=db_room.base_price,
+        floorPrice=db_room.floor_price,
+        ceilingPrice=db_room.ceiling_price,
+        baseOccupancy=db_room.base_occupancy,
+        amenities=db_room.amenities or [],
+        roomNumbers=db_room.room_numbers,
+        extraBedCharge=db_room.extra_bed_charge
+    )
 
-CONNECTIONS = [
-    OTAConnection(id='mmt', name='MakeMyTrip', key='mkmt_live_••••••••7d2f', isVisible=False, status='connected', lastValidated='2 hours ago'),
-    OTAConnection(id='booking', name='Booking.com', key='bcom_auth_••••••••a11b', isVisible=False, status='connected', lastValidated='5 mins ago'),
-    OTAConnection(id='expedia', name='Expedia', key='', isVisible=False, status='disconnected'),
-]
+def db_booking_to_pydantic(db_booking: BookingDB) -> Booking:
+    return Booking(
+        id=db_booking.id,
+        roomTypeId=db_booking.room_type_id,
+        roomNumber=db_booking.room_number,
+        guestName=db_booking.guest_name,
+        source=db_booking.source,
+        status=db_booking.status,
+        timestamp=db_booking.timestamp,
+        checkIn=db_booking.check_in,
+        checkOut=db_booking.check_out,
+        amount=db_booking.amount,
+        folio=db_booking.folio
+    )
 
-RULES = RateRulesConfig(
-    weeklyRules={'isActive': True, 'activeDays': [5, 6], 'modifierType': 'percentage', 'modifierValue': 1.20},
-    specialEvents=[
-        {'id': 'ev-1', 'name': 'Diwali Festival', 'startDate': '2025-10-30', 'endDate': '2025-11-05', 'modifierType': 'percentage', 'modifierValue': 1.5},
-        {'id': 'ev-2', 'name': 'New Year Eve', 'startDate': '2025-12-30', 'endDate': '2026-01-01', 'modifierType': 'fixed', 'modifierValue': 5000}
-    ]
-)
+def db_connection_to_pydantic(db_conn: OTAConnectionDB) -> OTAConnection:
+    return OTAConnection(
+        id=db_conn.id,
+        name=db_conn.name,
+        key=db_conn.key,
+        isVisible=db_conn.is_visible,
+        status=db_conn.status,
+        lastValidated=db_conn.last_validated,
+        category=db_conn.category,
+        markupType=db_conn.markup_type,
+        markupValue=db_conn.markup_value,
+        isStopped=db_conn.is_stopped
+    )
 
-BOOKINGS: List[Booking] = [] # Memory storage for now
+def db_rules_to_pydantic(db_rules: RateRulesDB) -> RateRulesConfig:
+    return RateRulesConfig(
+        weeklyRules=db_rules.weekly_rules or {},
+        specialEvents=db_rules.special_events or []
+    )
 
 @app.get("/")
 def read_root():
     return {"message": "SyncGuard PMS API"}
 
 @app.get("/api/hotels", response_model=List[Hotel])
-def get_hotels():
-    return HOTELS
+def get_hotels(db: Session = Depends(get_db)):
+    hotels = db.query(HotelDB).all()
+    return [db_hotel_to_pydantic(h) for h in hotels]
 
 @app.get("/api/room-types", response_model=List[RoomType])
-def get_room_types():
-    return ROOM_TYPES
+def get_room_types(db: Session = Depends(get_db)):
+    room_types = db.query(RoomTypeDB).all()
+    return [db_room_type_to_pydantic(rt) for rt in room_types]
 
 @app.get("/api/connections", response_model=List[OTAConnection])
-def get_connections():
-    return CONNECTIONS
+def get_connections(db: Session = Depends(get_db)):
+    connections = db.query(OTAConnectionDB).all()
+    return [db_connection_to_pydantic(c) for c in connections]
 
 @app.get("/api/rules", response_model=RateRulesConfig)
-def get_rules():
-    return RULES
+def get_rules(db: Session = Depends(get_db)):
+    rules = db.query(RateRulesDB).filter(RateRulesDB.id == "default").first()
+    if not rules:
+        # Return default empty rules if none exist
+        return RateRulesConfig(
+            weeklyRules={'isActive': False, 'activeDays': [], 'modifierType': 'percentage', 'modifierValue': 1.0},
+            specialEvents=[]
+        )
+    return db_rules_to_pydantic(rules)
 
 @app.get("/api/bookings", response_model=List[Booking])
-def get_bookings():
-    return BOOKINGS
+def get_bookings(db: Session = Depends(get_db)):
+    bookings = db.query(BookingDB).all()
+    return [db_booking_to_pydantic(b) for b in bookings]
+
+@app.post("/api/bookings", response_model=Booking)
+def create_booking(booking: Booking, db: Session = Depends(get_db)):
+    db_booking = BookingDB(
+        id=booking.id,
+        room_type_id=booking.roomTypeId,
+        room_number=booking.roomNumber,
+        guest_name=booking.guestName,
+        source=booking.source,
+        status=booking.status,
+        timestamp=booking.timestamp,
+        check_in=booking.checkIn,
+        check_out=booking.checkOut,
+        amount=booking.amount,
+        folio=booking.folio or []
+    )
+    db.add(db_booking)
+    db.commit()
+    db.refresh(db_booking)
+    return db_booking_to_pydantic(db_booking)
+
+@app.put("/api/bookings/{booking_id}", response_model=Booking)
+def update_booking(booking_id: str, booking: Booking, db: Session = Depends(get_db)):
+    db_booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
+    if not db_booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    db_booking.room_type_id = booking.roomTypeId
+    db_booking.room_number = booking.roomNumber
+    db_booking.guest_name = booking.guestName
+    db_booking.source = booking.source
+    db_booking.status = booking.status
+    db_booking.timestamp = booking.timestamp
+    db_booking.check_in = booking.checkIn
+    db_booking.check_out = booking.checkOut
+    db_booking.amount = booking.amount
+    db_booking.folio = booking.folio or []
+    
+    db.commit()
+    db.refresh(db_booking)
+    return db_booking_to_pydantic(db_booking)
+
+@app.delete("/api/bookings/{booking_id}")
+def delete_booking(booking_id: str, db: Session = Depends(get_db)):
+    db_booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
+    if not db_booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    db.delete(db_booking)
+    db.commit()
+    return {"message": "Booking deleted"}
 
 if __name__ == "__main__":
     import uvicorn

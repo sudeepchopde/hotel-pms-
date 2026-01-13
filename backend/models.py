@@ -5,8 +5,8 @@ class WeeklyRule(BaseModel):
     isActive: bool
     activeDays: List[int]
     modifierType: Literal['percentage', 'fixed']
-    modifierValue: number = 0 # Type alias not available in Python, using float/int
     modifierValue: float
+
 
 class SpecialEvent(BaseModel):
     id: str
