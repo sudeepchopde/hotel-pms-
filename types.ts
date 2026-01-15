@@ -66,27 +66,27 @@ export interface GuestDetails {
   nationality: string;
   gender?: 'Male' | 'Female' | 'Other';
   dob?: string;
-  
+
   // Enhanced Form C Fields (Indian FRRO Requirements)
   passportNumber?: string;
   passportPlaceIssue?: string;
   passportIssueDate?: string;
   passportExpiry?: string;
-  
+
   visaNumber?: string;
   visaType?: string; // e.g. Tourist, Business, Medical, E-Visa
   visaPlaceIssue?: string;
   visaIssueDate?: string;
   visaExpiry?: string;
-  
+
   arrivedFrom?: string; // Last destination
   arrivalDateIndia?: string; // Date of entry into India
   arrivalPort?: string; // e.g. DEL, BOM
   nextDestination?: string;
   purposeOfVisit?: string;
-  
+
   isFormCSubmitted?: boolean;
-  
+
   // Scanned Document
   idImage?: string;
   idImageBack?: string;
@@ -111,6 +111,7 @@ export interface Booking {
   timestamp: number;
   checkIn: string;
   checkOut: string;
+  reservationId?: string;
   channelSync?: Record<string, ChannelStatus>;
   amount?: number;
   rejectionReason?: string; // Specific reason why the system rejected the booking
@@ -130,7 +131,7 @@ export interface RateSyncEvent {
   type: 'rate_update';
   roomTypeId: string;
   newPrice: number;
-  date?: string; 
+  date?: string;
   timestamp: number;
   channelSync: Record<string, ChannelStatus>;
   channelPrices?: Record<string, number>; // Specific price sent to each channel after markup

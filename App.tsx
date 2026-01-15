@@ -321,45 +321,52 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleUpdateExtraBeds = (bookingId: string, count: number) => {
-    setSyncEvents(prev => prev.map(e => {
-      if (e.type === 'booking' && e.id === bookingId) {
-        const roomType = roomTypes.find(rt => rt.id === e.roomTypeId);
-        const extraBedCharge = roomType?.extraBedCharge || 0;
-        const totalExtraCharge = count * extraBedCharge;
+  const handleUpdateExtraBeds = async (bookingId: string, count: number) => {
+    const booking = syncEvents.find(e => e.type === 'booking' && e.id === bookingId) as Booking | undefined;
+    if (!booking) return;
 
-        let newFolio = [...(e.folio || [])];
-        const existingIdx = newFolio.findIndex(fi => fi.category === 'Other' && fi.description.includes('Extra Bed'));
+    const roomType = roomTypes.find(rt => rt.id === booking.roomTypeId);
+    const extraBedCharge = roomType?.extraBedCharge || 0;
+    const totalExtraCharge = count * extraBedCharge;
 
-        if (count > 0) {
-          const newItem: FolioItem = {
-            id: existingIdx >= 0 ? newFolio[existingIdx].id : `fi-eb-${Date.now()}`,
-            description: `Extra Bed Setup x${count}`,
-            amount: totalExtraCharge,
-            category: 'Other',
-            timestamp: new Date().toISOString()
-          };
+    let newFolio = [...(booking.folio || [])];
+    const existingIdx = newFolio.findIndex(fi => fi.category === 'Other' && fi.description.includes('Extra Bed'));
 
-          if (existingIdx >= 0) {
-            newFolio[existingIdx] = newItem;
-          } else {
-            newFolio.push(newItem);
-          }
-        } else {
-          if (existingIdx >= 0) {
-            newFolio.splice(existingIdx, 1);
-          }
-        }
+    if (count > 0) {
+      const newItem: FolioItem = {
+        id: existingIdx >= 0 ? newFolio[existingIdx].id : `fi-eb-${Date.now()}`,
+        description: `Extra Bed Setup x${count}`,
+        amount: totalExtraCharge,
+        category: 'Other',
+        timestamp: new Date().toISOString()
+      };
 
-        return {
-          ...e,
-          extraBeds: count,
-          folio: newFolio,
-          timestamp: Date.now()
-        };
+      if (existingIdx >= 0) {
+        newFolio[existingIdx] = newItem;
+      } else {
+        newFolio.push(newItem);
       }
-      return e;
-    }));
+    } else {
+      if (existingIdx >= 0) {
+        newFolio.splice(existingIdx, 1);
+      }
+    }
+
+    const updated = {
+      ...booking,
+      extraBeds: count,
+      folio: newFolio,
+      timestamp: Date.now()
+    };
+
+    setSyncEvents(prev => prev.map(e => e.id === bookingId && e.type === 'booking' ? { ...updated, type: 'booking' } as SyncEvent : e));
+
+    try {
+      const { updateBooking } = await import('./api');
+      await updateBooking(updated);
+    } catch (err) {
+      console.error("Failed to persist extra bed update", err);
+    }
   };
 
   if (isGuestMode) {
@@ -385,7 +392,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-[#fbfcfd] font-inter antialiased">
+    <div className="h-screen flex flex-col md:flex-row bg-[#fbfcfd] font-inter antialiased overflow-hidden">
       <nav className={`flex flex-col gap-6 shrink-0 shadow-xl z-20 border-r border-slate-700/30 bg-slate-800 text-white transition-all duration-300 ${isSidebarCollapsed ? 'w-20 p-4 items-center' : 'w-full md:w-64 p-6'}`}>
         <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center flex-col gap-4' : 'justify-between gap-3'}`}>
           <div className="flex items-center gap-3">
@@ -478,7 +485,7 @@ const App: React.FC = () => {
         </div>
       </nav>
 
-      <main className="flex-1 overflow-y-auto bg-[#fbfcfd] relative">
+      <main className={`flex-1 flex flex-col min-h-0 bg-[#fbfcfd] relative ${activeTab === 'frontdesk' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
         {securityToast && (
           <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-top-4 duration-300">
             <div className="bg-red-600 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border-2 border-red-400">
@@ -500,6 +507,7 @@ const App: React.FC = () => {
         {activeTab === 'frontdesk' && (
           <FrontDeskView
             roomTypes={roomTypes}
+            connections={connections}
             syncEvents={syncEvents}
             setSyncEvents={setSyncEvents}
             onUpdateExtraBeds={handleUpdateExtraBeds}

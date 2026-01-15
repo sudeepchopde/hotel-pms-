@@ -57,7 +57,25 @@ class GuestDetails(BaseModel):
     email: Optional[str] = None
     idType: Optional[Literal['Aadhar', 'Passport', 'Driving License', 'Voter ID', 'Other']] = None
     idNumber: Optional[str] = None
-    # Add other fields as needed based on heavy usage, keeping light for now
+    address: Optional[str] = None
+    nationality: Optional[str] = 'Indian'
+    gender: Optional[Literal['Male', 'Female', 'Other']] = None
+    dob: Optional[str] = None
+    passportNumber: Optional[str] = None
+    passportPlaceIssue: Optional[str] = None
+    passportIssueDate: Optional[str] = None
+    passportExpiry: Optional[str] = None
+    visaNumber: Optional[str] = None
+    visaType: Optional[str] = None
+    visaPlaceIssue: Optional[str] = None
+    visaIssueDate: Optional[str] = None
+    visaExpiry: Optional[str] = None
+    arrivedFrom: Optional[str] = None
+    arrivalDateIndia: Optional[str] = None
+    arrivalPort: Optional[str] = None
+    nextDestination: Optional[str] = None
+    purposeOfVisit: Optional[str] = None
+    isFormCSubmitted: Optional[bool] = None
 
 class FolioItem(BaseModel):
     id: str
@@ -76,6 +94,22 @@ class Booking(BaseModel):
     timestamp: int
     checkIn: str
     checkOut: str
+    reservationId: Optional[str] = None
+    channelSync: Optional[Dict[str, str]] = None
     amount: Optional[float] = None
+    rejectionReason: Optional[str] = None
+    guestDetails: Optional[GuestDetails] = None
+    numberOfRooms: Optional[int] = None
+    pax: Optional[int] = None
+    accessoryGuests: Optional[List[GuestDetails]] = None
+    extraBeds: Optional[int] = None
+    specialRequests: Optional[str] = None
+    isVIP: Optional[bool] = None
     folio: Optional[List[FolioItem]] = None
-    # simplified for initial sync, can be expanded
+class RoomTransferRequest(BaseModel):
+    bookingId: str
+    newRoomTypeId: str
+    newRoomNumber: str
+    effectiveDate: str
+    keepRate: bool
+    transferFolio: bool

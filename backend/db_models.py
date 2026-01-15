@@ -38,13 +38,17 @@ class BookingDB(Base):
     check_in = Column(String, nullable=False)
     check_out = Column(String, nullable=False)
     amount = Column(Float, nullable=True)
+    reservation_id = Column(String, nullable=True)
     folio = Column(JSON, default=[])
     guest_details = Column(JSON, nullable=True)
     number_of_rooms = Column(Integer, nullable=True)
     pax = Column(Integer, nullable=True)
+    accessory_guests = Column(JSON, default=[])
+    channel_sync = Column(JSON, default={})
     extra_beds = Column(Integer, nullable=True)
     special_requests = Column(String, nullable=True)
     is_vip = Column(Boolean, default=False)
+    rejection_reason = Column(String, nullable=True)
 
 class OTAConnectionDB(Base):
     __tablename__ = "ota_connections"

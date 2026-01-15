@@ -1,16 +1,17 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  Plus, RefreshCw, AlertTriangle, CheckCircle2, 
+import {
+  Plus, RefreshCw, AlertTriangle, CheckCircle2,
   XCircle, Send, Terminal as TerminalIcon, Calendar, Hotel as HotelIcon, Zap, Loader2,
   Share2, RotateCcw, ShieldCheck, Clock, Timer, UserPlus, CreditCard, Laptop, ArrowRight,
   Moon, Tag, TrendingUp, X, BellOff, Hand, ShieldAlert
 } from 'lucide-react';
-import { 
-  RoomType, InventoryItem, Booking, SyncEvent, SystemLog, 
+import {
+  RoomType, InventoryItem, Booking, SyncEvent, SystemLog,
   ChannelStatus, OTAConnection, RateRulesConfig, RateSyncEvent
 } from '../types';
 import MasterCalendar from './MasterCalendar';
+import { updateBooking, createBooking } from '../api';
 
 interface DashboardProps {
   hotelId: string;
@@ -23,7 +24,7 @@ interface DashboardProps {
 
 const SOURCES = ['MMT', 'Booking.com', 'Expedia', 'Direct'] as const;
 
-const AUTO_RETRY_DELAY = 5000; 
+const AUTO_RETRY_DELAY = 5000;
 const MAX_AUTO_RETRIES = 3;
 
 const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, rules, roomTypes, syncEvents, setSyncEvents }) => {
@@ -31,7 +32,7 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
-  
+
   const [guestName, setGuestName] = useState('');
   const [selectedRoomType, setSelectedRoomType] = useState('');
   const [fdCheckIn, setFdCheckIn] = useState('');
@@ -73,13 +74,13 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
     let appliedRule: string | undefined = undefined;
 
     const current = new Date(dateStr);
-    current.setHours(0,0,0,0);
+    current.setHours(0, 0, 0, 0);
 
     const event = rules.specialEvents.find(e => {
       const start = new Date(e.startDate);
       const end = new Date(e.endDate);
-      start.setHours(0,0,0,0);
-      end.setHours(0,0,0,0);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
       return current >= start && current <= end;
     });
 
@@ -90,7 +91,7 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
         finalPrice = basePrice + event.modifierValue;
       }
       appliedRule = event.name;
-    } 
+    }
     else if (rules.weeklyRules.isActive) {
       const day = current.getDay();
       if (rules.weeklyRules.activeDays.includes(day)) {
@@ -116,14 +117,14 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
     const today = new Date();
     const initialInventory: InventoryItem[] = [];
     const dates: string[] = [];
-    
+
     // 1. Generate Base Grid
     for (let i = 0; i < 1095; i++) {
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       const dateStr = date.toISOString().split('T')[0];
       dates.push(dateStr);
-      
+
       roomTypes.forEach(rt => {
         const yieldCalc = calculateFinalRate(rt.basePrice, dateStr, rt.id);
         initialInventory.push({
@@ -140,32 +141,32 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
     // 2. Apply Daily Rate Overrides
     const rateUpdates = syncEvents.filter(e => e.type === 'rate_update' && e.date);
     rateUpdates.forEach(e => {
-        if (e.type === 'rate_update' && e.date) {
-            const item = initialInventory.find(i => i.date === e.date && i.roomTypeId === e.roomTypeId);
-            if (item) {
-                item.price = e.newPrice;
-                item.appliedRule = e.ruleApplied || 'Manual Override';
-            }
+      if (e.type === 'rate_update' && e.date) {
+        const item = initialInventory.find(i => i.date === e.date && i.roomTypeId === e.roomTypeId);
+        if (item) {
+          item.price = e.newPrice;
+          item.appliedRule = e.ruleApplied || 'Manual Override';
         }
+      }
     });
 
     // 3. Deduct Confirmed Bookings
     const confirmedBookings = syncEvents.filter(e => e.type === 'booking' && e.status === 'Confirmed') as Booking[];
     confirmedBookings.forEach(b => {
-        let d = new Date(b.checkIn);
-        const end = new Date(b.checkOut);
-        while(d < end) {
-          const dateStr = d.toISOString().split('T')[0];
-          const item = initialInventory.find(i => i.date === dateStr && i.roomTypeId === b.roomTypeId);
-          if (item) {
-            item.availableCount = Math.max(0, item.availableCount - 1);
-          }
-          d.setDate(d.getDate() + 1);
+      let d = new Date(b.checkIn);
+      const end = new Date(b.checkOut);
+      while (d < end) {
+        const dateStr = d.toISOString().split('T')[0];
+        const item = initialInventory.find(i => i.date === dateStr && i.roomTypeId === b.roomTypeId);
+        if (item) {
+          item.availableCount = Math.max(0, item.availableCount - 1);
         }
+        d.setDate(d.getDate() + 1);
+      }
     });
-    
+
     setInventory(initialInventory);
-    
+
     if (dates.length >= 2 && !fdCheckIn) {
       setFdCheckIn(dates[0]);
       setFdCheckOut(dates[1]);
@@ -206,10 +207,10 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
 
     updateEventChannelStatus(eventId, channel, 'retrying');
     addLog('WARNING', `RETRY [${currentAttempt}/${MAX_AUTO_RETRIES}]: Re-dispatching to ${channel}...`);
-    
+
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    if (Math.random() < 0.2) { 
+    if (Math.random() < 0.2) {
       if (currentAttempt < MAX_AUTO_RETRIES) {
         updateEventChannelStatus(eventId, channel, 'waiting_retry');
         setTimeout(() => retryChannelSync(eventId, channel, true), AUTO_RETRY_DELAY);
@@ -236,21 +237,21 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
         addLog('WARNING', `CIRCUIT BREAKER: Sync skipped for ${channel.name} (Stop-Sell Active).`);
         return;
       }
-      
+
       let finalPriceLabel = label;
       if (basePrice !== undefined && channel.markupValue) {
-        const markedPrice = channel.markupType === 'percentage' 
+        const markedPrice = channel.markupType === 'percentage'
           ? Math.round(basePrice * (1 + channel.markupValue / 100))
           : basePrice + channel.markupValue;
-        
+
         // Store channel-specific price in event metadata for UI
         setSyncEvents(prev => prev.map(e => {
-           if (e.id === eventId && e.type === 'rate_update') {
-             return { ...e, channelPrices: { ...(e.channelPrices || {}), [channel.name]: markedPrice } };
-           }
-           return e;
+          if (e.id === eventId && e.type === 'rate_update') {
+            return { ...e, channelPrices: { ...(e.channelPrices || {}), [channel.name]: markedPrice } };
+          }
+          return e;
         }));
-        
+
         finalPriceLabel = `Rate ₹${markedPrice.toLocaleString()} (Markup applied)`;
       }
 
@@ -260,7 +261,7 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
       const latency = 500 + Math.random() * 2000;
       await new Promise(resolve => setTimeout(resolve, latency));
 
-      if (Math.random() < 0.1) { 
+      if (Math.random() < 0.1) {
         updateEventChannelStatus(eventId, channel.name, 'waiting_retry');
         addLog('ERROR', `API REJECT: ${channel.name} returned 503.`);
         setTimeout(() => retryChannelSync(eventId, channel.name, true), 1000);
@@ -275,7 +276,7 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
     const eventId = `r-${Date.now()}`;
     const roomName = roomTypes.find(rt => rt.id === roomTypeId)?.name || roomTypeId;
     const label = `Rate (₹${newPrice.toLocaleString()})${ruleApplied ? ` [via ${ruleApplied}]` : ''}`;
-    
+
     addLog('INFO', `BROADCAST: Dispatching Yield Rate (Base: ₹${newPrice.toLocaleString()}) for ${roomName}.`);
 
     setSyncEvents(prev => [...prev, {
@@ -315,7 +316,7 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
     }
 
     const currentInv = inventoryRef.current;
-    const itemsToBook = currentInv.filter(item => 
+    const itemsToBook = currentInv.filter(item =>
       item.roomTypeId === roomTypeId && datesToBook.includes(item.date)
     );
 
@@ -332,26 +333,26 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
     // Find and assign available room number
     const rt = roomTypes.find(r => r.id === roomTypeId);
     let assignedRoomNumber: string | undefined;
-    
+
     if (rt) {
-        // Generate possible room numbers if not defined (fallback logic matching FrontDeskView)
-        const allRoomNumbers = rt.roomNumbers && rt.roomNumbers.length > 0 
-          ? rt.roomNumbers 
-          : Array.from({ length: rt.totalCapacity }, (_, i) => `${rt.name.substring(0,2).toUpperCase()}-${101 + i}`);
+      // Generate possible room numbers if not defined (fallback logic matching FrontDeskView)
+      const allRoomNumbers = rt.roomNumbers && rt.roomNumbers.length > 0
+        ? rt.roomNumbers
+        : Array.from({ length: rt.totalCapacity }, (_, i) => `${rt.name.substring(0, 2).toUpperCase()}-${101 + i}`);
 
-        // Get confirmed bookings that overlap with this new booking
-        const overlappingBookings = eventsRef.current.filter(e => 
-            e.type === 'booking' && 
-            e.status === 'Confirmed' && 
-            e.roomTypeId === roomTypeId &&
-            e.checkIn < checkOut && e.checkOut > checkIn
-        ) as Booking[];
+      // Get confirmed bookings that overlap with this new booking
+      const overlappingBookings = eventsRef.current.filter(e =>
+        e.type === 'booking' &&
+        e.status === 'Confirmed' &&
+        e.roomTypeId === roomTypeId &&
+        e.checkIn < checkOut && e.checkOut > checkIn
+      ) as Booking[];
 
-        const occupiedRooms = new Set(overlappingBookings.map(b => b.roomNumber));
-        // Find first available room
-        assignedRoomNumber = allRoomNumbers.find(rn => !occupiedRooms.has(rn));
+      const occupiedRooms = new Set(overlappingBookings.map(b => b.roomNumber));
+      // Find first available room
+      assignedRoomNumber = allRoomNumbers.find(rn => !occupiedRooms.has(rn));
     }
-    
+
     if (!assignedRoomNumber) assignedRoomNumber = 'Unassigned';
 
     // Optimistic Update for UI Feedback (Locking)
@@ -363,18 +364,24 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
     }));
 
     addLog('SUCCESS', `ATOMIC LOCK: Secured Room ${assignedRoomNumber} for #TX-${shortId}.`);
-    
-    setSyncEvents(prev => [...prev, {
-      id: bookingId, type: 'booking', roomTypeId, 
-      roomNumber: assignedRoomNumber, // Explicit assignment
+
+    const newBooking: Booking = {
+      id: bookingId, roomTypeId,
+      roomNumber: assignedRoomNumber,
       guestName: customName || 'OTA Guest',
-      source, status: 'Confirmed', timestamp: Date.now(), checkIn, checkOut, channelSync: {}
-    }]);
+      source, status: 'Confirmed', timestamp: Date.now(), checkIn, checkOut, channelSync: {}, folio: []
+    };
+
+    setSyncEvents(prev => [...prev, { ...newBooking, type: 'booking' } as SyncEvent]);
+
+    createBooking(newBooking).catch(err => {
+      addLog('ERROR', `PERSISTENCE FAIL: Could not save new booking to database.`);
+    });
 
     simulateFanOut(bookingId, source, `Booking #TX-${shortId}`);
 
     setTimeout(() => {
-      setInventory(prev => prev.map(i => 
+      setInventory(prev => prev.map(i =>
         datesToBook.includes(i.date) && i.roomTypeId === roomTypeId ? { ...i, isLocked: false } : i
       ));
     }, 800);
@@ -390,10 +397,18 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
     const shortId = booking.id.split('-')[1]?.slice(-4) || 'UNKNOWN';
     addLog('WARNING', `WEBHOOK: CANCELLATION for Booking #${shortId}. Releasing inventory...`);
 
+    const updated = { ...booking, status: 'Cancelled' as any, timestamp: Date.now() };
+
     // Updates to syncEvents will trigger the useEffect to restore inventory counts
-    setSyncEvents(prev => prev.map(e => 
-      e.id === bookingId ? { ...e, status: 'Cancelled' } : e
+    setSyncEvents(prev => prev.map(e =>
+      e.id === bookingId ? { ...updated, type: 'booking' } as SyncEvent : e
     ));
+
+    updateBooking(updated).then(() => {
+      addLog('SUCCESS', `DATABASE: Cancellation persistent.`);
+    }).catch(err => {
+      addLog('ERROR', `DATABASE FAIL: Cancellation not saved.`);
+    });
 
     await new Promise(resolve => setTimeout(resolve, 800));
 
@@ -432,7 +447,7 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
       const rt = roomTypes[Math.floor(Math.random() * roomTypes.length)];
       const startDay = Math.floor(Math.random() * (dates.length - 1));
       await new Promise(r => setTimeout(r, 150));
-      handleBookingTransaction(source, rt.id, dates[startDay], dates[startDay + 1], `LoadTester-${i+1}`);
+      handleBookingTransaction(source, rt.id, dates[startDay], dates[startDay + 1], `LoadTester-${i + 1}`);
     }
     setIsSyncing(false);
   };
@@ -463,13 +478,13 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
           <p className="text-slate-500 text-sm mt-1">Markups and Stop-Sells are evaluated globally during sync.</p>
         </div>
         <div className="flex gap-2">
-           {stoppedChannels.length > 0 && (
-             <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl animate-in fade-in zoom-in">
-               <ShieldAlert className="w-4 h-4" />
-               <span className="text-xs font-bold">{stoppedChannels.length} Channels Blocked</span>
-             </div>
-           )}
-           <button 
+          {stoppedChannels.length > 0 && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl animate-in fade-in zoom-in">
+              <ShieldAlert className="w-4 h-4" />
+              <span className="text-xs font-bold">{stoppedChannels.length} Channels Blocked</span>
+            </div>
+          )}
+          <button
             disabled={isSyncing || availableDates.length < 2 || roomTypes.length === 0}
             onClick={runParallelLoadTest}
             className="flex items-center gap-2 px-5 py-3 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition-all shadow-lg disabled:opacity-50 group"
@@ -482,10 +497,10 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2 space-y-6">
-          <MasterCalendar 
-            inventory={inventory} 
-            roomTypes={roomTypes} 
-            isSyncing={isSyncing} 
+          <MasterCalendar
+            inventory={inventory}
+            roomTypes={roomTypes}
+            isSyncing={isSyncing}
             onUpdatePrice={handleUpdatePrice}
             onUpdateDailyPrice={handleUpdateDailyPrice}
           />
@@ -504,10 +519,10 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
                     <label className="text-[10px] font-black text-slate-700 uppercase tracking-widest block flex items-center gap-2">
                       <UserPlus className="w-3.5 h-3.5 text-indigo-500" /> Guest Name
                     </label>
-                    <input 
-                      type="text" 
-                      placeholder="John Doe" 
-                      value={guestName} 
+                    <input
+                      type="text"
+                      placeholder="John Doe"
+                      value={guestName}
                       onChange={e => setGuestName(e.target.value)}
                       className="w-full px-4 py-3 bg-white border-2 border-slate-300 rounded-xl text-sm font-bold text-slate-900 outline-none"
                     />
@@ -570,34 +585,34 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
                   {SOURCES.filter(s => s !== 'Direct').map(source => {
                     const isStopped = connections.find(c => c.name === source)?.isStopped;
                     return (
-                    <button 
-                      key={source} 
-                      disabled={isSyncing || isStopped} 
-                      onClick={async () => {
-                        setIsSyncing(true);
-                        await handleBookingTransaction(source, otaRoomType, otaCheckIn, otaCheckOut);
-                        setIsSyncing(false);
-                      }} 
-                      className={`px-3 py-4 border-2 font-black text-[10px] rounded-xl flex flex-col items-center gap-2 transition-all active:scale-95 ${
-                        isStopped 
-                        ? 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed opacity-60' 
-                        : 'bg-white border-slate-100 hover:border-indigo-400 text-slate-900 shadow-sm'
-                      }`}
-                    >
-                      {isStopped ? <Hand className="w-4 h-4" /> : <Share2 className="w-4 h-4 text-indigo-400" />}
-                      {source}
-                      {isStopped && <span className="text-[7px] text-amber-500">STOP SELL</span>}
-                    </button>
-                  )})}
+                      <button
+                        key={source}
+                        disabled={isSyncing || isStopped}
+                        onClick={async () => {
+                          setIsSyncing(true);
+                          await handleBookingTransaction(source, otaRoomType, otaCheckIn, otaCheckOut);
+                          setIsSyncing(false);
+                        }}
+                        className={`px-3 py-4 border-2 font-black text-[10px] rounded-xl flex flex-col items-center gap-2 transition-all active:scale-95 ${isStopped
+                            ? 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed opacity-60'
+                            : 'bg-white border-slate-100 hover:border-indigo-400 text-slate-900 shadow-sm'
+                          }`}
+                      >
+                        {isStopped ? <Hand className="w-4 h-4" /> : <Share2 className="w-4 h-4 text-indigo-400" />}
+                        {source}
+                        {isStopped && <span className="text-[7px] text-amber-500">STOP SELL</span>}
+                      </button>
+                    )
+                  })}
                 </div>
                 <div className="pt-2 border-t border-slate-100">
-                   <button 
-                      onClick={simulateRandomCancellation}
-                      disabled={isSyncing || syncEvents.filter(e => e.type === 'booking' && e.status === 'Confirmed').length === 0}
-                      className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-600 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all border border-red-100 flex items-center justify-center gap-2 disabled:opacity-50"
-                   >
-                     <BellOff className="w-3.5 h-3.5" /> Simulate Incoming Webhook: Cancel
-                   </button>
+                  <button
+                    onClick={simulateRandomCancellation}
+                    disabled={isSyncing || syncEvents.filter(e => e.type === 'booking' && e.status === 'Confirmed').length === 0}
+                    className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-600 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all border border-red-100 flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <BellOff className="w-3.5 h-3.5" /> Simulate Incoming Webhook: Cancel
+                  </button>
                 </div>
               </div>
             </div>
@@ -637,7 +652,7 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
                       ) : (
                         <div className="flex items-center gap-1.5 text-fuchsia-600 uppercase">
                           <Tag className="w-3 h-3" />
-                          Yield Sync: ₹{event.newPrice.toLocaleString()} 
+                          Yield Sync: ₹{event.newPrice.toLocaleString()}
                           {event.ruleApplied && <span className="text-[8px] bg-fuchsia-50 text-fuchsia-500 px-1 rounded ml-1">{event.ruleApplied}</span>}
                         </div>
                       )}
@@ -650,7 +665,7 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
                     {connections.filter(c => c.status === 'connected').map(ch => {
                       const status = event.channelSync?.[ch.name];
                       const specificPrice = event.type === 'rate_update' ? event.channelPrices?.[ch.name] : null;
-                      
+
                       let statusClasses = "bg-slate-100 text-slate-400 border-slate-200";
                       let statusLabel = ch.name;
 
@@ -663,7 +678,7 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
                         statusClasses = "bg-amber-500 text-white border-amber-600 shadow-sm ring-1 ring-amber-300";
                         statusLabel = "CLOSED";
                       }
-                      
+
                       return (
                         <div key={ch.name} className={`px-2.5 py-1 border rounded-lg text-[9px] font-black uppercase tracking-widest transition-all duration-300 ${statusClasses} flex flex-col items-center`}>
                           <span>{statusLabel === "CLOSED" ? `${ch.name} (CLOSED)` : ch.name}</span>

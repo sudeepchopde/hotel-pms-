@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import {
   ChevronLeft, ChevronRight, Calendar, User,
   Bed, Maximize2, Minimize2, GripVertical, CheckCircle2,
-  AlertOctagon, XCircle, LogIn, LogOut, ScanLine, CreditCard,
+  AlertOctagon, XCircle, LogIn, LogOut, ScanLine, CreditCard, ShieldAlert,
   Loader2, Search, Plus, FileText, Lock, Smartphone, Mail, MapPin, FileBadge, Keyboard, X, Clock, Camera, RotateCcw,
   Star, Globe, Plane, Upload, Printer, LayoutGrid, Briefcase, Flag, Zap, ArrowRightCircle, Minus
 } from 'lucide-react';
@@ -20,11 +20,14 @@ import {
   KeyboardSensor
 } from '@dnd-kit/core';
 import { GoogleGenAI, Type } from "@google/genai";
-import { RoomType, SyncEvent, Booking, GuestDetails, RoomSecurityStatus } from '../types';
+import { RoomType, SyncEvent, Booking, GuestDetails, RoomSecurityStatus, ChannelStatus } from '../types';
 import GuestProfilePage from './GuestProfilePage';
+import NewBookingModal from './NewBookingModal';
+import { createBulkBookings, updateBooking, transferBooking } from '../api';
 
 interface FrontDeskViewProps {
   roomTypes: RoomType[];
+  connections: OTAConnection[];
   syncEvents: SyncEvent[];
   setSyncEvents: React.Dispatch<React.SetStateAction<SyncEvent[]>>;
   onUpdateExtraBeds?: (bookingId: string, count: number) => void;
@@ -197,7 +200,7 @@ const DroppableCell: React.FC<DroppableCellProps> = ({ date, roomNumber, childre
   );
 };
 
-const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, syncEvents, setSyncEvents, onUpdateExtraBeds, roomSecurity = [] }) => {
+const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, syncEvents, setSyncEvents, onUpdateExtraBeds, roomSecurity = [] }) => {
   const [startDate, setStartDate] = useState(new Date());
   const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -257,6 +260,8 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, syncEvents, se
     }
   }, [syncEvents, selectedBooking?.id]);
 
+  const [isNewBookingModalOpen, setIsNewBookingModalOpen] = useState(false);
+
   const toggleExpand = (id: string) => { setExpandedTypes(prev => ({ ...prev, [id]: !prev[id] })); };
 
   const timelineDates = useMemo(() => {
@@ -299,8 +304,32 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, syncEvents, se
     });
   }, [syncEvents, roomTypes]);
 
+  // Get all bookings related to the selected booking by reservationId
+  const relatedBookings = useMemo(() => {
+    if (!selectedBooking) return [];
+    const resId = (selectedBooking as any).reservationId;
+    if (!resId) return [selectedBooking];
+    return assignedBookings.filter(b => (b as any).reservationId === resId);
+  }, [selectedBooking, assignedBookings]);
+
   const todayStr = new Date().toISOString().split('T')[0];
-  const todaysArrivals = useMemo(() => assignedBookings.filter(b => b.checkIn === todayStr && b.status === 'Confirmed').sort((a, b) => a.guestName.localeCompare(b.guestName)), [assignedBookings, todayStr]);
+
+  // Group arrivals by reservationId to show one entry per multi-room booking
+  const todaysArrivals = useMemo(() => {
+    const arrivals = assignedBookings.filter(b => b.checkIn === todayStr && b.status === 'Confirmed');
+    const grouped: Record<string, Booking[]> = {};
+    arrivals.forEach(b => {
+      const key = (b as any).reservationId || b.id;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(b);
+    });
+    return Object.values(grouped).map(group => ({
+      ...group[0],
+      _roomCount: group.length,
+      _allRooms: group
+    })).sort((a, b) => a.guestName.localeCompare(b.guestName));
+  }, [assignedBookings, todayStr]);
+
   const todaysDepartures = useMemo(() => assignedBookings.filter(b => b.checkOut === todayStr && b.status === 'CheckedIn').sort((a, b) => a.guestName.localeCompare(b.guestName)), [assignedBookings, todayStr]);
 
   const handleDragStart = (event: any) => {
@@ -341,55 +370,83 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, syncEvents, se
     if (dragState.isValid) {
       const duration = Math.ceil((new Date(currentBooking.checkOut).getTime() - new Date(currentBooking.checkIn).getTime()) / (1000 * 3600 * 24));
       const newCheckIn = new Date(newDateStr);
-      const newCheckOut = newCheckIn;
-      newCheckOut.setDate(newCheckOut.getDate() + duration);
+      const newCheckOut = new Date(newCheckIn);
+      newCheckOut.setDate(newCheckIn.getDate() + duration);
       const targetRow = gridRows.find(r => r.id === newRoomNumber && r.type === 'room');
       const newRoomTypeId = targetRow?.parentId || currentBooking.roomTypeId;
+
+      const updatedBooking = { ...currentBooking, roomNumber: newRoomNumber, roomTypeId: newRoomTypeId, checkIn: newDateStr, checkOut: newCheckOut.toISOString().split('T')[0], timestamp: Date.now() };
+
       setLastMovedBookingId(active.id);
       setTimeout(() => setLastMovedBookingId(null), 1500);
-      setSyncEvents(prev => prev.map(e => {
-        if (e.id === active.id && e.type === 'booking') {
-          return { ...e, roomNumber: newRoomNumber, roomTypeId: newRoomTypeId, checkIn: newDateStr, checkOut: newCheckOut.toISOString().split('T')[0], timestamp: Date.now() };
-        }
-        return e;
-      }));
+
+      // Update local state and then persist
+      setSyncEvents(prev => prev.map(e => e.id === active.id && e.type === 'booking' ? { ...updatedBooking, type: 'booking' } as SyncEvent : e));
+
+      updateBooking(updatedBooking).catch(err => {
+        console.error("Failed to persist drag update", err);
+        setToastMessage(`Persistence Error: ${err.message}`);
+        setTimeout(() => setToastMessage(null), 3000);
+      });
     }
   };
 
-  const handleResizeBooking = (bookingId: string, newDuration: number) => {
-    setSyncEvents(prev => prev.map(e => {
-      if (e.id === bookingId && e.type === 'booking') {
-        const checkInDate = new Date(e.checkIn);
-        const newCheckOut = new Date(checkInDate);
-        newCheckOut.setDate(checkInDate.getDate() + newDuration);
-        return { ...e, checkOut: newCheckOut.toISOString().split('T')[0], timestamp: Date.now() };
-      }
-      return e;
-    }));
+  const handleResizeBooking = async (bookingId: string, newDuration: number) => {
+    const booking = syncEvents.find(e => e.id === bookingId && e.type === 'booking') as Booking | undefined;
+    if (!booking) return;
+
+    const checkInDate = new Date(booking.checkIn);
+    const newCheckOut = new Date(checkInDate);
+    newCheckOut.setDate(checkInDate.getDate() + newDuration);
+    const updated = { ...booking, checkOut: newCheckOut.toISOString().split('T')[0], timestamp: Date.now() };
+
+    setSyncEvents(prev => prev.map(e => e.id === bookingId && e.type === 'booking' ? { ...updated, type: 'booking' } as SyncEvent : e));
+
+    try {
+      await updateBooking(updated);
+    } catch (err: any) {
+      console.error("Failed to persist resize update", err);
+      setToastMessage(`Persistence Error: ${err.message}`);
+      setTimeout(() => setToastMessage(null), 3000);
+    }
   };
 
   const handleBookingClick = (booking: Booking) => setSelectedBooking(booking);
 
-  const handleUpdateStatusFromProfile = (bookingId: string, newStatus: string) => {
-    setSyncEvents(prev => prev.map(e => {
-      if (e.id === bookingId && e.type === 'booking') {
-        const updated = { ...e, status: newStatus as any, timestamp: Date.now() };
-        if (selectedBooking?.id === bookingId) setSelectedBooking(updated as Booking);
-        return updated;
-      }
-      return e;
-    }));
+  const handleUpdateStatusFromProfile = async (bookingId: string, newStatus: string) => {
+    const booking = syncEvents.find(e => e.id === bookingId && e.type === 'booking') as Booking | undefined;
+    if (!booking) return;
+
+    const updated = { ...booking, status: newStatus as any, timestamp: Date.now() };
+
+    // Optimistically update local state
+    setSyncEvents(prev => prev.map(e => e.id === bookingId && e.type === 'booking' ? { ...updated, type: 'booking' } as SyncEvent : e));
+    if (selectedBooking?.id === bookingId) setSelectedBooking(updated);
+
+    try {
+      await updateBooking(updated);
+    } catch (err: any) {
+      console.error("Failed to persist status update", err);
+      setToastMessage(`Persistence Error: ${err.message}`);
+      setTimeout(() => setToastMessage(null), 3000);
+    }
   };
 
-  const handleToggleVIPFromProfile = (bookingId: string) => {
-    setSyncEvents(prev => prev.map(e => {
-      if (e.id === bookingId && e.type === 'booking') {
-        const updated = { ...e, isVIP: !e.isVIP, timestamp: Date.now() };
-        if (selectedBooking?.id === bookingId) setSelectedBooking(updated);
-        return updated;
-      }
-      return e;
-    }));
+  const handleToggleVIPFromProfile = async (bookingId: string) => {
+    const booking = syncEvents.find(e => e.id === bookingId && e.type === 'booking') as Booking | undefined;
+    if (!booking) return;
+
+    const updated = { ...booking, isVIP: !booking.isVIP, timestamp: Date.now() };
+
+    setSyncEvents(prev => prev.map(e => e.id === bookingId && e.type === 'booking' ? { ...updated, type: 'booking' } as SyncEvent : e));
+    if (selectedBooking?.id === bookingId) setSelectedBooking(updated);
+
+    try {
+      await updateBooking(updated);
+    } catch (err: any) {
+      console.error("Failed to persist VIP toggle", err);
+      // We could revert local state here if needed
+    }
   };
 
   const handleOpenCheckInWizard = (booking: Booking, isAccessory: boolean = false, index: number | null = null) => {
@@ -450,6 +507,100 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, syncEvents, se
     } catch (err) {
       setToastMessage("Camera not accessible. Using manual mode.");
       setCheckInMode('manual');
+    }
+  };
+
+  const updateEventChannelStatus = (eventId: string, channel: string, status: ChannelStatus) => {
+    setSyncEvents(prev => prev.map(e => {
+      if (e.id === eventId) {
+        return { ...e, channelSync: { ...(e.channelSync || {}), [channel]: status } };
+      }
+      return e;
+    }));
+  };
+
+  const simulateFanOut = async (eventId: string, label: string) => {
+    const activeChannels = connections.filter(c => c.status === 'connected');
+    activeChannels.forEach(async (channel) => {
+      // Check for STOP SELL Master Switch
+      if (channel.isStopped) {
+        updateEventChannelStatus(eventId, channel.name, 'stopped');
+        return;
+      }
+
+      updateEventChannelStatus(eventId, channel.name, 'pending');
+      const latency = 1000 + Math.random() * 2000;
+      await new Promise(resolve => setTimeout(resolve, latency));
+
+      if (Math.random() < 0.1) {
+        updateEventChannelStatus(eventId, channel.name, 'error');
+      } else {
+        updateEventChannelStatus(eventId, channel.name, 'success');
+      }
+    });
+  };
+
+  const handleCreateBookings = async (data: { guestName: string, rooms: Array<{ roomTypeId: string, checkIn: string, checkOut: string }> }) => {
+    const reservationId = `res-${Date.now()}`;
+    // Track rooms already assigned in THIS booking session to avoid duplicates
+    const assignedInThisSession: string[] = [];
+
+    const newBookings: Booking[] = data.rooms.map((room, idx) => {
+      const roomType = roomTypes.find(rt => rt.id === room.roomTypeId);
+      let assignedRoom = 'Unassigned';
+      if (roomType && roomType.roomNumbers) {
+        for (const roomNum of roomType.roomNumbers) {
+          // Check if room is already assigned in this session
+          if (assignedInThisSession.includes(roomNum)) {
+            continue;
+          }
+          // Check if room is occupied by existing bookings
+          const isOccupied = syncEvents.some(e =>
+            e.type === 'booking' &&
+            e.roomNumber === roomNum &&
+            e.status !== 'Cancelled' &&
+            e.status !== 'Rejected' &&
+            e.status !== 'CheckedOut' &&
+            !(new Date(room.checkOut) <= new Date(e.checkIn) || new Date(room.checkIn) >= new Date(e.checkOut))
+          );
+          if (!isOccupied) {
+            assignedRoom = roomNum;
+            assignedInThisSession.push(roomNum); // Mark as taken for this session
+            break;
+          }
+        }
+      }
+      return {
+        id: `direct-${Date.now()}-${idx}`,
+        guestName: data.guestName,
+        roomTypeId: room.roomTypeId,
+        roomNumber: assignedRoom,
+        checkIn: room.checkIn,
+        checkOut: room.checkOut,
+        status: 'Confirmed',
+        source: 'Direct',
+        timestamp: Date.now(),
+        numberOfRooms: data.rooms.length,
+        reservationId,
+        channelSync: {}
+      } as Booking;
+    });
+
+    try {
+      const savedBookings = await createBulkBookings(newBookings);
+      setSyncEvents(prev => [...prev, ...savedBookings.map(b => ({ ...b, type: 'booking' } as SyncEvent))]);
+      setIsNewBookingModalOpen(false);
+      setToastMessage(`Successfully booked ${savedBookings.length} rooms!`);
+      setTimeout(() => setToastMessage(null), 3000);
+
+      // Trigger Fan-Out for each booking in the multi-room set
+      savedBookings.forEach(booking => {
+        simulateFanOut(booking.id, `New Direct Booking for ${booking.guestName}`);
+      });
+    } catch (error: any) {
+      console.error("Failed to create bookings", error);
+      setToastMessage(`Error: ${error.message || "Could not save bookings. Please try again."}`);
+      setTimeout(() => setToastMessage(null), 5000);
     }
   };
 
@@ -523,9 +674,9 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, syncEvents, se
     }
   };
 
-  const confirmCheckIn = () => {
+  const confirmCheckIn = async () => {
     if (!activeCheckInBooking) return;
-    const updated: Booking & { type: 'booking' } = { ...activeCheckInBooking, timestamp: Date.now(), type: 'booking' };
+    const updated: Booking = { ...activeCheckInBooking, timestamp: Date.now() };
     if (isAddingAccessory) {
       const currentAccessories = [...(activeCheckInBooking.accessoryGuests || [])];
       if (editingAccessoryIndex !== null) currentAccessories[editingAccessoryIndex] = { ...guestForm };
@@ -536,10 +687,21 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, syncEvents, se
       updated.guestName = guestForm.name || activeCheckInBooking.guestName;
       updated.guestDetails = { ...guestForm, idImage: idImages.front || undefined, idImageBack: idImages.back || undefined, visaPage: idImages.visa || undefined };
     }
-    setSyncEvents(prev => prev.map(e => e.id === activeCheckInBooking.id ? updated : e));
+
+    // Update local state
+    setSyncEvents(prev => prev.map(e => e.id === activeCheckInBooking.id && e.type === 'booking' ? { ...updated, type: 'booking' } as SyncEvent : e));
     setActiveCheckInBooking(null);
     setEditingAccessoryIndex(null);
     setSelectedBooking(updated);
+
+    try {
+      await updateBooking(updated);
+      setToastMessage("Check-in persisted successfully!");
+      setTimeout(() => setToastMessage(null), 2000);
+    } catch (err: any) {
+      console.error("Failed to persist check-in", err);
+      setToastMessage(`Critical Persistence Error: ${err.message}`);
+    }
   };
 
   // Panning Event Handlers
@@ -587,7 +749,14 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, syncEvents, se
                 <button onClick={() => { const d = new Date(startDate); d.setDate(d.getDate() + 7); setStartDate(d); }} className="p-2 hover:bg-white rounded-lg shadow-sm transition-all"><ChevronRight className="w-4 h-4 text-slate-500" /></button>
               </div>
             </div>
-            <button className="flex items-center gap-2 px-5 py-3 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl"><Plus className="w-4 h-4" /> New Booking</button>
+            {connections.filter(c => c.isStopped).length > 0 && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-600 rounded-xl animate-pulse">
+                <ShieldAlert className="w-4 h-4" />
+                <span className="text-[9px] font-black uppercase tracking-widest">{connections.filter(c => c.isStopped).length} Channels Stopped</span>
+              </div>
+            )}
+            <button onClick={() => setIsNewBookingModalOpen(true)} className="flex items-center gap-2 px-5 py-3 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl"><Plus className="w-4 h-4" /> New Booking</button>
+
           </header>
 
           <div
@@ -708,15 +877,33 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, syncEvents, se
         <div className="w-80 bg-white border-l border-slate-200 h-full overflow-y-auto hidden xl:flex flex-col shrink-0 z-30 shadow-2xl custom-scrollbar">
           <div className="p-6 border-b border-slate-100 bg-slate-50/50"><h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2"><Zap className="w-5 h-5 text-amber-500" />Live Activity</h3><p className="text-xs text-slate-500 font-bold mt-1 uppercase tracking-widest">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p></div>
           <div className="flex-1 p-6 space-y-8">
-            <div className="space-y-4">
+            <div className="space-y-4 p-4 bg-indigo-50/40 rounded-2xl border border-indigo-100/50">
               <div className="flex items-center justify-between"><h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Today's Arrivals</h4><span className="text-[10px] font-black bg-indigo-600 text-white px-2 py-0.5 rounded-lg shadow-md">{todaysArrivals.length}</span></div>
-              {todaysArrivals.length === 0 ? (<div className="text-center py-6 text-slate-400 text-[10px] font-black uppercase tracking-widest bg-slate-50 rounded-2xl border border-slate-100">All Checked In</div>) : (todaysArrivals.map(b => (
-                <div key={b.id} className="p-5 bg-white border border-slate-100 rounded-[2rem] shadow-sm hover:shadow-xl transition-all group border-l-4 border-l-indigo-600"><div className="flex items-center gap-4 mb-4"><div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-sm shrink-0 shadow-inner border border-indigo-100">{b.guestName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}</div><div className="overflow-hidden"><p className="font-black text-slate-900 text-sm truncate tracking-tighter uppercase">{b.guestName}</p><span className="inline-flex items-center gap-1 text-[8px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded uppercase tracking-widest mt-1 border border-amber-100">Awaiting ID</span></div></div><div className="flex items-center justify-between mb-5 px-1"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{roomTypes.find(r => r.id === b.roomTypeId)?.name || 'Standard'} <span className="font-black text-indigo-600 ml-1 bg-indigo-50 px-1.5 py-0.5 rounded shadow-sm">#{b.roomNumber || 'TBD'}</span></div></div><button onClick={() => handleOpenCheckInWizard(b)} className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl shadow-indigo-200 flex items-center justify-center gap-3">One-Click Check-In <ArrowRightCircle className="w-4 h-4" /></button></div>
+              {todaysArrivals.length === 0 ? (<div className="text-center py-6 text-slate-400 text-[10px] font-black uppercase tracking-widest bg-white rounded-2xl border border-slate-100">All Checked In</div>) : (todaysArrivals.map((b: any) => (
+                <div key={b.id} className="p-5 bg-white border border-slate-100 rounded-[2rem] shadow-sm hover:shadow-xl transition-all group border-l-4 border-l-indigo-600">
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-sm shrink-0 shadow-inner border border-indigo-100">{b.guestName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}</div>
+                    <div className="overflow-hidden flex-1">
+                      <p className="font-black text-slate-900 text-sm truncate tracking-tighter uppercase">{b.guestName}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="inline-flex items-center gap-1 text-[8px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded uppercase tracking-widest border border-amber-100">Awaiting ID</span>
+                        {b._roomCount > 1 && <span className="inline-flex items-center gap-1 text-[8px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded uppercase tracking-widest border border-indigo-100">{b._roomCount} Rooms</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mb-5 px-1">
+                    <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                      {b._roomCount > 1 ? 'Multi-Room Booking' : (roomTypes.find(r => r.id === b.roomTypeId)?.name || 'Standard')}
+                      <span className="font-black text-indigo-600 ml-1 bg-indigo-50 px-1.5 py-0.5 rounded shadow-sm">#{b.roomNumber || 'TBD'}</span>
+                    </div>
+                  </div>
+                  <button onClick={() => setSelectedBooking(b)} className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl shadow-indigo-200 flex items-center justify-center gap-3">Check-In <ArrowRightCircle className="w-4 h-4" /></button>
+                </div>
               )))}
             </div>
-            <div className="space-y-4">
+            <div className="space-y-4 p-4 bg-rose-50/40 rounded-2xl border border-rose-100/50">
               <div className="flex items-center justify-between"><h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Pending Departures</h4><span className="text-[10px] font-black bg-rose-600 text-white px-2 py-0.5 rounded-lg shadow-md">{todaysDepartures.length}</span></div>
-              {todaysDepartures.length === 0 ? (<div className="text-center py-6 text-slate-400 text-[10px] font-black uppercase tracking-widest bg-slate-50 rounded-2xl border border-slate-100">None Scheduled</div>) : (todaysDepartures.map(b => (
+              {todaysDepartures.length === 0 ? (<div className="text-center py-6 text-slate-400 text-[10px] font-black uppercase tracking-widest bg-white rounded-2xl border border-slate-100">None Scheduled</div>) : (todaysDepartures.map(b => (
                 <div key={b.id} className="p-5 bg-white border border-slate-100 rounded-[2rem] shadow-sm hover:shadow-xl transition-all group border-l-4 border-l-rose-600"><div className="flex items-center gap-4 mb-4"><div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center font-black text-sm shrink-0 border border-slate-200">{b.guestName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}</div><div className="overflow-hidden"><p className="font-black text-slate-900 text-sm truncate tracking-tighter uppercase">{b.guestName}</p><span className="inline-flex items-center gap-1 text-[8px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded uppercase tracking-widest mt-1 border border-emerald-100">Paid & Clear</span></div></div><div className="flex items-center justify-between mb-5 px-1"><div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Room <span className="font-black text-rose-600 ml-1 bg-rose-50 px-1.5 py-0.5 rounded shadow-sm">#{b.roomNumber}</span></div></div><button onClick={() => setSelectedBooking(b)} className="w-full py-3.5 bg-slate-900 hover:bg-black text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl flex items-center justify-center gap-3">Process Check-Out <LogOut className="w-4 h-4" /></button></div>
               )))}
             </div>
@@ -727,12 +914,47 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, syncEvents, se
           <GuestProfilePage
             booking={selectedBooking}
             roomTypes={roomTypes}
+            relatedBookings={relatedBookings}
+            syncEvents={syncEvents}
             onClose={() => setSelectedBooking(null)}
             onUpdateStatus={handleUpdateStatusFromProfile}
             onToggleVIP={handleToggleVIPFromProfile}
             onCheckIn={handleOpenCheckInWizard}
             onUpdateExtraBeds={onUpdateExtraBeds}
             onEditInventory={() => { setToastMessage("Drag and drop to edit inventory."); setTimeout(() => setToastMessage(null), 3000); }}
+            onRoomTransfer={async (bookingId, newRoomTypeId, newRoomNumber) => {
+              const booking = syncEvents.find(e => e.id === bookingId && e.type === 'booking') as Booking | undefined;
+              if (!booking) return;
+
+              const rt = roomTypes.find(r => r.id === newRoomTypeId);
+
+              // Local update
+              setSyncEvents(prev => prev.map(e => {
+                if (e.id === bookingId && e.type === 'booking') {
+                  const updated = { ...e, roomTypeId: newRoomTypeId, roomNumber: newRoomNumber, amount: rt?.basePrice || e.amount, timestamp: Date.now() };
+                  if (selectedBooking?.id === bookingId) setSelectedBooking(updated as Booking);
+                  return updated;
+                }
+                return e;
+              }));
+
+              try {
+                await transferBooking(bookingId, {
+                  bookingId,
+                  newRoomTypeId,
+                  newRoomNumber,
+                  effectiveDate: new Date().toISOString().split('T')[0],
+                  keepRate: false,
+                  transferFolio: true
+                });
+                setToastMessage(`Room transferred to ${newRoomNumber} successfully!`);
+              } catch (err: any) {
+                console.error("Failed to persist room transfer", err);
+                setToastMessage(`Transfer Persistence Error: ${err.message}`);
+              }
+              setTimeout(() => setToastMessage(null), 3000);
+            }}
+            onSwitchBooking={(booking) => setSelectedBooking(booking)}
           />
         )}
 
@@ -823,6 +1045,14 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, syncEvents, se
         )}
         <DragOverlay>{dragState.activeId && (() => { const booking = assignedBookings.find(b => b.id === dragState.activeId); if (!booking) return null; const duration = Math.ceil((new Date(booking.checkOut).getTime() - new Date(booking.checkIn).getTime()) / (1000 * 3600 * 24)); return <DraggableBooking booking={booking} duration={duration} isOverlay={true} isValid={dragState.isValid} />; })()}</DragOverlay>
         {toastMessage && (<div className="absolute top-6 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4 border-2 border-indigo-500/50"><CheckCircle2 className="w-6 h-6 text-emerald-400" /><span className="font-black text-sm uppercase tracking-widest">{toastMessage}</span></div>)}
+
+        <NewBookingModal
+          isOpen={isNewBookingModalOpen}
+          onClose={() => setIsNewBookingModalOpen(false)}
+          roomTypes={roomTypes}
+          syncEvents={syncEvents}
+          onCreateBookings={handleCreateBookings}
+        />
       </div>
     </DndContext>
   );

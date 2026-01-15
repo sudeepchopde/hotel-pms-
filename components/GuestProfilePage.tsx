@@ -1,24 +1,28 @@
 
 import React, { useState, useEffect } from 'react';
-import { 
-  X, User, Calendar, MapPin, Smartphone, Mail, FileBadge, 
-  Bed, Users, Star, AlertCircle, CheckCircle2, CreditCard, 
+import {
+  X, User, Calendar, MapPin, Smartphone, Mail, FileBadge,
+  Bed, Users, Star, AlertCircle, CheckCircle2, CreditCard,
   Clock, ShieldAlert, Plus, Trash2, Edit3, MessageSquare, ChevronDown,
   Hash, LogIn, FileText, ScanLine, Lock, Eye, Shield, FileImage, RotateCcw,
   Utensils, Coffee, Zap, Receipt, Globe, Plane, Briefcase, Sparkles, Sofa,
-  Minus
+  Minus, ArrowRightCircle
 } from 'lucide-react';
 import { Booking, RoomType, SyncEvent, FolioItem, GuestDetails } from '../types';
 
 interface GuestProfilePageProps {
   booking: Booking;
   roomTypes: RoomType[];
+  relatedBookings?: Booking[];
+  syncEvents?: SyncEvent[];
   onClose: () => void;
   onUpdateStatus: (bookingId: string, newStatus: string) => void;
   onToggleVIP?: (bookingId: string) => void;
   onCheckIn?: (booking: Booking, isAccessory?: boolean, accessoryIndex?: number) => void;
   onEditInventory?: () => void;
   onUpdateExtraBeds?: (bookingId: string, count: number) => void;
+  onRoomTransfer?: (bookingId: string, newRoomTypeId: string, newRoomNumber: string) => void;
+  onSwitchBooking?: (booking: Booking) => void;
 }
 
 const STATUS_OPTIONS = [
@@ -29,23 +33,30 @@ const STATUS_OPTIONS = [
   { value: 'Rejected', label: 'Warning/Unpaid', bg: 'bg-amber-500', text: 'text-white' }
 ];
 
-const CURRENT_USER_PERMISSION = 2; 
-const MOCK_ID_IMAGE = "https://images.unsplash.com/photo-1548543604-a87c9909abec?q=80&w=2528&auto=format&fit=crop"; 
+const CURRENT_USER_PERMISSION = 2;
+const MOCK_ID_IMAGE = "https://images.unsplash.com/photo-1548543604-a87c9909abec?q=80&w=2528&auto=format&fit=crop";
 
-const GuestProfilePage: React.FC<GuestProfilePageProps> = ({ 
-  booking, 
-  roomTypes, 
-  onClose, 
-  onUpdateStatus, 
-  onToggleVIP, 
-  onCheckIn, 
+const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
+  booking,
+  roomTypes,
+  relatedBookings = [],
+  syncEvents = [],
+  onClose,
+  onUpdateStatus,
+  onToggleVIP,
+  onCheckIn,
   onEditInventory,
-  onUpdateExtraBeds
+  onUpdateExtraBeds,
+  onRoomTransfer,
+  onSwitchBooking
 }) => {
   const [isIdRevealed, setIsIdRevealed] = useState(false);
   const [activeSide, setActiveSide] = useState<'front' | 'back' | 'visa'>('front');
   const [isUpdatingBeds, setIsUpdatingBeds] = useState(false);
-  
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferTargetRoomType, setTransferTargetRoomType] = useState<string>('');
+  const [transferTargetRoom, setTransferTargetRoom] = useState<string>('');
+
   const roomType = roomTypes.find(rt => rt.id === booking.roomTypeId);
 
   const getStatusStyles = (status: string) => {
@@ -64,7 +75,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   const handleExtraBedsChange = (delta: number) => {
     const current = booking.extraBeds || 0;
     const next = Math.max(0, current + delta);
-    
+
     // Visual feedback for activation
     setIsUpdatingBeds(true);
     onUpdateExtraBeds?.(booking.id, next);
@@ -80,14 +91,14 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   const frontSrc = details?.idImage || MOCK_ID_IMAGE;
   const backSrc = details?.idImageBack;
   const visaSrc = details?.visaPage;
-  
+
   const currentImageSrc = activeSide === 'front' ? frontSrc : activeSide === 'back' ? (backSrc || frontSrc) : (visaSrc || frontSrc);
 
   return (
     <div className="fixed inset-0 z-[10000] bg-slate-50 flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-300">
       <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shrink-0 shadow-sm">
         <div className="flex items-center gap-4">
-          <button 
+          <button
             onClick={onClose}
             className="p-2 hover:bg-slate-100 rounded-full transition-colors"
           >
@@ -100,7 +111,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
             </p>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-4">
           <div className="relative group">
             <button className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg transition-all ${getStatusStyles(booking.status)}`}>
@@ -108,27 +119,27 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               <ChevronDown className="w-4 h-4" />
             </button>
             <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-slate-200 rounded-2xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[101] p-2">
-               {STATUS_OPTIONS.map((opt) => (
-                 <button
-                   key={opt.value}
-                   onClick={() => onUpdateStatus(booking.id, opt.value)}
-                   className="w-full text-left p-3 hover:bg-slate-50 rounded-xl flex items-center gap-3 transition-colors"
-                 >
-                   <div className={`w-3 h-3 rounded-full ${opt.bg}`}></div>
-                   <span className="text-xs font-bold text-slate-700">{opt.label === 'Rejected' ? 'Warning/Unpaid' : opt.label}</span>
-                 </button>
-               ))}
+              {STATUS_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => onUpdateStatus(booking.id, opt.value)}
+                  className="w-full text-left p-3 hover:bg-slate-50 rounded-xl flex items-center gap-3 transition-colors"
+                >
+                  <div className={`w-3 h-3 rounded-full ${opt.bg}`}></div>
+                  <span className="text-xs font-bold text-slate-700">{opt.label === 'Rejected' ? 'Warning/Unpaid' : opt.label}</span>
+                </button>
+              ))}
             </div>
           </div>
 
           {onCheckIn && (
-             <button 
+            <button
               onClick={() => onCheckIn(booking, false)}
               className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg flex items-center gap-2"
-             >
-               <ScanLine className="w-4 h-4" /> 
-               Scan ID
-             </button>
+            >
+              <ScanLine className="w-4 h-4" />
+              Scan ID
+            </button>
           )}
 
           <button className="px-6 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg flex items-center gap-2">
@@ -140,7 +151,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
       <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
         <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-24">
-          
+
           <div className="lg:col-span-2 space-y-8">
             <section className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
               <div className="flex items-start justify-between mb-8">
@@ -165,19 +176,18 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         </span>
                       </div>
                     </div>
-                    <button 
+                    <button
                       onClick={() => onToggleVIP?.(booking.id)}
-                      className={`p-3 rounded-2xl transition-all shadow-sm border ${
-                        booking.isVIP 
-                        ? 'bg-violet-100 border-violet-200 text-violet-600' 
+                      className={`p-3 rounded-2xl transition-all shadow-sm border ${booking.isVIP
+                        ? 'bg-violet-100 border-violet-200 text-violet-600'
                         : 'bg-slate-50 border-slate-100 text-slate-300 hover:text-violet-400 hover:border-violet-100'
-                      }`}
+                        }`}
                     >
                       <Star className={`w-6 h-6 ${booking.isVIP ? 'fill-current' : ''}`} />
                     </button>
                   </div>
                 </div>
-                <button 
+                <button
                   onClick={() => onCheckIn?.(booking, false)}
                   className="p-2.5 bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
                 >
@@ -223,7 +233,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="space-y-6">
                   <div className="flex items-center gap-4 group">
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><FileBadge className="w-5 h-5" /></div>
@@ -232,14 +242,14 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       <p className="text-sm font-bold text-slate-700 tabular-nums">{details?.idNumber || 'Awaiting Verification'}</p>
                     </div>
                   </div>
-                  
+
                   <div className="relative w-full h-64 bg-slate-900 rounded-2xl overflow-hidden shadow-md group/id">
-                    <img 
-                      src={currentImageSrc} 
-                      alt="Scanned ID" 
+                    <img
+                      src={currentImageSrc}
+                      alt="Scanned ID"
                       className={`w-full h-full object-cover transition-all duration-700 ${isIdRevealed ? 'blur-0 opacity-100' : 'blur-xl opacity-60'}`}
                     />
-                    
+
                     {!isIdRevealed ? (
                       <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 backdrop-blur-sm z-10 space-y-3">
                         <Lock className="w-8 h-8 text-slate-300" />
@@ -248,9 +258,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       </div>
                     ) : (
                       <div className="absolute top-3 left-3 right-3 flex gap-2 z-20">
-                         <button onClick={() => setActiveSide('front')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all ${activeSide === 'front' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Front</button>
-                         <button onClick={() => setActiveSide('back')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all ${activeSide === 'back' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Back</button>
-                         {isForeigner && <button onClick={() => setActiveSide('visa')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all ${activeSide === 'visa' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Visa</button>}
+                        <button onClick={() => setActiveSide('front')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all ${activeSide === 'front' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Front</button>
+                        <button onClick={() => setActiveSide('back')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all ${activeSide === 'back' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Back</button>
+                        {isForeigner && <button onClick={() => setActiveSide('visa')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all ${activeSide === 'visa' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Visa</button>}
                       </div>
                     )}
                   </div>
@@ -260,163 +270,222 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
             {/* CO-GUESTS (ACCESSORY GUESTS) */}
             <section className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
-               <div className="flex items-center justify-between mb-8">
-                  <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3">
-                     <Users className="w-5 h-5 text-indigo-500" />
-                     Accessory Guests
-                  </h3>
-                  <span className="px-3 py-1 bg-slate-100 rounded-full text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                    {(booking.accessoryGuests?.length || 0)} Co-residents
-                  </span>
-               </div>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {booking.accessoryGuests && booking.accessoryGuests.map((guest, idx) => (
-                     <div key={idx} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:border-indigo-100 transition-all group flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                           <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-slate-400 group-hover:text-indigo-500 transition-colors shadow-sm">
-                              <User className="w-5 h-5" />
-                           </div>
-                           <div>
-                              <p className="text-sm font-bold text-slate-800">{guest.name}</p>
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{guest.idType}: {guest.idNumber || 'PENDING'}</p>
-                           </div>
-                        </div>
-                        <button onClick={() => onCheckIn?.(booking, true, idx)} className="p-2 text-slate-300 hover:text-indigo-500 hover:bg-white rounded-lg transition-all opacity-0 group-hover:opacity-100"><Edit3 className="w-4 h-4" /></button>
-                     </div>
-                  ))}
-                  <button onClick={() => onCheckIn?.(booking, true)} className="p-4 border-2 border-dashed border-slate-100 rounded-2xl flex items-center justify-center gap-2 text-slate-400 hover:border-indigo-200 hover:text-indigo-500 transition-all">
-                     <Plus className="w-4 h-4" />
-                     <span className="text-xs font-bold uppercase tracking-widest">Add Co-Guest</span>
-                  </button>
-               </div>
+              <div className="flex items-center justify-between mb-8">
+                <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3">
+                  <Users className="w-5 h-5 text-indigo-500" />
+                  Accessory Guests
+                </h3>
+                <span className="px-3 py-1 bg-slate-100 rounded-full text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  {(booking.accessoryGuests?.length || 0)} Co-residents
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {booking.accessoryGuests && booking.accessoryGuests.map((guest, idx) => (
+                  <div key={idx} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:border-indigo-100 transition-all group flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-slate-400 group-hover:text-indigo-500 transition-colors shadow-sm">
+                        <User className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">{guest.name}</p>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{guest.idType}: {guest.idNumber || 'PENDING'}</p>
+                      </div>
+                    </div>
+                    <button onClick={() => onCheckIn?.(booking, true, idx)} className="p-2 text-slate-300 hover:text-indigo-500 hover:bg-white rounded-lg transition-all opacity-0 group-hover:opacity-100"><Edit3 className="w-4 h-4" /></button>
+                  </div>
+                ))}
+                <button onClick={() => onCheckIn?.(booking, true)} className="p-4 border-2 border-dashed border-slate-100 rounded-2xl flex items-center justify-center gap-2 text-slate-400 hover:border-indigo-200 hover:text-indigo-500 transition-all">
+                  <Plus className="w-4 h-4" />
+                  <span className="text-xs font-bold uppercase tracking-widest">Add Co-Guest</span>
+                </button>
+              </div>
             </section>
+
+            {/* LINKED ROOMS (Multi-Room Booking) */}
+            {relatedBookings.length > 1 && (
+              <section className="bg-white rounded-[2.5rem] border-2 border-indigo-200 p-8 shadow-sm">
+                <div className="flex items-center justify-between mb-8">
+                  <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3">
+                    <Bed className="w-5 h-5 text-indigo-500" />
+                    Linked Rooms
+                  </h3>
+                  <span className="px-3 py-1 bg-indigo-100 rounded-full text-[10px] font-black text-indigo-600 uppercase tracking-widest">
+                    {relatedBookings.length} Rooms in Reservation
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {relatedBookings.map((rb) => {
+                    const rbRoomType = roomTypes.find(rt => rt.id === rb.roomTypeId);
+                    const isCurrentRoom = rb.id === booking.id;
+                    return (
+                      <div
+                        key={rb.id}
+                        className={`p-4 rounded-2xl transition-all group flex items-center justify-between cursor-pointer ${isCurrentRoom
+                          ? 'bg-indigo-50 border-2 border-indigo-300 ring-2 ring-indigo-100'
+                          : 'bg-slate-50 border border-slate-100 hover:border-indigo-200'
+                          }`}
+                        onClick={() => !isCurrentRoom && onSwitchBooking?.(rb)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-sm ${isCurrentRoom ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 group-hover:text-indigo-500'
+                            }`}>
+                            <Bed className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-800">
+                              #{rb.roomNumber || 'TBD'}
+                              {isCurrentRoom && <span className="ml-2 text-[9px] text-indigo-600 uppercase">(Current)</span>}
+                            </p>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                              {rbRoomType?.name || 'Unknown'} • {rb.status}
+                            </p>
+                          </div>
+                        </div>
+                        <div className={`w-3 h-3 rounded-full ${rb.status === 'CheckedIn' ? 'bg-emerald-500' :
+                          rb.status === 'Confirmed' ? 'bg-blue-500' :
+                            rb.status === 'CheckedOut' ? 'bg-slate-400' : 'bg-amber-500'
+                          }`}></div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-6 pt-6 border-t border-slate-100 flex gap-3">
+                  <button
+                    onClick={() => setShowTransferModal(true)}
+                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                  >
+                    <ArrowRightCircle className="w-4 h-4" /> Transfer Room
+                  </button>
+                </div>
+              </section>
+            )}
 
             {/* INTERNATIONAL REGISTRATION DATA (FORM C) */}
             {isForeigner && (
-               <section className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
-                  <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3 mb-8">
-                     <Globe className="w-5 h-5 text-amber-500" />
-                     International Compliance (Form C)
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
-                     <div className="space-y-8">
-                        <div className="flex gap-4">
-                           <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl shadow-sm border border-amber-100 h-fit"><FileBadge className="w-5 h-5" /></div>
-                           <div>
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Passport Details</p>
-                              <p className="text-sm font-bold text-slate-700">{details?.passportNumber || 'N/A'}</p>
-                              <div className="grid grid-cols-2 gap-4 mt-2">
-                                <div>
-                                  <p className="text-[8px] font-black text-slate-400 uppercase">Expiry</p>
-                                  <p className="text-[10px] font-bold text-slate-600">{details?.passportExpiry || 'N/A'}</p>
-                                </div>
-                                <div>
-                                  <p className="text-[8px] font-black text-slate-400 uppercase">Issue Date</p>
-                                  <p className="text-[10px] font-bold text-slate-600">{details?.passportIssueDate || 'N/A'}</p>
-                                </div>
-                                <div className="col-span-2">
-                                  <p className="text-[8px] font-black text-slate-400 uppercase">Place of Issue</p>
-                                  <p className="text-[10px] font-bold text-slate-600">{details?.passportPlaceIssue || 'N/A'}</p>
-                                </div>
-                              </div>
-                           </div>
+              <section className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
+                <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3 mb-8">
+                  <Globe className="w-5 h-5 text-amber-500" />
+                  International Compliance (Form C)
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
+                  <div className="space-y-8">
+                    <div className="flex gap-4">
+                      <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl shadow-sm border border-amber-100 h-fit"><FileBadge className="w-5 h-5" /></div>
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Passport Details</p>
+                        <p className="text-sm font-bold text-slate-700">{details?.passportNumber || 'N/A'}</p>
+                        <div className="grid grid-cols-2 gap-4 mt-2">
+                          <div>
+                            <p className="text-[8px] font-black text-slate-400 uppercase">Expiry</p>
+                            <p className="text-[10px] font-bold text-slate-600">{details?.passportExpiry || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[8px] font-black text-slate-400 uppercase">Issue Date</p>
+                            <p className="text-[10px] font-bold text-slate-600">{details?.passportIssueDate || 'N/A'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <p className="text-[8px] font-black text-slate-400 uppercase">Place of Issue</p>
+                            <p className="text-[10px] font-bold text-slate-600">{details?.passportPlaceIssue || 'N/A'}</p>
+                          </div>
                         </div>
-                        <div className="flex gap-4">
-                           <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl shadow-sm border border-blue-100 h-fit"><Shield className="w-5 h-5" /></div>
-                           <div>
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Visa Details ({details?.visaType || 'N/A'})</p>
-                              <p className="text-sm font-bold text-slate-700">{details?.visaNumber || 'N/A'}</p>
-                              <div className="grid grid-cols-2 gap-4 mt-2">
-                                <div>
-                                  <p className="text-[8px] font-black text-slate-400 uppercase">Expiry</p>
-                                  <p className="text-[10px] font-bold text-slate-600">{details?.visaExpiry || 'N/A'}</p>
-                                </div>
-                                <div>
-                                  <p className="text-[8px] font-black text-slate-400 uppercase">Issue Date</p>
-                                  <p className="text-[10px] font-bold text-slate-600">{details?.visaIssueDate || 'N/A'}</p>
-                                </div>
-                                <div className="col-span-2">
-                                  <p className="text-[8px] font-black text-slate-400 uppercase">Place of Issue</p>
-                                  <p className="text-[10px] font-bold text-slate-600">{details?.visaPlaceIssue || 'N/A'}</p>
-                                </div>
-                              </div>
-                           </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl shadow-sm border border-blue-100 h-fit"><Shield className="w-5 h-5" /></div>
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Visa Details ({details?.visaType || 'N/A'})</p>
+                        <p className="text-sm font-bold text-slate-700">{details?.visaNumber || 'N/A'}</p>
+                        <div className="grid grid-cols-2 gap-4 mt-2">
+                          <div>
+                            <p className="text-[8px] font-black text-slate-400 uppercase">Expiry</p>
+                            <p className="text-[10px] font-bold text-slate-600">{details?.visaExpiry || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[8px] font-black text-slate-400 uppercase">Issue Date</p>
+                            <p className="text-[10px] font-bold text-slate-600">{details?.visaIssueDate || 'N/A'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <p className="text-[8px] font-black text-slate-400 uppercase">Place of Issue</p>
+                            <p className="text-[10px] font-bold text-slate-600">{details?.visaPlaceIssue || 'N/A'}</p>
+                          </div>
                         </div>
-                     </div>
-                     <div className="space-y-8">
-                        <div className="flex gap-4">
-                           <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl shadow-sm border border-emerald-100 h-fit"><Plane className="w-5 h-5" /></div>
-                           <div>
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Arrival Data</p>
-                              <p className="text-sm font-bold text-slate-700">From {details?.arrivedFrom || 'N/A'}</p>
-                              <div className="grid grid-cols-2 gap-4 mt-2">
-                                <div>
-                                  <p className="text-[8px] font-black text-slate-400 uppercase">Date In India</p>
-                                  <p className="text-[10px] font-bold text-slate-600">{details?.arrivalDateIndia || 'N/A'}</p>
-                                </div>
-                                <div>
-                                  <p className="text-[8px] font-black text-slate-400 uppercase">Arrival Port</p>
-                                  <p className="text-[10px] font-bold text-slate-600">{details?.arrivalPort || 'N/A'}</p>
-                                </div>
-                              </div>
-                           </div>
-                        </div>
-                        <div className="flex gap-4">
-                           <div className="p-2.5 bg-slate-50 text-slate-600 rounded-xl shadow-sm border border-slate-100 h-fit"><Briefcase className="w-5 h-5" /></div>
-                           <div>
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Stay Objectives</p>
-                              <p className="text-sm font-bold text-slate-700">{details?.purposeOfVisit || 'Tourism'}</p>
-                              <div className="grid grid-cols-1 gap-2 mt-2">
-                                <div>
-                                  <p className="text-[8px] font-black text-slate-400 uppercase">Next Destination</p>
-                                  <p className="text-[10px] font-bold text-slate-600">{details?.nextDestination || 'Not Declared'}</p>
-                                </div>
-                              </div>
-                           </div>
-                        </div>
-                     </div>
+                      </div>
+                    </div>
                   </div>
-               </section>
+                  <div className="space-y-8">
+                    <div className="flex gap-4">
+                      <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl shadow-sm border border-emerald-100 h-fit"><Plane className="w-5 h-5" /></div>
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Arrival Data</p>
+                        <p className="text-sm font-bold text-slate-700">From {details?.arrivedFrom || 'N/A'}</p>
+                        <div className="grid grid-cols-2 gap-4 mt-2">
+                          <div>
+                            <p className="text-[8px] font-black text-slate-400 uppercase">Date In India</p>
+                            <p className="text-[10px] font-bold text-slate-600">{details?.arrivalDateIndia || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[8px] font-black text-slate-400 uppercase">Arrival Port</p>
+                            <p className="text-[10px] font-bold text-slate-600">{details?.arrivalPort || 'N/A'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="p-2.5 bg-slate-50 text-slate-600 rounded-xl shadow-sm border border-slate-100 h-fit"><Briefcase className="w-5 h-5" /></div>
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Stay Objectives</p>
+                        <p className="text-sm font-bold text-slate-700">{details?.purposeOfVisit || 'Tourism'}</p>
+                        <div className="grid grid-cols-1 gap-2 mt-2">
+                          <div>
+                            <p className="text-[8px] font-black text-slate-400 uppercase">Next Destination</p>
+                            <p className="text-[10px] font-bold text-slate-600">{details?.nextDestination || 'Not Declared'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
             )}
 
             {/* AUTOMATED FOLIO LOGS */}
             <section className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
-               <div className="flex items-center justify-between mb-8">
-                  <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3">
-                    <Utensils className="w-5 h-5 text-indigo-500" />
-                    Transaction Ledger
-                  </h3>
-                  <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 border border-slate-100 rounded-full text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                    {booking.folio?.length || 0} Entries
-                  </div>
-               </div>
+              <div className="flex items-center justify-between mb-8">
+                <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3">
+                  <Utensils className="w-5 h-5 text-indigo-500" />
+                  Transaction Ledger
+                </h3>
+                <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 border border-slate-100 rounded-full text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                  {booking.folio?.length || 0} Entries
+                </div>
+              </div>
 
-               <div className="space-y-3">
-                  {booking.folio && booking.folio.length > 0 ? (
-                    booking.folio.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:border-indigo-100 transition-all group">
-                         <div className="flex items-center gap-4">
-                            <div className={`p-2 rounded-xl border shadow-sm ${item.category === 'F&B' ? 'bg-orange-50 border-orange-100 text-orange-600' : item.category === 'Room' ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : 'bg-blue-50 border-blue-100 text-blue-600'}`}>
-                               {item.category === 'F&B' ? <Coffee className="w-4 h-4" /> : item.category === 'Room' ? <Bed className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
-                            </div>
-                            <div>
-                               <p className="text-sm font-bold text-slate-800">{item.description}</p>
-                               <p className="text-[9px] font-black text-slate-400 uppercase tabular-nums">{new Date(item.timestamp).toLocaleString()}</p>
-                            </div>
-                         </div>
-                         <div className="text-right">
-                            <p className="text-sm font-black text-slate-900 tabular-nums">₹{item.amount.toLocaleString()}</p>
-                            <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">Posted</p>
-                         </div>
+              <div className="space-y-3">
+                {booking.folio && booking.folio.length > 0 ? (
+                  booking.folio.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:border-indigo-100 transition-all group">
+                      <div className="flex items-center gap-4">
+                        <div className={`p-2 rounded-xl border shadow-sm ${item.category === 'F&B' ? 'bg-orange-50 border-orange-100 text-orange-600' : item.category === 'Room' ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : 'bg-blue-50 border-blue-100 text-blue-600'}`}>
+                          {item.category === 'F&B' ? <Coffee className="w-4 h-4" /> : item.category === 'Room' ? <Bed className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">{item.description}</p>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tabular-nums">{new Date(item.timestamp).toLocaleString()}</p>
+                        </div>
                       </div>
-                    ))
-                  ) : (
-                    <div className="py-12 text-center border-2 border-dashed border-slate-100 rounded-[2rem] bg-slate-50/50">
-                       <Receipt className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                       <p className="text-xs font-bold text-slate-400">No additional charges found for this folio.</p>
+                      <div className="text-right">
+                        <p className="text-sm font-black text-slate-900 tabular-nums">₹{item.amount.toLocaleString()}</p>
+                        <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">Posted</p>
+                      </div>
                     </div>
-                  )}
-               </div>
+                  ))
+                ) : (
+                  <div className="py-12 text-center border-2 border-dashed border-slate-100 rounded-[2rem] bg-slate-50/50">
+                    <Receipt className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                    <p className="text-xs font-bold text-slate-400">No additional charges found for this folio.</p>
+                  </div>
+                )}
+              </div>
             </section>
           </div>
 
@@ -426,12 +495,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 <Clock className="w-32 h-32" />
               </div>
               <div className="flex items-center justify-between mb-8 relative z-10">
-                 <h3 className="text-lg font-black tracking-tight uppercase">Folio Status</h3>
-                 <span className="px-3 py-1 bg-white/10 rounded-lg text-[10px] font-black uppercase tracking-widest border border-white/10 tabular-nums">
-                    {Math.ceil((new Date(booking.checkOut).getTime() - new Date(booking.checkIn).getTime()) / (1000 * 3600 * 24))} Nights
-                 </span>
+                <h3 className="text-lg font-black tracking-tight uppercase">Folio Status</h3>
+                <span className="px-3 py-1 bg-white/10 rounded-lg text-[10px] font-black uppercase tracking-widest border border-white/10 tabular-nums">
+                  {Math.ceil((new Date(booking.checkOut).getTime() - new Date(booking.checkIn).getTime()) / (1000 * 3600 * 24))} Nights
+                </span>
               </div>
-              
+
               <div className="space-y-8 relative z-10">
                 <div className="flex gap-5">
                   <div className="p-3.5 bg-white/10 rounded-2xl shrink-0 border border-white/5"><Calendar className="w-6 h-6 text-indigo-300" /></div>
@@ -444,114 +513,192 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
               <div className="mt-10 pt-8 border-t border-white/10 space-y-4 relative z-10">
                 <div className="flex justify-between items-center text-slate-400 text-xs font-bold uppercase tracking-widest">
-                   <span>Room Base</span>
-                   <span className="text-white">₹{(booking.amount || 0).toLocaleString()}</span>
+                  <span>Room Base</span>
+                  <span className="text-white">₹{(booking.amount || 0).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between items-center text-slate-400 text-xs font-bold uppercase tracking-widest">
-                   <span>Add-ons / F&B</span>
-                   <span className="text-indigo-400">+ ₹{folioTotal.toLocaleString()}</span>
+                  <span>Add-ons / F&B</span>
+                  <span className="text-indigo-400">+ ₹{folioTotal.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between items-center pt-4 border-t border-white/5">
-                   <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Net Outstanding</p>
-                      <p className="text-3xl font-black text-emerald-400 tabular-nums">₹{grandTotal.toLocaleString()}</p>
-                   </div>
-                   <div className="flex items-center gap-1.5 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20">
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
-                      <span className="text-[9px] font-black text-emerald-400 uppercase">Settled</span>
-                   </div>
+                  <div>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Net Outstanding</p>
+                    <p className="text-3xl font-black text-emerald-400 tabular-nums">₹{grandTotal.toLocaleString()}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
+                    <span className="text-[9px] font-black text-emerald-400 uppercase">Settled</span>
+                  </div>
                 </div>
               </div>
             </section>
 
             {/* SPECIAL REQUESTS */}
             <section className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
-               <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3 mb-6">
-                 <MessageSquare className="w-5 h-5 text-violet-500" />
-                 Guest Requests
-               </h3>
-               <div className="p-5 bg-violet-50/50 border border-violet-100 rounded-2xl relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
-                     <Sparkles className="w-8 h-8 text-violet-600" />
-                  </div>
-                  <p className="text-sm font-bold text-slate-700 leading-relaxed italic">
-                    {booking.specialRequests || 'No special requirements shared.'}
-                  </p>
-               </div>
+              <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3 mb-6">
+                <MessageSquare className="w-5 h-5 text-violet-500" />
+                Guest Requests
+              </h3>
+              <div className="p-5 bg-violet-50/50 border border-violet-100 rounded-2xl relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <Sparkles className="w-8 h-8 text-violet-600" />
+                </div>
+                <p className="text-sm font-bold text-slate-700 leading-relaxed italic">
+                  {booking.specialRequests || 'No special requirements shared.'}
+                </p>
+              </div>
             </section>
 
             {/* EXTRA BED MANAGEMENT */}
             <section className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
-               <div className="flex items-center justify-between mb-6">
-                 <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3">
-                   <Sofa className="w-5 h-5 text-indigo-500" />
-                   Extra Bedding
-                 </h3>
-                 <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded">
-                   ₹{roomType?.extraBedCharge || 0} / bed
-                 </span>
-               </div>
-               
-               <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm">
-                       <Bed className="w-5 h-5" />
-                    </div>
-                    <div>
-                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Stay Units</p>
-                       <p className={`text-sm font-bold text-slate-800 transition-all duration-200 ${isUpdatingBeds ? 'scale-110 text-indigo-600' : 'scale-100'}`}>
-                         {booking.extraBeds || 0} Beds Added
-                       </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 bg-white rounded-xl p-1 shadow-sm border border-slate-200">
-                     <button 
-                        onClick={() => handleExtraBedsChange(-1)}
-                        className="p-2 text-slate-400 hover:text-red-500 transition-all active:scale-75"
-                        aria-label="Decrease extra beds"
-                      >
-                       <Minus className="w-4 h-4" />
-                     </button>
-                     <span className="w-8 text-center text-sm font-black text-slate-700 tabular-nums">{booking.extraBeds || 0}</span>
-                     <button 
-                        onClick={() => handleExtraBedsChange(1)}
-                        className="p-2 text-slate-400 hover:text-emerald-500 transition-all active:scale-75"
-                        aria-label="Increase extra beds"
-                      >
-                       <Plus className="w-4 h-4" />
-                     </button>
-                  </div>
-               </div>
-            </section>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3">
+                  <Sofa className="w-5 h-5 text-indigo-500" />
+                  Extra Bedding
+                </h3>
+                <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded">
+                  ₹{roomType?.extraBedCharge || 0} / bed
+                </span>
+              </div>
 
-            <section className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
-              <h3 className="text-lg font-black text-slate-900 tracking-tight mb-6">Inventory Access</h3>
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                   <div className="p-3 bg-indigo-100 text-indigo-600 rounded-xl"><Bed className="w-6 h-6" /></div>
-                   <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Assigned Unit</p>
-                      <div className="flex items-center gap-2">
-                        <p className="text-lg font-black text-slate-800 tabular-nums">#{booking.roomNumber || 'AWAITING'}</p>
-                        <span className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-bold text-slate-400 uppercase">
-                          {roomType?.name || 'Category'}
-                        </span>
-                      </div>
-                   </div>
+              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm">
+                    <Bed className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Stay Units</p>
+                    <p className={`text-sm font-bold text-slate-800 transition-all duration-200 ${isUpdatingBeds ? 'scale-110 text-indigo-600' : 'scale-100'}`}>
+                      {booking.extraBeds || 0} Beds Added
+                    </p>
+                  </div>
                 </div>
-                <button 
-                  onClick={onEditInventory}
-                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-xl"
-                >
-                  Modify Assignment
-                </button>
+
+                <div className="flex items-center gap-2 bg-white rounded-xl p-1 shadow-sm border border-slate-200">
+                  <button
+                    onClick={() => handleExtraBedsChange(-1)}
+                    className="p-2 text-slate-400 hover:text-red-500 transition-all active:scale-75"
+                    aria-label="Decrease extra beds"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <span className="w-8 text-center text-sm font-black text-slate-700 tabular-nums">{booking.extraBeds || 0}</span>
+                  <button
+                    onClick={() => handleExtraBedsChange(1)}
+                    className="p-2 text-slate-400 hover:text-emerald-500 transition-all active:scale-75"
+                    aria-label="Increase extra beds"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </section>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* Room Transfer Modal */}
+      {showTransferModal && (
+        <div className="fixed inset-0 z-[10001] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 tracking-tight">Transfer Room</h3>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-0.5">Move guest to a different room</p>
+              </div>
+              <button onClick={() => setShowTransferModal(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl">
+
+                <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">Current Room</p>
+                <p className="text-lg font-bold text-slate-900">#{booking.roomNumber} - {roomType?.name}</p>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">New Room Type</label>
+                <select
+                  value={transferTargetRoomType}
+                  onChange={(e) => {
+                    setTransferTargetRoomType(e.target.value);
+                    setTransferTargetRoom('');
+                  }}
+                  className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-sm font-bold text-slate-800 outline-none focus:border-indigo-500"
+                >
+                  <option value="">Select room type...</option>
+                  {roomTypes.map(rt => (
+                    <option key={rt.id} value={rt.id}>{rt.name} - ₹{rt.basePrice}/night</option>
+                  ))}
+                </select>
+              </div>
+
+              {transferTargetRoomType && (
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Select Room</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(() => {
+                      const targetType = roomTypes.find(rt => rt.id === transferTargetRoomType);
+                      const rooms = targetType?.roomNumbers || [];
+                      return rooms.map(roomNum => {
+                        const isOccupied = syncEvents.some(e =>
+                          e.type === 'booking' &&
+                          e.roomNumber === roomNum &&
+                          e.id !== booking.id &&
+                          e.status !== 'Cancelled' &&
+                          e.status !== 'CheckedOut' &&
+                          !(new Date(booking.checkOut) <= new Date(e.checkIn) || new Date(booking.checkIn) >= new Date(e.checkOut))
+                        );
+                        const isSelected = transferTargetRoom === roomNum;
+                        return (
+                          <button
+                            key={roomNum}
+                            onClick={() => !isOccupied && setTransferTargetRoom(roomNum)}
+                            disabled={isOccupied}
+                            className={`p-3 rounded-xl text-sm font-bold transition-all ${isOccupied
+                              ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                              : isSelected
+                                ? 'bg-indigo-600 text-white shadow-lg'
+                                : 'bg-slate-50 text-slate-700 hover:bg-indigo-50 border border-slate-200'
+                              }`}
+                          >
+                            {roomNum}
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+              <button
+                onClick={() => setShowTransferModal(false)}
+                className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (transferTargetRoomType && transferTargetRoom && onRoomTransfer) {
+                    onRoomTransfer(booking.id, transferTargetRoomType, transferTargetRoom);
+                    setShowTransferModal(false);
+                    setTransferTargetRoomType('');
+                    setTransferTargetRoom('');
+                  }
+                }}
+                disabled={!transferTargetRoomType || !transferTargetRoom}
+                className="px-8 py-3 bg-indigo-600 text-white rounded-xl text-sm font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Confirm Transfer
+              </button>
+            </div>
+          </div>
+        </div>
+      )
+      }
+    </div >
   );
 };
 
