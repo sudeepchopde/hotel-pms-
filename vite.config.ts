@@ -8,6 +8,10 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       host: '0.0.0.0',
+      strictPort: true,
+      hmr: {
+        host: '192.168.1.11',
+      },
       proxy: {
         // Only match /api/ paths, not /api.ts
         '^/api/': {

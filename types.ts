@@ -1,3 +1,12 @@
+export interface PropertySettings {
+  name: string;
+  address: string;
+  phone?: string;
+  email?: string;
+  gstNumber?: string;
+  gstRate: number;
+  geminiApiKey?: string;
+}
 
 export interface Hotel {
   id: string;
@@ -62,35 +71,81 @@ export interface GuestDetails {
   email?: string;
   idType?: 'Aadhar' | 'Passport' | 'Driving License' | 'Voter ID' | 'Other';
   idNumber?: string;
-  address?: string;
   nationality: string;
   gender?: 'Male' | 'Female' | 'Other';
   dob?: string;
 
-  // Enhanced Form C Fields (Indian FRRO Requirements)
+  // ========== FORM B - General Guest Register Fields ==========
+  serialNumber?: number; // Unique sequential number for the year
+  fatherOrHusbandName?: string; // Traditional police register requirement
+
+  // Permanent Address (Full)
+  address?: string;
+  city?: string;
+  state?: string;
+  pinCode?: string;
+  country?: string;
+
+  // Arrival Details
+  arrivedFrom?: string; // City/place traveled from
+  arrivalTime?: string; // Exact time of check-in (HH:MM)
+
+  // Departure Details (filled at checkout)
+  departureTime?: string; // Exact time of check-out (HH:MM)
+  destination?: string; // Where going after leaving
+
+  // Purpose
+  purposeOfVisit?: 'Business' | 'Tourism' | 'Transit' | 'Personal' | 'Medical' | 'Other';
+
+  // Signature
+  signature?: string; // Base64 digital signature or path to image
+
+  // ========== FORM C - Foreigner's Register Fields ==========
+  // Passport Details
   passportNumber?: string;
   passportPlaceIssue?: string;
   passportIssueDate?: string;
   passportExpiry?: string;
 
+  // Visa Details
   visaNumber?: string;
-  visaType?: string; // e.g. Tourist, Business, Medical, E-Visa
+  visaType?: 'Tourist' | 'Business' | 'Medical' | 'E-Visa' | 'Employment' | 'Student' | 'Transit' | 'Other';
   visaPlaceIssue?: string;
   visaIssueDate?: string;
   visaExpiry?: string;
 
-  arrivedFrom?: string; // Last destination
+  // India Entry Details
   arrivalDateIndia?: string; // Date of entry into India
-  arrivalPort?: string; // e.g. DEL, BOM
-  nextDestination?: string;
-  purposeOfVisit?: string;
+  arrivalPort?: string; // Port of Entry (e.g., DEL, BOM, CCU)
 
+  // Next Destination (after leaving hotel)
+  nextDestination?: string; // Specific address or city
+
+  // Contact in India
+  contactInIndiaName?: string; // Local reference name
+  contactInIndiaPhone?: string; // Local reference phone
+  contactInIndiaAddress?: string; // Local reference address
+
+  // Form C Submission Status
   isFormCSubmitted?: boolean;
+  formCSubmissionDate?: string;
 
-  // Scanned Document
+  // ========== Scanned Documents ==========
   idImage?: string;
   idImageBack?: string;
   visaPage?: string;
+  additionalDocs?: string[];
+}
+
+
+export interface Payment {
+  id: string;
+  amount: number;
+  method: 'Cash' | 'UPI' | 'Card';
+  timestamp: string;
+  category: 'Room' | 'Folio' | 'Extra' | 'Partial';
+  description?: string;
+  status: 'Completed' | 'Refunded' | 'Cancelled';
 }
 
 export interface FolioItem {
@@ -99,6 +154,9 @@ export interface FolioItem {
   amount: number;
   category: 'F&B' | 'Laundry' | 'Room' | 'Other';
   timestamp: string;
+  isPaid?: boolean;
+  paymentMethod?: string;
+  paymentId?: string; // Link to a Payment record if paid
 }
 
 export interface Booking {
@@ -123,7 +181,9 @@ export interface Booking {
   extraBeds?: number;
   specialRequests?: string;
   isVIP?: boolean;
+  isSettled?: boolean;
   folio?: FolioItem[];
+  payments?: Payment[];
 }
 
 export interface RateSyncEvent {

@@ -1,6 +1,22 @@
-import { Hotel, RoomType, OTAConnection, RateRulesConfig, Booking } from './types';
+import { Hotel, RoomType, OTAConnection, RateRulesConfig, Booking, PropertySettings } from './types';
 
 const API_BASE = '/api';
+
+export const fetchPropertySettings = async (): Promise<PropertySettings> => {
+    const response = await fetch(`${API_BASE}/property`);
+    if (!response.ok) throw new Error('Failed to fetch property settings');
+    return response.json();
+};
+
+export const updatePropertySettings = async (settings: PropertySettings): Promise<PropertySettings> => {
+    const response = await fetch(`${API_BASE}/property`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+    });
+    if (!response.ok) throw new Error('Failed to update property settings');
+    return response.json();
+};
 
 export const fetchHotels = async (): Promise<Hotel[]> => {
     const response = await fetch(`${API_BASE}/hotels`);
@@ -12,6 +28,33 @@ export const fetchRoomTypes = async (): Promise<RoomType[]> => {
     const response = await fetch(`${API_BASE}/room-types`);
     if (!response.ok) throw new Error('Failed to fetch room types');
     return response.json();
+};
+export const createRoomType = async (roomType: RoomType): Promise<RoomType> => {
+    const response = await fetch(`${API_BASE}/room-types`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(roomType)
+    });
+    if (!response.ok) throw new Error('Failed to create room type');
+    return response.json();
+};
+export const updateRoomType = async (rtId: string, roomType: RoomType): Promise<RoomType> => {
+    const response = await fetch(`${API_BASE}/room-types/${rtId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(roomType)
+    });
+    if (!response.ok) throw new Error('Failed to update room type');
+    return response.json();
+};
+export const deleteRoomType = async (rtId: string): Promise<void> => {
+    const response = await fetch(`${API_BASE}/room-types/${rtId}`, {
+        method: 'DELETE'
+    });
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to delete room type');
+    }
 };
 
 export const fetchConnections = async (): Promise<OTAConnection[]> => {
@@ -37,7 +80,10 @@ export const createBulkBookings = async (bookings: Booking[]): Promise<Booking[]
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bookings)
     });
-    if (!response.ok) throw new Error('Failed to create bulk bookings');
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to create bulk bookings');
+    }
     return response.json();
 };
 
@@ -74,5 +120,24 @@ export const transferBooking = async (bookingId: string, transferData: {
         body: JSON.stringify(transferData)
     });
     if (!response.ok) throw new Error('Failed to transfer room');
+    return response.json();
+};
+
+export const lookupGuest = async (name?: string, phone?: string): Promise<any> => {
+    const params = new URLSearchParams();
+    if (name) params.append('name', name);
+    if (phone) params.append('phone', phone);
+    const response = await fetch(`${API_BASE}/guest/lookup?${params.toString()}`);
+    if (!response.ok) return null;
+    return response.json();
+};
+
+export const fetchGuestHistory = async (name: string, phone?: string, excludeBookingId?: string): Promise<Booking[]> => {
+    const params = new URLSearchParams();
+    params.append('name', name);
+    if (phone) params.append('phone', phone);
+    if (excludeBookingId) params.append('exclude_booking_id', excludeBookingId);
+    const response = await fetch(`${API_BASE}/guest/history?${params.toString()}`);
+    if (!response.ok) return [];
     return response.json();
 };

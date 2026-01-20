@@ -1,21 +1,34 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Plus, Minus, Calendar, Bed, User, ArrowRight, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { RoomType, Booking, SyncEvent } from '../types';
+import { X, Plus, Minus, Calendar, Bed, User, ArrowRight, CheckCircle2, AlertTriangle, Search, Smartphone, Mail, Sparkles, RotateCcw } from 'lucide-react';
+import { RoomType, Booking, SyncEvent, GuestDetails } from '../types';
+import { lookupGuest } from '../api';
 
 interface NewBookingModalProps {
     isOpen: boolean;
     onClose: () => void;
     roomTypes: RoomType[];
     syncEvents: SyncEvent[];
-    onCreateBookings: (data: { guestName: string, rooms: Array<{ roomTypeId: string, checkIn: string, checkOut: string }> }) => void;
+    onCreateBookings: (data: {
+        guestName: string,
+        phoneNumber?: string,
+        email?: string,
+        guestDetails?: Partial<GuestDetails>,
+        rooms: Array<{ roomTypeId: string, checkIn: string, checkOut: string }>
+    }) => void;
+    prefill?: { checkIn: string; roomTypeId: string } | null;
 }
 
-const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, roomTypes, syncEvents, onCreateBookings }) => {
+const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, roomTypes, syncEvents, onCreateBookings, prefill }) => {
     const [step, setStep] = useState(1);
     const [guestName, setGuestName] = useState('');
+    const [phoneNumber, setPhoneNumber] = useState('');
+    const [email, setEmail] = useState('');
     const [roomCount, setRoomCount] = useState(1);
     const [roomDetails, setRoomDetails] = useState<Array<{ tempId: number, roomTypeId: string, checkIn: string, checkOut: string }>>([]);
+    const [foundGuest, setFoundGuest] = useState<any>(null);
+    const [isSearching, setIsSearching] = useState(false);
+    const [guestDetails, setGuestDetails] = useState<Partial<GuestDetails> | null>(null);
 
     const today = new Date().toISOString().split('T')[0];
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
@@ -24,20 +37,84 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, room
         if (isOpen) {
             setStep(1);
             setGuestName('');
+            setPhoneNumber('');
+            setEmail('');
             setRoomCount(1);
+            setFoundGuest(null);
+            setGuestDetails(null);
         }
     }, [isOpen]);
+
+    const handlePhoneLookup = async () => {
+        if (phoneNumber.length < 4) return; // Allow shorter phone numbers
+        setIsSearching(true);
+        try {
+            const data = await lookupGuest(undefined, phoneNumber);
+            // API now returns an array
+            if (Array.isArray(data) && data.length > 0) {
+                setFoundGuest(data);
+            } else {
+                setFoundGuest(null);
+            }
+        } catch (err) {
+            console.error("Lookup failed", err);
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
+    const applyGuestDetails = (guest: any) => {
+        if (!guest) return;
+        setGuestName(guest.name || '');
+        setPhoneNumber(guest.phone_number || phoneNumber);
+        setEmail(guest.email || '');
+        setGuestDetails({
+            name: guest.name,
+            phoneNumber: guest.phone_number || phoneNumber,
+            email: guest.email,
+            idType: guest.idType,
+            idNumber: guest.idNumber,
+            address: guest.address,
+            dob: guest.dob,
+            nationality: guest.nationality || 'Indian',
+            gender: guest.gender || 'Male',
+            passportNumber: guest.passportNumber,
+            passportPlaceIssue: guest.passportPlaceIssue,
+            passportIssueDate: guest.passportIssueDate,
+            passportExpiry: guest.passportExpiry,
+            visaNumber: guest.visaNumber,
+            visaType: guest.visaType,
+            visaPlaceIssue: guest.visaPlaceIssue,
+            visaIssueDate: guest.visaIssueDate,
+            visaExpiry: guest.visaExpiry,
+            arrivedFrom: guest.arrivedFrom,
+            arrivalDateIndia: guest.arrivalDateIndia,
+            arrivalPort: guest.arrivalPort,
+            nextDestination: guest.nextDestination,
+            purposeOfVisit: guest.purposeOfVisit,
+            idImage: guest.idImage,
+            idImageBack: guest.idImageBack,
+            visaPage: guest.visaPage
+        });
+        setFoundGuest(null);
+    };
 
     const handleNext = () => {
         if (!guestName.trim()) return;
 
         // Initialize room details based on count
-        const initialDetails = Array.from({ length: roomCount }, (_, i) => ({
-            tempId: i,
-            roomTypeId: roomTypes[0]?.id || '',
-            checkIn: today,
-            checkOut: tomorrow
-        }));
+        const initialDetails = Array.from({ length: roomCount }, (_, i) => {
+            const checkInDate = prefill?.checkIn || today;
+            const nextDay = new Date(checkInDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+
+            return {
+                tempId: i,
+                roomTypeId: prefill?.roomTypeId || roomTypes[0]?.id || '',
+                checkIn: checkInDate,
+                checkOut: nextDay.toISOString().split('T')[0]
+            };
+        });
         setRoomDetails(initialDetails);
         setStep(2);
     };
@@ -106,6 +183,9 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, room
 
         onCreateBookings({
             guestName,
+            phoneNumber,
+            email,
+            guestDetails: guestDetails || undefined,
             rooms: roomDetails.map(({ roomTypeId, checkIn, checkOut }) => ({ roomTypeId, checkIn, checkOut }))
         });
         onClose();
@@ -136,6 +216,42 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, room
                 <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
                     {step === 1 ? (
                         <div className="space-y-8 py-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-3">
+                                    <label className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                                        <Smartphone className="w-4 h-4 text-indigo-500" /> Phone Number
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            type="tel"
+                                            placeholder="Mobile number..."
+                                            value={phoneNumber}
+                                            onChange={e => setPhoneNumber(e.target.value)}
+                                            onBlur={handlePhoneLookup}
+                                            className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-lg font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-indigo-50/10 transition-all placeholder:text-slate-300"
+                                        />
+                                        {isSearching && (
+                                            <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                                                <Search className="w-5 h-5 text-indigo-400 animate-pulse" />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <label className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                                        <Mail className="w-4 h-4 text-indigo-500" /> Email Address
+                                    </label>
+                                    <input
+                                        type="email"
+                                        placeholder="Email (optional)..."
+                                        value={email}
+                                        onChange={e => setEmail(e.target.value)}
+                                        className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-lg font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-indigo-50/10 transition-all placeholder:text-slate-300"
+                                    />
+                                </div>
+                            </div>
+
                             <div className="space-y-3">
                                 <label className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
                                     <User className="w-4 h-4 text-indigo-500" /> Primary Guest Name
@@ -146,9 +262,60 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, room
                                     value={guestName}
                                     onChange={e => setGuestName(e.target.value)}
                                     className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-lg font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-indigo-50/10 transition-all placeholder:text-slate-300"
-                                    autoFocus
                                 />
                             </div>
+
+                            {foundGuest && Array.isArray(foundGuest) && foundGuest.length > 0 && (
+                                <div className="space-y-4 animate-in zoom-in-95 duration-300">
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs font-black text-indigo-600 uppercase tracking-[0.2em]">
+                                            {foundGuest.length} Guest{foundGuest.length > 1 ? 's' : ''} Found
+                                        </p>
+                                        <button
+                                            onClick={() => setFoundGuest(null)}
+                                            className="text-[10px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest flex items-center gap-1"
+                                        >
+                                            <RotateCcw className="w-3 h-3" /> Clear
+                                        </button>
+                                    </div>
+                                    <div className="space-y-3 max-h-[240px] overflow-y-auto custom-scrollbar">
+                                        {foundGuest.map((guest: any, idx: number) => (
+                                            <div
+                                                key={guest.id || idx}
+                                                className="p-5 bg-indigo-600 rounded-2xl text-white shadow-xl relative overflow-hidden group hover:bg-indigo-700 transition-all cursor-pointer"
+                                                onClick={() => applyGuestDetails(guest)}
+                                            >
+                                                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                                    <Sparkles className="w-16 h-16" />
+                                                </div>
+                                                <div className="relative z-10 flex items-center justify-between">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="p-2.5 bg-white/20 rounded-xl backdrop-blur-md">
+                                                            <User className="w-6 h-6" />
+                                                        </div>
+                                                        <div>
+                                                            <h3 className="text-lg font-black truncate max-w-[200px]">{guest.name}</h3>
+                                                            <div className="flex items-center gap-3 mt-0.5">
+                                                                <p className="text-[10px] font-bold opacity-70">
+                                                                    {guest.idType}: {guest.idNumber ? `••••${guest.idNumber.slice(-4)}` : 'Verified'}
+                                                                </p>
+                                                                {guest.lastCheckIn && (
+                                                                    <p className="text-[10px] font-bold opacity-50">
+                                                                        Last: {guest.lastCheckIn}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="px-4 py-2 bg-white text-indigo-600 rounded-lg text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        Select
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="space-y-4">
                                 <label className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">

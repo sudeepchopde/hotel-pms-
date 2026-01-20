@@ -1,6 +1,14 @@
 from typing import List, Optional, Dict, Union, Literal
 from pydantic import BaseModel
 
+class PropertySettings(BaseModel):
+    name: str
+    address: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    gstNumber: Optional[str] = None
+    gstRate: float = 12.0
+
 class WeeklyRule(BaseModel):
     isActive: bool
     activeDays: List[int]
@@ -75,7 +83,19 @@ class GuestDetails(BaseModel):
     arrivalPort: Optional[str] = None
     nextDestination: Optional[str] = None
     purposeOfVisit: Optional[str] = None
+    serialNumber: Optional[int] = None
+    fatherOrHusbandName: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pinCode: Optional[str] = None
+    country: Optional[str] = None
+    arrivalTime: Optional[str] = None
+    departureTime: Optional[str] = None
+    signature: Optional[str] = None
     isFormCSubmitted: Optional[bool] = None
+    idImage: Optional[str] = None
+    idImageBack: Optional[str] = None
+    visaPage: Optional[str] = None
 
 class FolioItem(BaseModel):
     id: str
@@ -83,6 +103,18 @@ class FolioItem(BaseModel):
     amount: float
     category: Literal['F&B', 'Laundry', 'Room', 'Other']
     timestamp: str
+    isPaid: Optional[bool] = False
+    paymentMethod: Optional[str] = None
+    paymentId: Optional[str] = None
+
+class Payment(BaseModel):
+    id: str
+    amount: float
+    method: Literal['Cash', 'UPI', 'Card']
+    timestamp: str
+    category: Literal['Room', 'Folio', 'Extra', 'Partial']
+    description: Optional[str] = None
+    status: Literal['Completed', 'Refunded', 'Cancelled']
 
 class Booking(BaseModel):
     id: str
@@ -105,7 +137,9 @@ class Booking(BaseModel):
     extraBeds: Optional[int] = None
     specialRequests: Optional[str] = None
     isVIP: Optional[bool] = None
+    isSettled: Optional[bool] = None
     folio: Optional[List[FolioItem]] = None
+    payments: Optional[List[Payment]] = None
 class RoomTransferRequest(BaseModel):
     bookingId: str
     newRoomTypeId: str
@@ -113,3 +147,15 @@ class RoomTransferRequest(BaseModel):
     effectiveDate: str
     keepRate: bool
     transferFolio: bool
+
+class GuestProfile(BaseModel):
+    id: Optional[int] = None
+    name: str
+    phoneNumber: str
+    idType: Optional[str] = None
+    idNumber: Optional[str] = None
+    address: Optional[str] = None
+    dob: Optional[str] = None
+    nationality: Optional[str] = None
+    preferences: Optional[str] = None
+    lastCheckIn: Optional[str] = None

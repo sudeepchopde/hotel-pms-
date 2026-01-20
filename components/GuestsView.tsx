@@ -32,23 +32,74 @@ const GuestsView: React.FC<GuestsViewProps> = ({ syncEvents, setSyncEvents, room
   const [searchQuery, setSearchQuery] = useState('');
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+
+  const INITIAL_FILTERS = {
+    status: [] as string[],
+    roomTypeId: [] as string[],
+    source: [] as string[],
+    isVIP: null as boolean | null,
+    nationality: 'All' as 'All' | 'Indian' | 'Foreigner',
+    isSettled: null as boolean | null,
+    startDate: '',
+    endDate: ''
+  };
+
+  const [filters, setFilters] = useState(INITIAL_FILTERS);
 
   const guestList = useMemo(() => {
     return (syncEvents.filter(e => e.type === 'booking') as Booking[])
       .sort((a, b) => b.timestamp - a.timestamp); // Sort by date booked descending
   }, [syncEvents]);
 
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.status.length > 0) count++;
+    if (filters.roomTypeId.length > 0) count++;
+    if (filters.source.length > 0) count++;
+    if (filters.isVIP !== null) count++;
+    if (filters.nationality !== 'All') count++;
+    if (filters.isSettled !== null) count++;
+    if (filters.startDate || filters.endDate) count++;
+    return count;
+  }, [filters]);
+
   const filteredGuests = useMemo(() => {
-    if (!searchQuery) return guestList;
-    const query = searchQuery.toLowerCase();
-    return guestList.filter(g =>
-      g.guestName.toLowerCase().includes(query) ||
-      g.guestDetails?.email?.toLowerCase().includes(query) ||
-      g.guestDetails?.phoneNumber?.includes(query) ||
-      g.id.includes(query) ||
-      g.roomNumber?.toLowerCase().includes(query)
-    );
-  }, [guestList, searchQuery]);
+    return guestList.filter(g => {
+      // Search logic
+      const query = searchQuery.toLowerCase();
+      const matchesSearch = !searchQuery || (
+        g.guestName.toLowerCase().includes(query) ||
+        g.guestDetails?.email?.toLowerCase().includes(query) ||
+        g.guestDetails?.phoneNumber?.includes(query) ||
+        g.id.includes(query) ||
+        g.roomNumber?.toLowerCase().includes(query)
+      );
+
+      if (!matchesSearch) return false;
+
+      // Filter logic
+      if (filters.status.length > 0 && !filters.status.includes(g.status)) return false;
+      if (filters.roomTypeId.length > 0 && !filters.roomTypeId.includes(g.roomTypeId)) return false;
+      if (filters.source.length > 0 && !filters.source.includes(g.source)) return false;
+      if (filters.isVIP !== null && g.isVIP !== filters.isVIP) return false;
+      if (filters.isSettled !== null && g.isSettled !== filters.isSettled) return false;
+
+      if (filters.nationality === 'Indian') {
+        const nat = (g.guestDetails?.nationality || 'Indian').toLowerCase();
+        if (nat !== 'indian') return false;
+      } else if (filters.nationality === 'Foreigner') {
+        const nat = (g.guestDetails?.nationality || 'Indian').toLowerCase();
+        if (nat === 'indian') return false;
+      }
+
+      // Date Range Filter logic
+      if (filters.startDate && g.checkIn < filters.startDate) return false;
+      if (filters.endDate && g.checkOut > filters.endDate) return false;
+
+      return true;
+    });
+  }, [guestList, searchQuery, filters]);
 
   // Sync selectedBooking state with syncEvents when external updates happen
   useEffect(() => {
@@ -143,7 +194,7 @@ const GuestsView: React.FC<GuestsViewProps> = ({ syncEvents, setSyncEvents, room
           <p className="text-slate-500 mt-1 font-medium">Full historical archive with room-specific attribution and accessory guest details.</p>
         </div>
 
-        <div className="flex items-center gap-4 w-full md:w-auto">
+        <div className="flex items-center gap-4 w-full md:w-auto relative">
           <div className="relative flex-1 md:w-80">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -154,9 +205,183 @@ const GuestsView: React.FC<GuestsViewProps> = ({ syncEvents, setSyncEvents, room
               className="w-full pl-11 pr-4 py-3 bg-white border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-800 focus:border-indigo-500 transition-all outline-none shadow-sm"
             />
           </div>
-          <button className="p-3 bg-white border-2 border-slate-100 text-slate-500 rounded-2xl hover:bg-slate-50 transition-all shadow-sm">
-            <Filter className="w-5 h-5" />
+          <button
+            onClick={() => setIsFilterOpen(!isFilterOpen)}
+            className={`p-3 bg-white border-2 rounded-2xl transition-all shadow-sm relative ${activeFilterCount > 0 ? 'border-indigo-500 text-indigo-600 bg-indigo-50' : 'border-slate-100 text-slate-500 hover:bg-slate-50'}`}
+          >
+            <Filter className="w-5 h-5 focus:outline-none" />
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-2 -right-2 bg-indigo-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-md animate-in zoom-in">
+                {activeFilterCount}
+              </span>
+            )}
           </button>
+
+          {isFilterOpen && (
+            <div className="absolute right-0 top-full mt-4 w-[380px] bg-white rounded-[2rem] shadow-2xl border border-slate-100 z-[100] p-6 animate-in slide-in-from-top-4 duration-300">
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Global Filters</h4>
+                <button
+                  onClick={() => setFilters(INITIAL_FILTERS)}
+                  className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 uppercase tracking-widest transition-colors"
+                >
+                  Clear All
+                </button>
+              </div>
+
+              <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                {/* Status Filter */}
+                <div className="space-y-3">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Booking Status</span>
+                  <div className="flex flex-wrap gap-2">
+                    {STATUS_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        onClick={() => {
+                          const next = filters.status.includes(opt.value)
+                            ? filters.status.filter(s => s !== opt.value)
+                            : [...filters.status, opt.value];
+                          setFilters({ ...filters, status: next });
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 transition-all ${filters.status.includes(opt.value) ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white border-slate-100 text-slate-500 hover:border-indigo-200'}`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Room Category Filter */}
+                <div className="space-y-3">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Room Category</span>
+                  <div className="flex flex-wrap gap-2">
+                    {roomTypes.map(rt => (
+                      <button
+                        key={rt.id}
+                        onClick={() => {
+                          const next = filters.roomTypeId.includes(rt.id)
+                            ? filters.roomTypeId.filter(id => id !== rt.id)
+                            : [...filters.roomTypeId, rt.id];
+                          setFilters({ ...filters, roomTypeId: next });
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 transition-all ${filters.roomTypeId.includes(rt.id) ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white border-slate-100 text-slate-500 hover:border-indigo-200'}`}
+                      >
+                        {rt.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Booking Source */}
+                <div className="space-y-3">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Booking Source</span>
+                  <div className="flex flex-wrap gap-2">
+                    {['Direct', 'MMT', 'Booking.com', 'Expedia'].map(src => (
+                      <button
+                        key={src}
+                        onClick={() => {
+                          const next = filters.source.includes(src)
+                            ? filters.source.filter(s => s !== src)
+                            : [...filters.source, src];
+                          setFilters({ ...filters, source: next });
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 transition-all ${filters.source.includes(src) ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white border-slate-100 text-slate-500 hover:border-indigo-200'}`}
+                      >
+                        {src}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* VIP Status */}
+                  <div className="space-y-3">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">VIP Status</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setFilters({ ...filters, isVIP: filters.isVIP === true ? null : true })}
+                        className={`flex-1 py-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 ${filters.isVIP === true ? 'bg-violet-600 border-violet-600 text-white shadow-lg shadow-violet-200' : 'bg-white border-slate-100 text-slate-500 hover:border-violet-200'}`}
+                      >
+                        <Star className={`w-5 h-5 ${filters.isVIP === true ? 'fill-white' : ''}`} />
+                        <span className="text-[9px] font-black uppercase tracking-widest">VIP Only</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Payment Status */}
+                  <div className="space-y-3">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Folio Status</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setFilters({ ...filters, isSettled: filters.isSettled === true ? null : true })}
+                        className={`flex-1 py-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 ${filters.isSettled === true ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-200' : 'bg-white border-slate-100 text-slate-500 hover:border-emerald-200'}`}
+                      >
+                        <CreditCard className="w-5 h-5" />
+                        <span className="text-[9px] font-black uppercase tracking-widest">Settled</span>
+                      </button>
+                      <button
+                        onClick={() => setFilters({ ...filters, isSettled: filters.isSettled === false ? null : false })}
+                        className={`flex-1 py-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 ${filters.isSettled === false ? 'bg-rose-600 border-rose-600 text-white shadow-lg shadow-rose-200' : 'bg-white border-slate-100 text-slate-500 hover:border-rose-200'}`}
+                      >
+                        <ShieldAlert className="w-5 h-5" />
+                        <span className="text-[9px] font-black uppercase tracking-widest">Due</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Nationality */}
+                <div className="space-y-3">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Nationality</span>
+                  <div className="flex p-1 bg-slate-50 rounded-2xl">
+                    {['All', 'Indian', 'Foreigner'].map(nat => (
+                      <button
+                        key={nat}
+                        onClick={() => setFilters({ ...filters, nationality: nat as any })}
+                        className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filters.nationality === nat ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                      >
+                        {nat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Date Range Filter */}
+                <div className="space-y-3">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Stay Period Range</span>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-bold text-slate-400 uppercase tracking-wider ml-1">From Arrival</label>
+                      <input
+                        type="date"
+                        value={filters.startDate}
+                        onChange={e => setFilters({ ...filters, startDate: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-50 border-2 border-slate-100 rounded-xl text-[10px] font-black text-slate-800 outline-none focus:border-indigo-400 shadow-inner"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-bold text-slate-400 uppercase tracking-wider ml-1">To Departure</label>
+                      <input
+                        type="date"
+                        value={filters.endDate}
+                        onChange={e => setFilters({ ...filters, endDate: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-50 border-2 border-slate-100 rounded-xl text-[10px] font-black text-slate-800 outline-none focus:border-indigo-400 shadow-inner"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-8 pt-6 border-t border-slate-100 flex gap-4">
+                <button
+                  onClick={() => setIsFilterOpen(false)}
+                  className="flex-1 py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-black transition-all shadow-xl"
+                >
+                  Apply Filters
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 

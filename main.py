@@ -2,14 +2,15 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from backend.models import Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest
+from backend.models import Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest, PropertySettings
 
 # Database Connection Logic
 USE_DATABASE = False
 
 try:
     from backend.database import get_db as get_db_real
-    from backend.db_models import HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, RateRulesDB
+    from backend.db_models import HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, RateRulesDB, GuestProfileDB, PropertySettingsDB
+    from backend.models import Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest, GuestProfile, PropertySettings
     
     # Test connection
     from backend.database import engine
@@ -84,6 +85,15 @@ FALLBACK_RULES = RateRulesConfig(
     ]
 )
 
+FALLBACK_PROPERTY = PropertySettings(
+    name='Hotel Satsangi',
+    address='Satsang Nagar, Deoghar, Jharkhand 814112',
+    phone='+91 98765 43210',
+    email='contact@hotelsatsangi.com',
+    gstNumber='20ABCDE1234F1Z5',
+    gstRate=12.0
+)
+
 FALLBACK_BOOKINGS: List[Booking] = []
 
 # --- Converters ---
@@ -112,6 +122,21 @@ if USE_DATABASE:
         )
 
     def db_booking_to_pydantic(db_booking) -> Booking:
+        # Handle potentially malformed JSON fields
+        def safe_json_list(value):
+            if value is None:
+                return []
+            if isinstance(value, list):
+                return value
+            if isinstance(value, str):
+                import json
+                try:
+                    parsed = json.loads(value)
+                    return parsed if isinstance(parsed, list) else []
+                except:
+                    return []
+            return []
+        
         return Booking(
             id=db_booking.id,
             roomTypeId=db_booking.room_type_id,
@@ -129,11 +154,12 @@ if USE_DATABASE:
             guestDetails=db_booking.guest_details,
             numberOfRooms=db_booking.number_of_rooms,
             pax=db_booking.pax,
-            accessoryGuests=db_booking.accessory_guests or [],
+            accessoryGuests=safe_json_list(db_booking.accessory_guests),
             extraBeds=db_booking.extra_beds,
             specialRequests=db_booking.special_requests,
             isVIP=db_booking.is_vip,
-            folio=db_booking.folio
+            folio=safe_json_list(db_booking.folio),
+            payments=safe_json_list(db_booking.payments)
         )
 
     def db_connection_to_pydantic(db_conn) -> OTAConnection:
@@ -156,6 +182,16 @@ if USE_DATABASE:
             specialEvents=db_rules.special_events or []
         )
 
+    def db_property_to_pydantic(db_prop) -> PropertySettings:
+        return PropertySettings(
+            name=db_prop.name,
+            address=db_prop.address,
+            phone=db_prop.phone,
+            email=db_prop.email,
+            gstNumber=db_prop.gst_number,
+            gstRate=db_prop.gst_rate
+        )
+
 @app.get("/")
 def read_root():
     return {"message": "SyncGuard PMS API", "database": "connected" if USE_DATABASE else "fallback"}
@@ -174,6 +210,75 @@ def get_room_types(db=Depends(get_db)):
         return [db_room_type_to_pydantic(rt) for rt in room_types]
     return FALLBACK_ROOM_TYPES
 
+@app.post("/api/room-types", response_model=RoomType)
+def create_room_type(room_type: RoomType, db=Depends(get_db)):
+    if USE_DATABASE and db:
+        db_room = RoomTypeDB(
+            id=room_type.id,
+            name=room_type.name,
+            total_capacity=room_type.totalCapacity,
+            base_price=room_type.basePrice,
+            floor_price=room_type.floorPrice,
+            ceiling_price=room_type.ceilingPrice,
+            base_occupancy=room_type.baseOccupancy,
+            amenities=room_type.amenities or [],
+            room_numbers=room_type.roomNumbers or [],
+            extra_bed_charge=room_type.extraBedCharge
+        )
+        db.add(db_room)
+        db.commit()
+        db.refresh(db_room)
+        return db_room_type_to_pydantic(db_room)
+    FALLBACK_ROOM_TYPES.append(room_type)
+    return room_type
+
+@app.put("/api/room-types/{rt_id}", response_model=RoomType)
+def update_room_type(rt_id: str, room_type: RoomType, db=Depends(get_db)):
+    if USE_DATABASE and db:
+        db_room = db.query(RoomTypeDB).filter(RoomTypeDB.id == rt_id).first()
+        if not db_room:
+            raise HTTPException(status_code=404, detail="Room Type not found")
+        
+        db_room.name = room_type.name
+        db_room.total_capacity = room_type.totalCapacity
+        db_room.base_price = room_type.basePrice
+        db_room.floor_price = room_type.floorPrice
+        db_room.ceiling_price = room_type.ceilingPrice
+        db_room.base_occupancy = room_type.baseOccupancy
+        db_room.amenities = room_type.amenities or []
+        db_room.room_numbers = room_type.roomNumbers or []
+        db_room.extra_bed_charge = room_type.extraBedCharge
+        
+        db.commit()
+        db.refresh(db_room)
+        return db_room_type_to_pydantic(db_room)
+    
+    for i, rt in enumerate(FALLBACK_ROOM_TYPES):
+        if rt.id == rt_id:
+            FALLBACK_ROOM_TYPES[i] = room_type
+            return room_type
+    raise HTTPException(status_code=404, detail="Room Type not found")
+
+@app.delete("/api/room-types/{rt_id}")
+def delete_room_type(rt_id: str, db=Depends(get_db)):
+    if USE_DATABASE and db:
+        db_room = db.query(RoomTypeDB).filter(RoomTypeDB.id == rt_id).first()
+        if not db_room:
+            raise HTTPException(status_code=404, detail="Room Type not found")
+        
+        # Check if there are bookings for this room type
+        bookings_count = db.query(BookingDB).filter(BookingDB.room_type_id == rt_id).count()
+        if bookings_count > 0:
+            raise HTTPException(status_code=400, detail="Cannot delete room type with existing bookings")
+            
+        db.delete(db_room)
+        db.commit()
+        return {"status": "success"}
+    
+    global FALLBACK_ROOM_TYPES
+    FALLBACK_ROOM_TYPES = [rt for rt in FALLBACK_ROOM_TYPES if rt.id != rt_id]
+    return {"status": "success"}
+
 @app.get("/api/connections", response_model=List[OTAConnection])
 def get_connections(db=Depends(get_db)):
     if USE_DATABASE and db:
@@ -189,6 +294,109 @@ def get_rules(db=Depends(get_db)):
             return FALLBACK_RULES
         return db_rules_to_pydantic(rules)
     return FALLBACK_RULES
+
+@app.get("/api/property", response_model=PropertySettings)
+def get_property_settings(db=Depends(get_db)):
+    if USE_DATABASE and db:
+        prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
+        if not prop:
+            return FALLBACK_PROPERTY
+        return db_property_to_pydantic(prop)
+    return FALLBACK_PROPERTY
+
+@app.put("/api/property", response_model=PropertySettings)
+def update_property_settings(settings: PropertySettings, db=Depends(get_db)):
+    if USE_DATABASE and db:
+        prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
+        if not prop:
+            prop = PropertySettingsDB(id="default")
+            db.add(prop)
+        
+        prop.name = settings.name
+        prop.address = settings.address
+        prop.phone = settings.phone
+        prop.email = settings.email
+        prop.gst_number = settings.gstNumber
+        prop.gst_rate = settings.gstRate
+        
+        db.commit()
+        db.refresh(prop)
+        return db_property_to_pydantic(prop)
+    
+    # Fallback update not persisted globally for simplicity in fallback mode
+    return settings
+
+@app.get("/api/guest/lookup")
+def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, db=Depends(get_db)):
+    if USE_DATABASE and db:
+        query = db.query(GuestProfileDB)
+        if name:
+            query = query.filter(GuestProfileDB.name.ilike(f"%{name}%"))
+        if phone:
+            query = query.filter(GuestProfileDB.phone_number == phone)
+        
+        profiles = query.order_by(GuestProfileDB.last_check_in.desc()).all()
+        
+        if profiles:
+            results = []
+            for profile in profiles:
+                results.append({
+                    "id": profile.id,
+                    "name": profile.name,
+                    "phone_number": profile.phone_number,
+                    "email": profile.email,
+                    "idType": profile.id_type,
+                    "idNumber": profile.id_number,
+                    "address": profile.address,
+                    "dob": profile.dob,
+                    "nationality": profile.nationality,
+                    "preferences": profile.preferences,
+                    "gender": profile.gender,
+                    "passportNumber": profile.passport_number,
+                    "passportPlaceIssue": profile.passport_place_issue,
+                    "passportIssueDate": profile.passport_issue_date,
+                    "passportExpiry": profile.passport_expiry,
+                    "visaNumber": profile.visa_number,
+                    "visaType": profile.visa_type,
+                    "visaPlaceIssue": profile.visa_place_issue,
+                    "visaIssueDate": profile.visa_issue_date,
+                    "visaExpiry": profile.visa_expiry,
+                    "arrivedFrom": profile.arrived_from,
+                    "arrivalDateIndia": profile.arrival_date_india,
+                    "arrivalPort": profile.arrival_port,
+                    "nextDestination": profile.next_destination,
+                    "purposeOfVisit": profile.purpose_of_visit,
+                    "idImage": profile.id_image,
+                    "idImageBack": profile.id_image_back,
+                    "visaPage": profile.visa_page,
+                    "serialNumber": profile.serial_number,
+                    "fatherOrHusbandName": profile.father_or_husband_name,
+                    "city": profile.city,
+                    "state": profile.state,
+                    "pinCode": profile.pin_code,
+                    "country": profile.country,
+                    "arrivalTime": profile.arrival_time,
+                    "departureTime": profile.departure_time,
+                    "signature": profile.signature,
+                    "lastCheckIn": profile.last_check_in
+                })
+            return results
+    return []
+    
+@app.get("/api/guest/history")
+def get_guest_history(name: str, phone: Optional[str] = None, exclude_booking_id: Optional[str] = None, db=Depends(get_db)):
+    if USE_DATABASE and db:
+        query = db.query(BookingDB).filter(BookingDB.guest_name == name)
+        
+        # If phone is provided, it's safer to match by it too if we can find it in guest_details
+        # But for history, name matching is the standard first step.
+        
+        if exclude_booking_id:
+            query = query.filter(BookingDB.id != exclude_booking_id)
+            
+        history = query.order_by(BookingDB.check_in.desc()).all()
+        return [db_booking_to_pydantic(b) for b in history]
+    return []
 
 @app.get("/api/bookings", response_model=List[Booking])
 def get_bookings(db=Depends(get_db)):
@@ -309,8 +517,98 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
         db_booking.extra_beds = booking.extraBeds
         db_booking.special_requests = booking.specialRequests
         db_booking.is_vip = booking.isVIP or False
+        db_booking.is_settled = booking.isSettled or False
         db_booking.folio = [f.dict() for f in booking.folio] if booking.folio else []
+        db_booking.payments = [p.dict() for p in booking.payments] if booking.payments else []
         
+        # Save or update guest profile whenever guest details are present
+        if booking.guestDetails and booking.guestDetails.name and booking.guestDetails.phoneNumber:
+            gd = booking.guestDetails
+            existing_profile = db.query(GuestProfileDB).filter(
+                GuestProfileDB.name == gd.name,
+                GuestProfileDB.phone_number == gd.phoneNumber
+            ).first()
+            
+            if existing_profile:
+                # Update existing profile with latest info
+                existing_profile.id_type = gd.idType
+                existing_profile.id_number = gd.idNumber
+                existing_profile.address = gd.address
+                existing_profile.dob = gd.dob
+                existing_profile.nationality = gd.nationality
+                existing_profile.gender = gd.gender
+                existing_profile.email = gd.email
+                existing_profile.id_type = gd.idType
+                existing_profile.id_number = gd.idNumber
+                existing_profile.passport_number = gd.passportNumber
+                existing_profile.passport_place_issue = gd.passportPlaceIssue
+                existing_profile.passport_issue_date = gd.passportIssueDate
+                existing_profile.passport_expiry = gd.passportExpiry
+                existing_profile.visa_number = gd.visaNumber
+                existing_profile.visa_type = gd.visaType
+                existing_profile.visa_place_issue = gd.visaPlaceIssue
+                existing_profile.visa_issue_date = gd.visaIssueDate
+                existing_profile.visa_expiry = gd.visaExpiry
+                existing_profile.arrived_from = gd.arrivedFrom
+                existing_profile.arrival_date_india = gd.arrivalDateIndia
+                existing_profile.arrival_port = gd.arrivalPort
+                existing_profile.next_destination = gd.nextDestination
+                existing_profile.purpose_of_visit = gd.purposeOfVisit
+                existing_profile.id_image = gd.idImage
+                existing_profile.id_image_back = gd.idImageBack
+                existing_profile.visa_page = gd.visaPage
+                existing_profile.serial_number = gd.serialNumber
+                existing_profile.father_or_husband_name = gd.fatherOrHusbandName
+                existing_profile.city = gd.city
+                existing_profile.state = gd.state
+                existing_profile.pin_code = gd.pinCode
+                existing_profile.country = gd.country
+                existing_profile.arrival_time = gd.arrivalTime
+                existing_profile.departure_time = gd.departureTime
+                existing_profile.signature = gd.signature
+                existing_profile.last_check_in = booking.checkIn
+            else:
+                # Create new profile
+                new_profile = GuestProfileDB(
+                    name=gd.name,
+                    phone_number=gd.phoneNumber or "",
+                    id_type=gd.idType,
+                    id_number=gd.idNumber,
+                    address=gd.address,
+                    dob=gd.dob,
+                    nationality=gd.nationality,
+                    gender=gd.gender,
+                    email=gd.email,
+                    passport_number = gd.passportNumber,
+                    passport_place_issue = gd.passportPlaceIssue,
+                    passport_issue_date = gd.passportIssueDate,
+                    passport_expiry = gd.passportExpiry,
+                    visa_number = gd.visaNumber,
+                    visa_type = gd.visaType,
+                    visa_place_issue = gd.visaPlaceIssue,
+                    visa_issue_date = gd.visaIssueDate,
+                    visa_expiry = gd.visaExpiry,
+                    arrived_from = gd.arrivedFrom,
+                    arrival_date_india = gd.arrivalDateIndia,
+                    arrival_port = gd.arrivalPort,
+                    next_destination = gd.nextDestination,
+                    purpose_of_visit = gd.purposeOfVisit,
+                    id_image = gd.idImage,
+                    id_image_back = gd.idImageBack,
+                    visa_page=gd.visaPage,
+                    serial_number=gd.serialNumber,
+                    father_or_husband_name=gd.fatherOrHusbandName,
+                    city=gd.city,
+                    state=gd.state,
+                    pin_code=gd.pinCode,
+                    country=gd.country,
+                    arrival_time=gd.arrivalTime,
+                    departure_time=gd.departureTime,
+                    signature=gd.signature,
+                    last_check_in=booking.checkIn
+                )
+                db.add(new_profile)
+
         # Since we are using BigInteger for timestamp, ensure it's an int
         import time
         db_booking.timestamp = int(time.time() * 1000)
@@ -333,24 +631,96 @@ def transfer_booking(booking_id: str, transfer: RoomTransferRequest, db=Depends(
         if not db_booking:
             raise HTTPException(status_code=404, detail="Booking not found")
         
-        # 1. Update room assignment
-        db_booking.room_type_id = transfer.newRoomTypeId
-        db_booking.room_number = transfer.newRoomNumber
+        # If effectiveDate is the same as check_in, it's a full transfer (just update room)
+        if transfer.effectiveDate == db_booking.check_in:
+            db_booking.room_type_id = transfer.newRoomTypeId
+            db_booking.room_number = transfer.newRoomNumber
+            
+            if not transfer.keepRate:
+                rt = db.query(RoomTypeDB).filter(RoomTypeDB.id == transfer.newRoomTypeId).first()
+                if rt:
+                    db_booking.amount = rt.base_price
+            
+            import time
+            db_booking.timestamp = int(time.time() * 1000)
+            db.commit()
+            db.refresh(db_booking)
+            return db_booking_to_pydantic(db_booking)
         
-        # 2. Update rate if keepRate is False
+        # Mid-stay split (Room Switch)
+        # 1. Create a new booking for the second segment
+        import uuid
+        import time
+        new_id = f"switch-{str(uuid.uuid4())[:8]}"
+        
+        # Use existing reservation_id or create one to link them
+        res_id = db_booking.reservation_id or f"res-{db_booking.id}"
+        db_booking.reservation_id = res_id
+        
+        # Calculate rates for the new booking if not keeping original rate
+        new_amount = db_booking.amount
         if not transfer.keepRate:
             rt = db.query(RoomTypeDB).filter(RoomTypeDB.id == transfer.newRoomTypeId).first()
             if rt:
-                db_booking.amount = rt.base_price
+                new_amount = rt.base_price
 
-        import time
-        db_booking.timestamp = int(time.time() * 1000)
+        # Handle folio transfer
+        new_folio = []
+        if transfer.transferFolio:
+            new_folio = db_booking.folio
+            db_booking.folio = []
+
+        new_booking = BookingDB(
+            id=new_id,
+            room_type_id=transfer.newRoomTypeId,
+            room_number=transfer.newRoomNumber,
+            guest_name=db_booking.guest_name,
+            source=db_booking.source,
+            status=db_booking.status, # Usually 'CheckedIn'
+            timestamp=int(time.time() * 1000),
+            check_in=transfer.effectiveDate,
+            check_out=db_booking.check_out,
+            amount=new_amount,
+            reservation_id=res_id,
+            folio=new_folio,
+            guest_details=db_booking.guest_details,
+            number_of_rooms=db_booking.number_of_rooms,
+            pax=db_booking.pax,
+            accessory_guests=db_booking.accessory_guests,
+            channel_sync=db_booking.channel_sync,
+            extra_beds=db_booking.extra_beds,
+            special_requests=db_booking.special_requests,
+            is_vip=db_booking.is_vip
+        )
+        
+        # 2. Update original booking's check_out date
+        db_booking.check_out = transfer.effectiveDate
+        # If it was CheckedIn, it stays CheckedIn until the effectiveDate (which is usually today)
+        # But conceptually the segment in room A is finishing.
+        # In many systems, we might set status to 'CheckedOut' for the first segment if it's completely past.
+        # For now let's keep it consistent with the transfer request.
+        
+        db.add(new_booking)
+        
+        # 3. Update guest profile with latest move if it exists
+        if db_booking.guest_details:
+            gd = db_booking.guest_details
+            # Handle if gd is a dict or a Pydantic model (depending on how it was loaded)
+            name = gd.get('name') if isinstance(gd, dict) else getattr(gd, 'name', None)
+            phone = gd.get('phoneNumber') if isinstance(gd, dict) else getattr(gd, 'phoneNumber', None)
+            
+            if name and phone:
+                profile = db.query(GuestProfileDB).filter(
+                    GuestProfileDB.name == name,
+                    GuestProfileDB.phone_number == phone
+                ).first()
+                if profile:
+                    profile.last_check_in = transfer.effectiveDate
 
         db.commit()
-        db.refresh(db_booking)
-        return db_booking_to_pydantic(db_booking)
-    
-    raise HTTPException(status_code=501, detail="Transfer not implemented for fallback storage")
+        db.refresh(new_booking)
+        
+        return db_booking_to_pydantic(new_booking)
 
 if __name__ == "__main__":
     import uvicorn

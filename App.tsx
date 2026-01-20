@@ -18,9 +18,9 @@ import {
   LayoutDashboard, FileText, Database, Settings, ShieldCheck,
   BrainCircuit, Building2, ChevronDown, Presentation, TrendingUp,
   BarChart2, FileSpreadsheet, Home, ConciergeBell, Users, FileBadge,
-  PanelLeftClose, PanelLeftOpen, ShieldAlert, AlertCircle
+  PanelLeftClose, PanelLeftOpen, ShieldAlert, AlertCircle, GripVertical
 } from 'lucide-react';
-import { Hotel, OTAConnection, RateRulesConfig, RoomType, SyncEvent, Booking, FolioItem, VerificationAttempt, RoomSecurityStatus } from './types';
+import { Hotel, OTAConnection, RateRulesConfig, RoomType, SyncEvent, Booking, FolioItem, VerificationAttempt, RoomSecurityStatus, PropertySettings } from './types';
 
 const HOTELS: Hotel[] = [
   { id: 'h-1', name: 'Hotel Satsangi', location: 'Deoghar', color: 'indigo', otaConfig: { expedia: 'active', booking: 'active', mmt: 'active' } },
@@ -44,6 +44,23 @@ const INITIAL_RULES: RateRulesConfig = {
     { id: 'ev-2', name: 'New Year Eve', startDate: '2025-12-30', endDate: '2026-01-01', modifierType: 'fixed', modifierValue: 5000 }
   ]
 };
+
+// Default navigation items configuration
+const DEFAULT_NAV_ITEMS = [
+  { id: 'flow', icon: Presentation, label: 'Flow', color: 'text-amber-300' },
+  { id: 'frontdesk', icon: ConciergeBell, label: 'Front Desk', color: 'text-rose-300' },
+  { id: 'compliance', icon: FileBadge, label: 'Police Compliance', color: 'text-amber-400' },
+  { id: 'guests', icon: Users, label: 'Guests', color: 'text-sky-300' },
+  { id: 'security', icon: ShieldAlert, label: 'Security Center', color: 'text-red-400' },
+  { id: 'setup', icon: Home, label: 'Property Setup', color: 'text-emerald-300' },
+  { id: 'dashboard', icon: LayoutDashboard, label: 'Live Inventory', color: 'text-slate-400' },
+  { id: 'analysis', icon: BarChart2, label: 'Analysis', color: 'text-blue-300' },
+  { id: 'reports', icon: FileSpreadsheet, label: 'Reports', color: 'text-teal-300' },
+  { id: 'rules', icon: TrendingUp, label: 'Revenue Rules', color: 'text-emerald-300' },
+  { id: 'intelligence', icon: BrainCircuit, label: 'AI Intelligence', color: 'text-fuchsia-300' },
+  { id: 'settings', icon: Settings, label: 'Channel Settings', color: 'text-slate-400' },
+  { id: 'blueprint', icon: FileText, label: 'Tech Blueprint', color: 'text-slate-400' }
+];
 
 const INITIAL_ROOM_TYPES: RoomType[] = [
   {
@@ -106,18 +123,98 @@ const App: React.FC = () => {
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [syncEvents, setSyncEvents] = useState<SyncEvent[]>([]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [propertySettings, setPropertySettings] = useState<PropertySettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Navigation items order state
+  const [navItems, setNavItems] = useState(DEFAULT_NAV_ITEMS);
+  const [draggedItem, setDraggedItem] = useState<string | null>(null);
+  const [dragOverItem, setDragOverItem] = useState<string | null>(null);
+
+  // Load saved navigation order from localStorage
+  useEffect(() => {
+    const savedOrder = localStorage.getItem('pms_nav_order');
+    if (savedOrder) {
+      try {
+        const orderIds = JSON.parse(savedOrder) as string[];
+        // Reconstruct nav items in saved order, adding any new items at the end
+        const orderedItems = orderIds
+          .map(id => DEFAULT_NAV_ITEMS.find(item => item.id === id))
+          .filter(Boolean) as typeof DEFAULT_NAV_ITEMS;
+        // Add any new items that weren't in saved order
+        DEFAULT_NAV_ITEMS.forEach(item => {
+          if (!orderedItems.find(i => i.id === item.id)) {
+            orderedItems.push(item);
+          }
+        });
+        setNavItems(orderedItems);
+      } catch (e) {
+        console.error('Failed to load nav order:', e);
+      }
+    }
+  }, []);
+
+  // Drag handlers for navigation reordering
+  const handleDragStart = (e: React.DragEvent, itemId: string) => {
+    setDraggedItem(itemId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', itemId);
+    // Add a slight delay to show the drag effect
+    setTimeout(() => {
+      (e.target as HTMLElement).style.opacity = '0.5';
+    }, 0);
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    (e.target as HTMLElement).style.opacity = '1';
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent, itemId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (itemId !== draggedItem) {
+      setDragOverItem(itemId);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverItem(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    if (!draggedItem || draggedItem === targetId) return;
+
+    const newItems = [...navItems];
+    const draggedIndex = newItems.findIndex(item => item.id === draggedItem);
+    const targetIndex = newItems.findIndex(item => item.id === targetId);
+
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+      // Remove dragged item and insert at target position
+      const [removed] = newItems.splice(draggedIndex, 1);
+      newItems.splice(targetIndex, 0, removed);
+      setNavItems(newItems);
+      // Save to localStorage
+      localStorage.setItem('pms_nav_order', JSON.stringify(newItems.map(i => i.id)));
+    }
+
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
 
   // Fetch Data on Load
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [hotelsData, connectionsData, rulesData, roomTypesData, bookingsData] = await Promise.all([
+        const [hotelsData, connectionsData, rulesData, roomTypesData, bookingsData, propertyData] = await Promise.all([
           import('./api').then(m => m.fetchHotels()),
           import('./api').then(m => m.fetchConnections()),
           import('./api').then(m => m.fetchRules()),
           import('./api').then(m => m.fetchRoomTypes()),
-          import('./api').then(m => m.fetchBookings())
+          import('./api').then(m => m.fetchBookings()),
+          import('./api').then(m => m.fetchPropertySettings())
         ]);
 
         setHotels(hotelsData);
@@ -128,6 +225,7 @@ const App: React.FC = () => {
         // Convert bookings to SyncEvents (assuming 'booking' type differentiation happens later or cast)
         const bookingEvents = bookingsData.map(b => ({ ...b, type: 'booking' } as SyncEvent));
         setSyncEvents(bookingEvents);
+        setPropertySettings(propertyData);
       } catch (error) {
         console.error("Failed to load initial data", error);
       } finally {
@@ -147,47 +245,51 @@ const App: React.FC = () => {
   const [guestRoomNumber, setGuestRoomNumber] = useState<string>('');
 
   useEffect(() => {
-    const handleUrlCheck = () => {
-      const params = new URLSearchParams(window.location.search);
-      let room = params.get('room');
+    const params = new URLSearchParams(window.location.search);
+    let room = params.get('room');
 
-      // If not in URL, check persisted guest session
-      if (!room) {
-        room = localStorage.getItem('guest_room_identity');
-      }
+    // If not in URL, check persisted guest session
+    if (!room) {
+      room = localStorage.getItem('guest_room_identity');
+    }
 
-      if (room) {
-        localStorage.setItem('guest_room_identity', room);
-        setIsGuestMode(true);
-        setGuestRoomNumber(room);
+    if (room) {
+      localStorage.setItem('guest_room_identity', room);
+      setIsGuestMode(true);
+      setGuestRoomNumber(room);
+    }
+  }, []);
 
-        // Ensure a dummy booking exists for the room to make verification possible in demo
-        setSyncEvents(prev => {
-          const exists = prev.some(e => e.type === 'booking' && e.roomNumber === room && e.status === 'CheckedIn');
-          if (exists) return prev;
+  // Separate effect to create dummy booking after data is loaded (non-blocking)
+  useEffect(() => {
+    if (!isGuestMode || !guestRoomNumber || isLoading) return;
 
-          const dummyBooking: Booking = {
-            id: `mock-bk-${room}`,
-            roomTypeId: 'rt-1',
-            roomNumber: room!,
-            guestName: 'Vikram Malhotra',
-            source: 'Direct',
-            status: 'CheckedIn',
-            timestamp: Date.now(),
-            checkIn: new Date().toISOString().split('T')[0],
-            checkOut: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-            amount: 4500,
-            folio: []
-          };
-          return [...prev, { ...dummyBooking, type: 'booking' } as SyncEvent];
-        });
-      }
+    // Check if a booking exists for the guest room
+    const roomNumber = guestRoomNumber;
+    const exists = syncEvents.some(e => e.type === 'booking' && e.roomNumber === roomNumber && e.status === 'CheckedIn');
+    if (exists) return;
+
+    // Create a dummy booking for demo purposes
+    const dummyBooking: Booking = {
+      id: `mock-bk-${roomNumber}`,
+      roomTypeId: 'rt-1',
+      roomNumber: roomNumber,
+      guestName: 'Vikram Malhotra',
+      source: 'Direct',
+      status: 'CheckedIn',
+      timestamp: Date.now(),
+      checkIn: new Date().toISOString().split('T')[0],
+      checkOut: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+      amount: 4500,
+      folio: [],
+      payments: []
     };
 
-    handleUrlCheck();
-    window.addEventListener('popstate', handleUrlCheck);
-    return () => window.removeEventListener('popstate', handleUrlCheck);
-  }, []);
+    setSyncEvents(prev => [...prev, { ...dummyBooking, type: 'booking' } as SyncEvent]);
+
+    // Persist dummy to backend for demo consistency (fire and forget)
+    import('./api').then(m => m.createBooking(dummyBooking)).catch(() => { });
+  }, [isGuestMode, guestRoomNumber, isLoading, syncEvents.length]);
 
   // Secure Verification Logic (Simulating POST /verify-guest with Throttling)
   const handleValidateGuest = async (roomNumber: string, lastNameInput: string): Promise<string | null> => {
@@ -299,26 +401,37 @@ const App: React.FC = () => {
     });
   };
 
-  const handlePlaceOrder = (roomNumber: string, items: { name: string, price: number }[]) => {
+  const handlePlaceOrder = async (roomNumber: string, items: { name: string, price: number }[]) => {
+    const booking = (syncEvents.find(e => e.type === 'booking' && e.roomNumber === roomNumber && e.status === 'CheckedIn') as Booking);
+    if (!booking) return;
+
     const totalAmount = items.reduce((sum, i) => sum + i.price, 0);
     const description = `In-Room Dining - Order #${Math.floor(Math.random() * 1000)}`;
 
-    setSyncEvents(prev => prev.map(e => {
-      if (e.type === 'booking' && e.roomNumber === roomNumber && e.status === 'CheckedIn') {
-        const newFolioItem: FolioItem = {
-          id: `fi-${Date.now()}`,
-          description,
-          amount: totalAmount,
-          category: 'F&B',
-          timestamp: new Date().toISOString()
-        };
-        return {
-          ...e,
-          folio: [...(e.folio || []), newFolioItem]
-        };
-      }
-      return e;
-    }));
+    const newFolioItem: FolioItem = {
+      id: `fi-${Date.now()}`,
+      description,
+      amount: totalAmount,
+      category: 'F&B',
+      timestamp: new Date().toISOString()
+    };
+
+    const updatedBooking: Booking = {
+      ...booking,
+      folio: [...(booking.folio || []), newFolioItem],
+      timestamp: Date.now()
+    };
+
+    // Update local state reactively
+    setSyncEvents(prev => prev.map(e => (e.id === booking.id && e.type === 'booking') ? { ...updatedBooking, type: 'booking' } as SyncEvent : e));
+
+    // Persist to backend immediately
+    try {
+      const { updateBooking } = await import('./api');
+      await updateBooking(updatedBooking);
+    } catch (err) {
+      console.error("Failed to persist in-room dining order:", err);
+    }
   };
 
   const handleUpdateExtraBeds = async (bookingId: string, count: number) => {
@@ -369,14 +482,17 @@ const App: React.FC = () => {
     }
   };
 
+  // Check for Guest Mode first to ensure the menu renders even if the dashboard is still loading
   if (isGuestMode) {
     return (
-      <GuestMenu
-        roomNumber={guestRoomNumber}
-        onValidateGuest={handleValidateGuest}
-        onPlaceOrder={handlePlaceOrder}
-        onSecurityAlert={handleSecurityAlert}
-      />
+      <div style={{ backgroundColor: '#ffffff', minHeight: '100vh', width: '100%' }}>
+        <GuestMenu
+          roomNumber={guestRoomNumber}
+          onValidateGuest={handleValidateGuest}
+          onPlaceOrder={(_room, items) => handlePlaceOrder(guestRoomNumber, items)}
+          onSecurityAlert={handleSecurityAlert}
+        />
+      </div>
     );
   }
 
@@ -385,7 +501,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-[#fbfcfd] text-slate-500">
         <div className="flex flex-col items-center gap-4">
           <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-          <p>Loading SyncGuard PMS...</p>
+          <p className="font-bold text-sm">Initializing SyncGuard...</p>
         </div>
       </div>
     );
@@ -393,17 +509,17 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col md:flex-row bg-[#fbfcfd] font-inter antialiased overflow-hidden">
-      <nav className={`flex flex-col gap-6 shrink-0 shadow-xl z-20 border-r border-slate-700/30 bg-slate-800 text-white transition-all duration-300 ${isSidebarCollapsed ? 'w-20 p-4 items-center' : 'w-full md:w-64 p-6'}`}>
-        <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center flex-col gap-4' : 'justify-between gap-3'}`}>
-          <div className="flex items-center gap-3">
+      <nav className={`flex flex-col gap-6 shrink-0 shadow-xl z-20 border-r border-slate-700/30 bg-slate-800 text-white transition-all duration-300 ${isSidebarCollapsed ? 'w-20 p-4 items-center' : 'w-full md:w-64 px-5 py-6'}`}>
+        <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center flex-col gap-4' : 'justify-between'}`}>
+          <div className="flex items-center gap-2.5 min-w-0">
             <div className="bg-indigo-500 p-2 rounded-lg shadow-lg shadow-indigo-500/20 shrink-0">
-              <ShieldCheck className="w-6 h-6" />
+              <ShieldCheck className="w-5 h-5 flex-shrink-0" />
             </div>
-            {!isSidebarCollapsed && <h1 className="text-xl font-bold tracking-tight whitespace-nowrap">SyncGuard <span className="text-indigo-300">PMS</span></h1>}
+            {!isSidebarCollapsed && <h1 className="text-lg font-bold tracking-tight whitespace-nowrap truncate">SyncGuard <span className="text-indigo-300">PMS</span></h1>}
           </div>
           <button
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
+            className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors shrink-0 ml-1"
           >
             {isSidebarCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
           </button>
@@ -448,32 +564,40 @@ const App: React.FC = () => {
           )}
         </div>
 
-        <div className="flex flex-col gap-2 mt-2 w-full">
-          {[
-            { id: 'flow', icon: Presentation, label: 'Flow', color: 'text-amber-300' },
-            { id: 'frontdesk', icon: ConciergeBell, label: 'Front Desk', color: 'text-rose-300' },
-            { id: 'compliance', icon: FileBadge, label: 'Police Compliance', color: 'text-amber-400' },
-            { id: 'guests', icon: Users, label: 'Guests', color: 'text-sky-300' },
-            { id: 'security', icon: ShieldAlert, label: 'Security Center', color: 'text-red-400' },
-            { id: 'setup', icon: Home, label: 'Property Setup', color: 'text-emerald-300' },
-            { id: 'dashboard', icon: LayoutDashboard, label: 'Live Inventory', color: 'text-slate-400' },
-            { id: 'analysis', icon: BarChart2, label: 'Analysis', color: 'text-blue-300' },
-            { id: 'reports', icon: FileSpreadsheet, label: 'Reports', color: 'text-teal-300' },
-            { id: 'rules', icon: TrendingUp, label: 'Revenue Rules', color: 'text-emerald-300' },
-            { id: 'intelligence', icon: BrainCircuit, label: 'AI Intelligence', color: 'text-fuchsia-300' },
-            { id: 'settings', icon: Settings, label: 'Channel Settings', color: 'text-slate-400' },
-            { id: 'blueprint', icon: FileText, label: 'Tech Blueprint', color: 'text-slate-400' }
-          ].map(item => (
-            <button
+        <div className="flex flex-col gap-1 mt-2 w-full">
+          {navItems.map(item => (
+            <div
               key={item.id}
-              onClick={() => setActiveTab(item.id as any)}
-              className={`flex items-center gap-3 p-3 rounded-xl transition-all ${activeTab === item.id ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-700/50 text-slate-400'
-                } ${isSidebarCollapsed ? 'justify-center' : ''}`}
-              title={isSidebarCollapsed ? item.label : undefined}
+              draggable
+              onDragStart={(e) => handleDragStart(e, item.id)}
+              onDragEnd={handleDragEnd}
+              onDragOver={(e) => handleDragOver(e, item.id)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, item.id)}
+              className={`relative transition-all duration-200 ${dragOverItem === item.id ? 'transform translate-y-1' : ''
+                } ${draggedItem === item.id ? 'opacity-50' : ''}`}
             >
-              <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? item.color : ''}`} />
-              {!isSidebarCollapsed && <span className="font-medium whitespace-nowrap">{item.label}</span>}
-            </button>
+              {/* Drop indicator line */}
+              {dragOverItem === item.id && draggedItem !== item.id && (
+                <div className="absolute -top-1 left-2 right-2 h-0.5 bg-indigo-400 rounded-full shadow-lg shadow-indigo-400/50" />
+              )}
+              <button
+                onClick={() => setActiveTab(item.id as any)}
+                className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all cursor-grab active:cursor-grabbing group ${activeTab === item.id
+                    ? 'bg-indigo-600 text-white shadow-lg'
+                    : 'hover:bg-slate-700/50 text-slate-400'
+                  } ${isSidebarCollapsed ? 'justify-center' : ''}`}
+                title={isSidebarCollapsed ? item.label : undefined}
+              >
+                {/* Drag handle - visible on hover */}
+                {!isSidebarCollapsed && (
+                  <GripVertical className={`w-4 h-4 shrink-0 opacity-0 group-hover:opacity-50 transition-opacity ${activeTab === item.id ? 'text-white/60' : 'text-slate-500'
+                    }`} />
+                )}
+                <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? item.color : ''}`} />
+                {!isSidebarCollapsed && <span className="font-medium whitespace-nowrap flex-1 text-left">{item.label}</span>}
+              </button>
+            </div>
           ))}
         </div>
 
@@ -503,7 +627,7 @@ const App: React.FC = () => {
         {activeTab === 'reports' && <ReportsView />}
         {activeTab === 'settings' && <SettingsPage connections={connections} setConnections={setConnections} />}
         {activeTab === 'intelligence' && <IntelligenceView hotel={selectedHotel} />}
-        {activeTab === 'setup' && <PropertySetupPage roomTypes={roomTypes} setRoomTypes={setRoomTypes} syncEvents={syncEvents} />}
+        {activeTab === 'setup' && <PropertySetupPage roomTypes={roomTypes} setRoomTypes={setRoomTypes} syncEvents={syncEvents} propertySettings={propertySettings} setPropertySettings={setPropertySettings} />}
         {activeTab === 'frontdesk' && (
           <FrontDeskView
             roomTypes={roomTypes}
@@ -512,6 +636,7 @@ const App: React.FC = () => {
             setSyncEvents={setSyncEvents}
             onUpdateExtraBeds={handleUpdateExtraBeds}
             roomSecurity={roomSecurity}
+            propertySettings={propertySettings}
           />
         )}
         {activeTab === 'guests' && <GuestsView syncEvents={syncEvents} setSyncEvents={setSyncEvents} roomTypes={roomTypes} onUpdateExtraBeds={handleUpdateExtraBeds} />}
