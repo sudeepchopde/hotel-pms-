@@ -1468,8 +1468,55 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
     }
   };
 
+  const isForeigner = (guestForm.nationality || 'Indian').toLowerCase() !== 'indian';
+
+  const validateGuestForm = () => {
+    const missing = [];
+    if (!guestForm.name) missing.push("Full Name");
+    if (!guestForm.fatherOrHusbandName) missing.push("Father's/Spouse's Name");
+    if (!guestForm.nationality) missing.push("Nationality");
+    if (!guestForm.gender) missing.push("Gender");
+    if (!guestForm.dob) missing.push("Birth Date");
+    if (!guestForm.idType) missing.push("ID Protocol");
+    if (!guestForm.idNumber) missing.push("Credential Number");
+    if (!guestForm.address) missing.push("Address");
+    if (!guestForm.city) missing.push("City");
+    if (!guestForm.state) missing.push("State");
+    if (!guestForm.pinCode) missing.push("Pin Code");
+    if (!guestForm.country) missing.push("Country");
+    if (!guestForm.departureTime) missing.push("Departure Date");
+    if (!guestForm.purposeOfVisit) missing.push("Purpose of Visit");
+    if (!guestForm.arrivedFrom) missing.push("Arrived From");
+    if (!guestForm.nextDestination) missing.push("Next Destination");
+    if (!guestForm.phoneNumber) missing.push("Mobile Number");
+
+    if (isForeigner) {
+      if (!guestForm.passportNumber) missing.push("Passport ID");
+      if (!guestForm.passportExpiry) missing.push("Passport Expiry");
+      if (!guestForm.passportPlaceIssue) missing.push("Passport Origin Port");
+      if (!guestForm.passportIssueDate) missing.push("Passport Issue Date");
+      if (!guestForm.visaNumber) missing.push("Visa Number");
+      if (!guestForm.visaExpiry) missing.push("Visa Expiry");
+      if (!guestForm.visaType) missing.push("Visa Category");
+      if (!guestForm.visaPlaceIssue) missing.push("Embassy Location");
+      if (!guestForm.arrivalDateIndia) missing.push("India Entry Date");
+      if (!guestForm.arrivalPort) missing.push("Entry Port");
+      if (!idImages.visa) missing.push("Visa Page Scan");
+    }
+
+    if (!idImages.front) missing.push("ID Front Scan");
+
+    if (missing.length > 0) {
+      setToastMessage(`Error: Please fill mandatory fields (*)`);
+      setTimeout(() => setToastMessage(null), 3000);
+      return false;
+    }
+    return true;
+  };
+
   const saveScannedDocs = async () => {
     if (!activeCheckInBooking) return;
+    if (!validateGuestForm()) return;
     const updated: Booking = { ...activeCheckInBooking, timestamp: Date.now() };
 
     // Validates that we have at least captured something or form is filled
@@ -1504,6 +1551,7 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
 
   const confirmCheckIn = async () => {
     if (!activeCheckInBooking) return;
+    if (!validateGuestForm()) return;
     const updated: Booking = { ...activeCheckInBooking, timestamp: Date.now() };
     if (isAddingAccessory) {
       const currentAccessories = [...(activeCheckInBooking.accessoryGuests || [])];
@@ -1570,7 +1618,7 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
 
   useEffect(() => { return () => stopCamera(); }, []);
 
-  const isForeigner = (guestForm.nationality || 'Indian').toLowerCase() !== 'indian';
+
   const getBookingForCell = (roomNumber: string, date: string) => {
     // 1. Find the booking that occupies this room on this date
     const booking = assignedBookings.find(b =>
@@ -1950,7 +1998,7 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
               </div>
               {!isScanOnlyMode && (
                 <div className="flex border-b border-slate-100">
-                  <button onClick={() => { stopCamera(); setCheckInMode('scan'); setOcrStep('idle'); }} className={`flex-1 py-4 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors ${checkInMode === 'scan' ? 'bg-white text-indigo-600 border-b-4 border-indigo-600' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}><ScanLine className="w-4 h-4" /> Scan ID</button>
+                  <button onClick={() => { stopCamera(); setCheckInMode('scan'); setOcrStep('idle'); }} className={`flex-1 py-4 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors ${checkInMode === 'scan' ? 'bg-white text-indigo-600 border-b-4 border-indigo-600' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}><ScanLine className="w-4 h-4" /> Scan ID <span className="text-red-500 ml-0.5">*</span></button>
                   <button onClick={() => { stopCamera(); setCheckInMode('form_scan'); setOcrStep('idle'); }} className={`flex-1 py-4 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors ${checkInMode === 'form_scan' ? 'bg-white text-indigo-600 border-b-4 border-indigo-600' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}><FileText className="w-4 h-4" /> Scan Form</button>
                   <button onClick={() => { stopCamera(); setCheckInMode('manual'); setOcrStep('idle'); }} className={`flex-1 py-4 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors ${checkInMode === 'manual' ? 'bg-white text-indigo-600 border-b-4 border-indigo-600' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}><Keyboard className="w-4 h-4" /> Manual Entry</button>
                 </div>
@@ -2116,16 +2164,16 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
                 {(checkInMode === 'manual' || (ocrStep === 'success' && !isScanOnlyMode) || (checkInMode === 'form_scan' && ocrStep === 'success')) && (
                   <div className="space-y-8 mt-4 animate-in fade-in duration-500">
                     <div className="grid grid-cols-2 md:grid-cols-2 gap-6">
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Legal Full Name</label><input type="text" value={guestForm.name} onChange={e => setGuestForm({ ...guestForm, name: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Father's/Spouse's Name</label><input type="text" value={guestForm.fatherOrHusbandName || ''} onChange={e => setGuestForm({ ...guestForm, fatherOrHusbandName: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Legal Full Name <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.name} onChange={e => setGuestForm({ ...guestForm, name: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Father's/Spouse's Name <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.fatherOrHusbandName || ''} onChange={e => setGuestForm({ ...guestForm, fatherOrHusbandName: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Nationality</label><select value={guestForm.nationality} onChange={e => setGuestForm({ ...guestForm, nationality: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner">{NATIONALITIES.map(n => <option key={n} value={n}>{n}</option>)}</select></div>
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Gender</label><select value={guestForm.gender} onChange={e => setGuestForm({ ...guestForm, gender: e.target.value as any })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner"><option>Male</option><option>Female</option><option>Other</option></select></div>
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Birth Date</label><input type="date" value={guestForm.dob} onChange={e => setGuestForm({ ...guestForm, dob: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">ID Protocol</label><select value={guestForm.idType} onChange={e => setGuestForm({ ...guestForm, idType: e.target.value as any })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner"><option>Aadhar</option><option>Passport</option><option>Driving License</option><option>Voter ID</option><option>Other</option></select></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Nationality <span className="text-red-500 ml-0.5">*</span></label><select value={guestForm.nationality} onChange={e => setGuestForm({ ...guestForm, nationality: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner">{NATIONALITIES.map(n => <option key={n} value={n}>{n}</option>)}</select></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Gender <span className="text-red-500 ml-0.5">*</span></label><select value={guestForm.gender} onChange={e => setGuestForm({ ...guestForm, gender: e.target.value as any })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner"><option>Male</option><option>Female</option><option>Other</option></select></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Birth Date <span className="text-red-500 ml-0.5">*</span></label><input type="date" value={guestForm.dob} onChange={e => setGuestForm({ ...guestForm, dob: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">ID Protocol <span className="text-red-500 ml-0.5">*</span></label><select value={guestForm.idType} onChange={e => setGuestForm({ ...guestForm, idType: e.target.value as any })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner"><option>Aadhar</option><option>Passport</option><option>Driving License</option><option>Voter ID</option><option>Other</option></select></div>
                       <div className="space-y-2">
-                        <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Credential Number</label>
+                        <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Credential Number <span className="text-red-500 ml-0.5">*</span></label>
                         <input
                           type="text"
                           value={isIdMasked && guestForm.idNumber ? `XXXX-XXXX-${guestForm.idNumber.slice(-4)}` : guestForm.idNumber}
@@ -2139,19 +2187,19 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
                       </div>
                     </div>
 
-                    <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Permanent Address (Verified)</label><textarea value={guestForm.address} onChange={e => setGuestForm({ ...guestForm, address: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 min-h-[80px] shadow-inner" /></div>
+                    <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Permanent Address (Verified) <span className="text-red-500 ml-0.5">*</span></label><textarea value={guestForm.address} onChange={e => setGuestForm({ ...guestForm, address: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 min-h-[80px] shadow-inner" /></div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">City</label><input type="text" value={guestForm.city || ''} onChange={e => setGuestForm({ ...guestForm, city: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">State</label><input type="text" value={guestForm.state || ''} onChange={e => setGuestForm({ ...guestForm, state: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Pin Code</label><input type="text" value={guestForm.pinCode || ''} onChange={e => setGuestForm({ ...guestForm, pinCode: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Country</label><input type="text" value={guestForm.country || ''} onChange={e => setGuestForm({ ...guestForm, country: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">City <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.city || ''} onChange={e => setGuestForm({ ...guestForm, city: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">State <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.state || ''} onChange={e => setGuestForm({ ...guestForm, state: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Pin Code <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.pinCode || ''} onChange={e => setGuestForm({ ...guestForm, pinCode: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Country <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.country || ''} onChange={e => setGuestForm({ ...guestForm, country: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-2 gap-6">
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Expected Departure Date</label><input type="date" value={guestForm.departureTime || ''} onChange={e => setGuestForm({ ...guestForm, departureTime: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Expected Departure Date <span className="text-red-500 ml-0.5">*</span></label><input type="date" value={guestForm.departureTime || ''} onChange={e => setGuestForm({ ...guestForm, departureTime: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
                       <div className="space-y-2">
-                        <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Purpose of Visit</label>
+                        <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Purpose of Visit <span className="text-red-500 ml-0.5">*</span></label>
                         <select
                           value={guestForm.purposeOfVisit || 'Tourism'}
                           onChange={e => setGuestForm({ ...guestForm, purposeOfVisit: e.target.value as any })}
@@ -2165,12 +2213,12 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
                           <option value="Other">Other</option>
                         </select>
                       </div>
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Arrived From</label><input type="text" value={guestForm.arrivedFrom || ''} onChange={e => setGuestForm({ ...guestForm, arrivedFrom: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Next Destination</label><input type="text" value={guestForm.nextDestination || ''} onChange={e => setGuestForm({ ...guestForm, nextDestination: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Arrived From <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.arrivedFrom || ''} onChange={e => setGuestForm({ ...guestForm, arrivedFrom: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Next Destination <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.nextDestination || ''} onChange={e => setGuestForm({ ...guestForm, nextDestination: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-6">
-                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Verified Mobile</label><input type="text" value={guestForm.phoneNumber} onChange={e => setGuestForm({ ...guestForm, phoneNumber: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
+                      <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Verified Mobile <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.phoneNumber} onChange={e => setGuestForm({ ...guestForm, phoneNumber: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
                       <div className="space-y-2"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Communication Email</label><input type="email" value={guestForm.email} onChange={e => setGuestForm({ ...guestForm, email: e.target.value })} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-xs font-black text-slate-900 outline-none focus:border-indigo-400 shadow-inner" /></div>
                     </div>
 
@@ -2179,23 +2227,23 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
                         <div className="flex items-center justify-between border-b border-amber-200 pb-4"><span className="text-xs font-black text-amber-800 uppercase tracking-[0.3em] flex items-center gap-3"><Globe className="w-4 h-4" /> Form C: FRRO Audit Protocol</span></div>
 
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Passport ID</label><input type="text" value={guestForm.passportNumber || ''} onChange={e => setGuestForm({ ...guestForm, passportNumber: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
-                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Expiry Date</label><input type="date" value={guestForm.passportExpiry || ''} onChange={e => setGuestForm({ ...guestForm, passportExpiry: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
-                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Origin Port</label><input type="text" value={guestForm.passportPlaceIssue || ''} onChange={e => setGuestForm({ ...guestForm, passportPlaceIssue: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
-                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Issue Date</label><input type="date" value={guestForm.passportIssueDate || ''} onChange={e => setGuestForm({ ...guestForm, passportIssueDate: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
+                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Passport ID <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.passportNumber || ''} onChange={e => setGuestForm({ ...guestForm, passportNumber: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
+                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Expiry Date <span className="text-red-500 ml-0.5">*</span></label><input type="date" value={guestForm.passportExpiry || ''} onChange={e => setGuestForm({ ...guestForm, passportExpiry: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
+                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Origin Port <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.passportPlaceIssue || ''} onChange={e => setGuestForm({ ...guestForm, passportPlaceIssue: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
+                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Issue Date <span className="text-red-500 ml-0.5">*</span></label><input type="date" value={guestForm.passportIssueDate || ''} onChange={e => setGuestForm({ ...guestForm, passportIssueDate: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
                         </div>
 
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-4 border-t border-amber-100">
-                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Visa Number</label><input type="text" value={guestForm.visaNumber || ''} onChange={e => setGuestForm({ ...guestForm, visaNumber: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
-                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Visa End Date</label><input type="date" value={guestForm.visaExpiry || ''} onChange={e => setGuestForm({ ...guestForm, visaExpiry: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
-                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Visa Category</label><input type="text" value={guestForm.visaType || ''} onChange={e => setGuestForm({ ...guestForm, visaType: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
-                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Embassy Loc</label><input type="text" value={guestForm.visaPlaceIssue || ''} onChange={e => setGuestForm({ ...guestForm, visaPlaceIssue: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
+                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Visa Number <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.visaNumber || ''} onChange={e => setGuestForm({ ...guestForm, visaNumber: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
+                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Visa End Date <span className="text-red-500 ml-0.5">*</span></label><input type="date" value={guestForm.visaExpiry || ''} onChange={e => setGuestForm({ ...guestForm, visaExpiry: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
+                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Visa Category <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.visaType || ''} onChange={e => setGuestForm({ ...guestForm, visaType: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
+                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Embassy Loc <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.visaPlaceIssue || ''} onChange={e => setGuestForm({ ...guestForm, visaPlaceIssue: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
                         </div>
 
 
                         <div className="grid grid-cols-2 gap-6 pt-4 border-t border-amber-100">
-                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">India Entry Date</label><input type="date" value={guestForm.arrivalDateIndia || ''} onChange={e => setGuestForm({ ...guestForm, arrivalDateIndia: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
-                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Entry Port (IATA)</label><input type="text" value={guestForm.arrivalPort || ''} onChange={e => setGuestForm({ ...guestForm, arrivalPort: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
+                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">India Entry Date <span className="text-red-500 ml-0.5">*</span></label><input type="date" value={guestForm.arrivalDateIndia || ''} onChange={e => setGuestForm({ ...guestForm, arrivalDateIndia: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
+                          <div className="space-y-2"><label className="text-[9px] font-black text-amber-600/80 uppercase">Entry Port (IATA) <span className="text-red-500 ml-0.5">*</span></label><input type="text" value={guestForm.arrivalPort || ''} onChange={e => setGuestForm({ ...guestForm, arrivalPort: e.target.value })} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-black text-slate-900 outline-none" /></div>
                         </div>
                       </div>
                     )}
@@ -2242,7 +2290,16 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
           document.body
         )}
         <DragOverlay>{dragState.activeId && (() => { const booking = assignedBookings.find(b => b.id === dragState.activeId); if (!booking) return null; const duration = Math.ceil((new Date(booking.checkOut).getTime() - new Date(booking.checkIn).getTime()) / (1000 * 3600 * 24)); return <DraggableBooking booking={booking} duration={duration} isOverlay={true} isValid={dragState.isValid} />; })()}</DragOverlay>
-        {toastMessage && (<div className="absolute top-6 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4 border-2 border-indigo-500/50"><CheckCircle2 className="w-6 h-6 text-emerald-400" /><span className="font-black text-sm uppercase tracking-widest">{toastMessage}</span></div>)}
+        {toastMessage && (
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[10000] bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4 border-2 border-indigo-500/50">
+            {toastMessage.startsWith('Error') ? (
+              <XCircle className="w-6 h-6 text-rose-400" />
+            ) : (
+              <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+            )}
+            <span className="font-black text-sm uppercase tracking-widest">{toastMessage}</span>
+          </div>
+        )}
 
         <NewBookingModal
           isOpen={isNewBookingModalOpen}

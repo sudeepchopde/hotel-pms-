@@ -12,6 +12,10 @@ class PropertySettingsDB(Base):
     email = Column(String, nullable=True)
     gst_number = Column(String, nullable=True)
     gst_rate = Column(Float, default=12.0)
+    food_gst_rate = Column(Float, default=5.0)
+    other_gst_rate = Column(Float, default=18.0)
+    razorpay_key_id = Column(String, nullable=True)
+    razorpay_key_secret = Column(String, nullable=True)
 
 class HotelDB(Base):
     __tablename__ = "hotels"

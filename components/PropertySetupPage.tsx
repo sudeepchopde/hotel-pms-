@@ -80,6 +80,8 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
     email: '',
     gstNumber: '',
     gstRate: 12.0,
+    foodGstRate: 5.0,
+    otherGstRate: 18.0,
     geminiApiKey: ''
   });
 
@@ -376,6 +378,30 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                     <span className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 font-black">%</span>
                   </div>
                 </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Food GST Rate (%)</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={profileFormData.foodGstRate || 5.0}
+                      onChange={e => setProfileFormData({ ...profileFormData, foodGstRate: Number(e.target.value) })}
+                      className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-black text-orange-700 focus:border-orange-500 focus:bg-white outline-none transition-all"
+                    />
+                    <span className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 font-black">%</span>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Other Services GST (%)</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={profileFormData.otherGstRate || 18.0}
+                      onChange={e => setProfileFormData({ ...profileFormData, otherGstRate: Number(e.target.value) })}
+                      className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-black text-blue-700 focus:border-blue-500 focus:bg-white outline-none transition-all"
+                    />
+                    <span className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 font-black">%</span>
+                  </div>
+                </div>
               </div>
             </section>
           </div>
@@ -393,11 +419,18 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                 <div className="space-y-2">
                   <div className="flex justify-between"><span>Room Charges (2n)</span><span>₹9,000.00</span></div>
                   <div className="flex justify-between"><span>Food & Bev</span><span>₹1,250.00</span></div>
-                  <div className="flex justify-between text-indigo-400 font-bold"><span>GST ({profileFormData.gstRate}%)</span><span>₹{((10250 * profileFormData.gstRate) / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                  <div className="flex justify-between text-[8px] text-indigo-300 font-bold">
+                    <span>GST - Room ({profileFormData.gstRate}%)</span>
+                    <span>₹{((9000 * profileFormData.gstRate) / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between text-[8px] text-orange-300 font-bold">
+                    <span>GST - Food ({profileFormData.foodGstRate || 5}%)</span>
+                    <span>₹{((1250 * (profileFormData.foodGstRate || 5)) / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  </div>
                 </div>
                 <div className="border-t border-white/20 pt-4 flex justify-between text-white font-black text-sm">
                   <span>GRAND TOTAL</span>
-                  <span>₹{(10250 * (1 + profileFormData.gstRate / 100)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  <span>₹{((9000 * (1 + profileFormData.gstRate / 100)) + (1250 * (1 + (profileFormData.foodGstRate || 5) / 100))).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
               </div>
               <div className="mt-8 p-4 bg-white/5 rounded-xl border border-white/10">
@@ -472,6 +505,70 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                 </div>
               </div>
             </section>
+
+            {/* Razorpay Payment Gateway Section */}
+            <section className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm space-y-8">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
+                  <IndianRupee className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Payment Gateway</h3>
+                  <p className="text-xs text-slate-500 font-medium">Accept online payments via Razorpay (UPI, Cards, Netbanking, Wallets).</p>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <ShieldAlert className="w-5 h-5 text-emerald-600" />
+                    <h5 className="font-black text-xs uppercase tracking-widest text-slate-700">Razorpay API Configuration</h5>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Enable online payment collection at the front desk. Guests can scan a QR or click a link to pay instantly.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Razorpay Key ID</label>
+                      <div className="relative group">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+                        <input
+                          type="text"
+                          value={profileFormData.razorpayKeyId || ''}
+                          onChange={e => setProfileFormData({ ...profileFormData, razorpayKeyId: e.target.value })}
+                          placeholder="rzp_live_xxxxxxxxxxxxx"
+                          className="w-full pl-12 pr-5 py-4 bg-white border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-emerald-500 outline-none transition-all shadow-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Razorpay Key Secret</label>
+                      <div className="relative group">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+                        <input
+                          type="password"
+                          value={profileFormData.razorpayKeySecret || ''}
+                          onChange={e => setProfileFormData({ ...profileFormData, razorpayKeySecret: e.target.value })}
+                          placeholder="••••••••••••••••"
+                          className="w-full pl-12 pr-5 py-4 bg-white border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-emerald-500 outline-none transition-all shadow-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3 mt-4">
+                    <div className="p-2 bg-white rounded-xl border border-emerald-200">
+                      <Info className="w-4 h-4 text-emerald-500" />
+                    </div>
+                    <div className="text-[10px] text-slate-500 leading-relaxed font-medium">
+                      Don't have an account? <a href="https://dashboard.razorpay.com/signup" target="_blank" rel="noreferrer" className="text-emerald-600 font-bold hover:underline">Sign up for Razorpay Business</a>.
+                      Go to Settings → API Keys to generate your credentials.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
 
           <div className="space-y-6">
@@ -485,6 +582,16 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                   <div>
                     <p className="text-xs font-black uppercase tracking-widest">OCR Engine</p>
                     <p className="text-[10px] text-indigo-200/70">{profileFormData.geminiApiKey ? 'Connected & Secure' : 'API Key Missing'}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${profileFormData.razorpayKeyId && profileFormData.razorpayKeySecret ? 'bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'bg-white/10'}`}>
+                    {profileFormData.razorpayKeyId && profileFormData.razorpayKeySecret ? <Check className="w-5 h-5 text-white" /> : <IndianRupee className="w-5 h-5 text-white/50" />}
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-widest">Payment Gateway</p>
+                    <p className="text-[10px] text-indigo-200/70">{profileFormData.razorpayKeyId && profileFormData.razorpayKeySecret ? 'Razorpay Connected' : 'Credentials Missing'}</p>
                   </div>
                 </div>
 

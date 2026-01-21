@@ -98,6 +98,17 @@ def migrate():
                 )
             """))
 
+            # Check for property_settings missing columns
+            ps_cols = {
+                'food_gst_rate': 'FLOAT DEFAULT 5.0',
+                'other_gst_rate': 'FLOAT DEFAULT 18.0'
+            }
+            for col, col_type in ps_cols.items():
+                res = conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name='property_settings' AND column_name='{col}'"))
+                if not res.fetchone():
+                    print(f"Adding {col} column to property_settings...")
+                    conn.execute(text(f"ALTER TABLE property_settings ADD COLUMN {col} {col_type}"))
+
             conn.commit()
             print("Schema updated successfully!")
     except Exception as e:

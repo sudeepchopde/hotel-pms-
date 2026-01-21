@@ -6,7 +6,7 @@ import {
   Clock, ShieldAlert, Plus, Trash2, Edit3, MessageSquare, ChevronDown,
   Hash, LogIn, FileText, ScanLine, Lock, Eye, Shield, FileImage, RotateCcw,
   Utensils, Coffee, Zap, Receipt, Globe, Plane, Briefcase, Sparkles, Sofa,
-  Minus, ArrowRightCircle, AlertTriangle, Printer
+  Minus, ArrowRightCircle, AlertTriangle, Printer, Check, History, IndianRupee
 } from 'lucide-react';
 import { Booking, RoomType, SyncEvent, FolioItem, GuestDetails, Payment, PropertySettings } from '../types';
 import { fetchGuestHistory } from '../api';
@@ -77,6 +77,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   const [paymentAmount, setPaymentAmount] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI' | 'Card'>('Cash');
   const [paymentCategory, setPaymentCategory] = useState<'Room' | 'Folio' | 'Extra' | 'Partial'>('Partial');
+  const [showAddChargeModal, setShowAddChargeModal] = useState(false);
+  const [chargeDescription, setChargeDescription] = useState('');
+  const [chargeAmount, setChargeAmount] = useState('');
+  const [chargeCategory, setChargeCategory] = useState<'F&B' | 'Laundry' | 'Other'>('Other');
+  const [isChargeInclusive, setIsChargeInclusive] = useState(true);
   const [targetFolioItem, setTargetFolioItem] = useState<FolioItem | null>(null);
 
   const roomType = roomTypes.find(rt => rt.id === booking.roomTypeId);
@@ -106,7 +111,18 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
   const unpaidFolioTotal = (booking.folio || []).filter(item => !item.isPaid).reduce((sum, item) => sum + item.amount, 0);
   const paidFolioTotal = (booking.folio || []).filter(item => item.isPaid).reduce((sum, item) => sum + item.amount, 0);
-  const totalPayments = (booking.payments || []).filter(p => p.status === 'Completed').reduce((sum, p) => sum + p.amount, 0);
+
+  // High-resiliency payment audit
+  // 1. Map all payment IDs already tied to folio entries to avoid double counting
+  const settledFolioPaymentIds = (booking.folio || []).filter(f => f.isPaid && f.paymentId).map(f => f.paymentId);
+
+  // 2. Sum only "standalone" payments (those not specifically covering a folio item)
+  const standalonePaymentsTotal = (booking.payments || [])
+    .filter(p => p.status === 'Completed' && !settledFolioPaymentIds.includes(p.id))
+    .reduce((sum, p) => sum + p.amount, 0);
+
+  // 3. Final total reflects both standalone settlements and all paid folio items
+  const totalPayments = standalonePaymentsTotal + paidFolioTotal;
 
   const nights = Math.max(1, Math.ceil((new Date(booking.checkOut).getTime() - new Date(booking.checkIn).getTime()) / (1000 * 3600 * 24)));
   const roomRate = booking.source === 'Direct'
@@ -153,6 +169,30 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         ? (visaSrc || frontSrc)
         : (details?.additionalDocs?.[activeAdditionalIndex] || frontSrc);
 
+  const handleAddCharge = () => {
+    if (!chargeDescription || !chargeAmount) return;
+
+    const newItem: FolioItem = {
+      id: Math.random().toString(36).substring(2, 9),
+      category: chargeCategory,
+      description: chargeDescription,
+      amount: parseFloat(chargeAmount),
+      isInclusive: isChargeInclusive,
+      timestamp: new Date().toISOString(),
+      isPaid: false
+    };
+
+    const newFolio = [...(booking.folio || []), newItem];
+    onUpdateFolio?.(booking.id, newFolio);
+
+    // Reset and close
+    setChargeDescription('');
+    setChargeAmount('');
+    setChargeCategory('Other');
+    setIsChargeInclusive(true);
+    setShowAddChargeModal(false);
+  };
+
   const handleRecordPayment = () => {
     const amount = parseFloat(paymentAmount);
     if (isNaN(amount) || amount <= 0) return;
@@ -180,6 +220,109 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     setShowPaymentModal(false);
     setPaymentAmount('');
     setTargetFolioItem(null);
+  };
+
+  const [isProcessingOnline, setIsProcessingOnline] = useState(false);
+
+  const handleCollectOnline = async () => {
+    const amount = parseFloat(paymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      alert('Please enter a valid amount');
+      return;
+    }
+
+    setIsProcessingOnline(true);
+
+    try {
+      // Step 1: Create Razorpay order via backend
+      const response = await fetch('/api/razorpay/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount,
+          bookingId: booking.id,
+          description: `Payment for ${booking.guestName} - Room ${booking.roomNumber || 'TBD'}`
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to create order');
+      }
+
+      const orderData = await response.json();
+
+      // Step 2: Open Razorpay Checkout
+      const options = {
+        key: orderData.key_id,
+        amount: orderData.amount * 100,
+        currency: orderData.currency,
+        name: propertySettings?.name || 'Hotel Payment',
+        description: `Booking: ${booking.guestName}`,
+        order_id: orderData.order_id,
+        handler: async function (rzpResponse: any) {
+          // Step 3: Verify payment on backend
+          try {
+            const verifyResponse = await fetch('/api/razorpay/verify-payment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: rzpResponse.razorpay_order_id,
+                razorpay_payment_id: rzpResponse.razorpay_payment_id,
+                razorpay_signature: rzpResponse.razorpay_signature,
+                bookingId: booking.id,
+                amount
+              })
+            });
+
+            if (verifyResponse.ok) {
+              // Payment verified! Add to local state
+              const newPayment: Payment = {
+                id: rzpResponse.razorpay_payment_id,
+                amount,
+                method: 'Card',
+                timestamp: new Date().toISOString(),
+                category: 'Partial',
+                description: 'Online Payment (Razorpay)',
+                status: 'Completed'
+              };
+              const updatedPayments = [...(booking.payments || []), newPayment];
+              onUpdatePayments?.(booking.id, updatedPayments);
+
+              alert('Payment successful!');
+              setShowPaymentModal(false);
+              setPaymentAmount('');
+            } else {
+              alert('Payment verification failed. Please contact support.');
+            }
+          } catch (e) {
+            console.error('Verification error:', e);
+            alert('Payment completed but verification failed. Please check with support.');
+          }
+        },
+        prefill: {
+          name: booking.guestName,
+          email: booking.guestDetails?.email || '',
+          contact: booking.guestDetails?.phoneNumber || ''
+        },
+        theme: {
+          color: '#4f46e5'
+        },
+        modal: {
+          ondismiss: function () {
+            setIsProcessingOnline(false);
+          }
+        }
+      };
+
+      const razorpay = new (window as any).Razorpay(options);
+      razorpay.open();
+    } catch (error: any) {
+      console.error('Razorpay error:', error);
+      alert(error.message || 'Failed to initiate payment. Please check Razorpay configuration.');
+    } finally {
+      setIsProcessingOnline(false);
+    }
   };
 
   const handleUpdatePaymentStatus = (paymentId: string, newStatus: 'Refunded' | 'Cancelled') => {
@@ -269,10 +412,48 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const gstRate = propertySettings?.gstRate || 12.0;
-    const cgst = (grandTotal * (gstRate / 200));
-    const sgst = (grandTotal * (gstRate / 200));
-    const netTotal = grandTotal + cgst + sgst;
+    const roomGstRate = propertySettings?.gstRate || 12.0;
+    const foodGstRate = propertySettings?.foodGstRate || 5.0;
+    const otherGstRate = propertySettings?.otherGstRate || 18.0;
+
+    // Room is always exclusive in this system (per standard reservation practice)
+    const roomTax = roomBaseTotal * (roomGstRate / 100);
+
+    let totalFolioTax = 0;
+    let totalFolioBase = 0;
+
+    const folioRows = (booking.folio || []).map(item => {
+      const rate = item.category === 'F&B' ? foodGstRate : otherGstRate;
+      let base, tax;
+
+      if (item.isInclusive) {
+        // Derive base from total (inclusive)
+        base = item.amount / (1 + rate / 100);
+        tax = item.amount - base;
+      } else {
+        // Add tax on top of base (exclusive)
+        base = item.amount;
+        tax = item.amount * (rate / 100);
+      }
+
+      totalFolioTax += tax;
+      totalFolioBase += base;
+
+      return {
+        ...item,
+        base,
+        tax,
+        rate,
+        displayAmount: base + tax // Total for this item
+      };
+    });
+
+    const netSubtotal = roomBaseTotal + totalFolioBase;
+    const totalTax = roomTax + totalFolioTax;
+    const finalNetInvoiceTotal = netSubtotal + totalTax;
+    const cgst = totalTax / 2;
+    const sgst = totalTax / 2;
+    const balanceDue = finalNetInvoiceTotal - totalPayments;
 
     const invoiceHtml = `
       <html>
@@ -345,56 +526,96 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               </div>
             </div>
 
-            <table class="w-full mb-16">
+            <table class="w-full mb-16 px-4">
               <thead>
                 <tr class="border-b-2 border-slate-900">
                   <th class="text-left py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Description</th>
-                  <th class="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Qty/Nights</th>
+                  <th class="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Qty</th>
                   <th class="text-right py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Rate</th>
                   <th class="text-right py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Amount</th>
+                  <th class="text-right py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Paid</th>
+                  <th class="text-right py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Balance</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
                 <tr>
                   <td class="py-6">
                     <p class="text-sm font-black text-slate-900 uppercase">Room Rent</p>
-                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">Primary Accommodation Charges</p>
+                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">Accommodation (${roomGstRate}% GST)</p>
                   </td>
                   <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">${nights}</td>
                   <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${roomRate.toLocaleString()}</td>
                   <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${roomBaseTotal.toLocaleString()}</td>
+                  <td class="py-6 text-right text-sm font-black text-emerald-600 tabular-nums">₹0.00</td>
+                  <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${roomBaseTotal.toLocaleString()}</td>
                 </tr>
-                ${(booking.folio || []).filter(item => !item.isPaid).map(item => `
+                ${folioRows.map(item => `
                   <tr>
                     <td class="py-6">
                       <p class="text-sm font-black text-slate-900 uppercase">${item.description}</p>
-                      <p class="text-[10px] font-bold text-slate-400 mt-0.5">${item.category} Service</p>
+                      <p class="text-[10px] font-bold text-slate-400 mt-0.5">${item.category} Service (${item.rate}% GST)</p>
                     </td>
                     <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">1</td>
-                    <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${item.amount.toLocaleString()}</td>
-                    <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${item.amount.toLocaleString()}</td>
+                    <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${item.base.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${item.base.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="py-6 text-right text-sm font-black text-emerald-600 tabular-nums">₹${item.isPaid ? item.displayAmount.toLocaleString() : '0.00'}</td>
+                    <td class="py-6 text-right text-sm font-black text-dark-900 tabular-nums">₹${item.isPaid ? '0.00' : item.displayAmount.toLocaleString()}</td>
                   </tr>
                 `).join('')}
               </tbody>
             </table>
 
+            ${(booking.payments && booking.payments.length > 0) ? `
+            <div class="mb-16">
+              <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Payment History</h4>
+              <table class="w-full border border-slate-100 rounded-2xl overflow-hidden">
+                <thead class="bg-slate-50">
+                  <tr>
+                    <th class="text-left p-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Date</th>
+                    <th class="text-left p-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Method</th>
+                    <th class="text-left p-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Description</th>
+                    <th class="text-right p-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Amount</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  ${booking.payments.map(p => `
+                    <tr>
+                      <td class="p-4 text-xs font-bold text-slate-600">${new Date(p.timestamp).toLocaleDateString()}</td>
+                      <td class="p-4 text-xs font-black text-indigo-600 uppercase">${p.method}</td>
+                      <td class="p-4 text-xs font-medium text-slate-500">${p.description || 'General Payment'}</td>
+                      <td class="p-4 text-right text-xs font-black text-slate-900">₹${p.amount.toLocaleString()}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+            ` : ''}
+
             <div class="flex justify-end">
               <div class="w-80 space-y-4">
                 <div class="flex justify-between text-xs font-bold uppercase tracking-widest text-slate-400">
-                  <span>Subtotal</span>
-                  <span class="text-slate-900 font-black tabular-nums">₹${grandTotal.toLocaleString()}</span>
+                  <span>Subtotal (Net)</span>
+                  <span class="text-slate-900 font-black tabular-nums">₹${netSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 <div class="flex justify-between text-xs font-bold uppercase tracking-widest text-slate-400">
-                  <span>CGST (${(propertySettings?.gstRate || 12.0) / 2}%)</span>
-                  <span class="text-slate-900 font-black tabular-nums">₹${cgst.toLocaleString()}</span>
+                  <span>CGST</span>
+                  <span class="text-slate-900 font-black tabular-nums">₹${cgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 <div class="flex justify-between text-xs font-bold uppercase tracking-widest text-slate-400">
-                  <span>SGST (${(propertySettings?.gstRate || 12.0) / 2}%)</span>
-                  <span class="text-slate-900 font-black tabular-nums">₹${sgst.toLocaleString()}</span>
+                  <span>SGST</span>
+                  <span class="text-slate-900 font-black tabular-nums">₹${sgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
-                <div class="flex justify-between items-center py-6 border-t-2 border-slate-900 mt-4">
-                  <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Total Amount</span>
-                  <span class="text-3xl font-black text-indigo-600 tabular-nums">₹${netTotal.toLocaleString()}</span>
+                <div class="flex justify-between items-center py-4 border-y border-slate-200 mt-4">
+                  <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Total Invoice Amount</span>
+                  <span class="text-xl font-black text-slate-900 tabular-nums">₹${finalNetInvoiceTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div class="flex justify-between text-xs font-bold uppercase tracking-widest text-emerald-600">
+                  <span>Total Payments</span>
+                  <span class="font-black tabular-nums">- ₹${totalPayments.toLocaleString()}</span>
+                </div>
+                <div class="flex justify-between items-center py-6 border-t-2 border-slate-900 mt-2">
+                  <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Balance Due</span>
+                  <span class="text-3xl font-black text-indigo-600 tabular-nums">₹${balanceDue.toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -991,6 +1212,207 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               )}
             </section>
 
+
+            {/* MERGED FOLIO & TRANSACTION LEDGER */}
+            <section className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden group mb-8">
+              <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
+                <Receipt className="w-32 h-32" />
+              </div>
+
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-8 pb-6 border-b border-white/10">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-indigo-500/10 rounded-2xl border border-indigo-500/20">
+                      <CreditCard className="w-6 h-6 text-indigo-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black tracking-tight uppercase text-indigo-100 italic">Folio Status & Ledger</h3>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">Audit Protocol Layer active</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={printInvoice} className="px-5 py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest border border-white/10 transition-all flex items-center gap-2">
+                      <Printer className="w-4 h-4" /> Invoice
+                    </button>
+                    <button onClick={() => setShowAddChargeModal(true)} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-indigo-900/40">
+                      <Plus className="w-4 h-4" /> Add Charge
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+                  {/* LEFT: Financial Summary */}
+                  <div className="lg:col-span-4 space-y-8">
+                    <div className="bg-white/5 border border-white/10 rounded-[2rem] p-8 shadow-inner relative overflow-hidden group/card">
+                      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover/card:scale-110 transition-transform"><CheckCircle2 className="w-12 h-12 text-emerald-400" /></div>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Net Outstanding</p>
+                      <div className="flex items-baseline gap-4 mt-2">
+                        <p className={`text-5xl font-black tabular-nums tracking-tighter ${netOutstanding <= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          ₹{netOutstanding.toLocaleString()}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-3 mt-6">
+                        {netOutstanding > 0 && (
+                          <button
+                            onClick={() => { setTargetFolioItem(null); setPaymentAmount(netOutstanding.toFixed(2)); setPaymentCategory('Partial'); setShowPaymentModal(true); }}
+                            className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-xl shadow-indigo-900/40 transition-all active:scale-95"
+                          >
+                            Pay Full Balance
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { setTargetFolioItem(null); setPaymentAmount(''); setPaymentCategory('Partial'); setShowPaymentModal(true); }}
+                          className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white text-[10px] font-black uppercase tracking-widest rounded-xl border border-white/10 transition-all"
+                        >
+                          Partial Pay
+                        </button>
+                      </div>
+
+                      <div className="mt-8 pt-6 border-t border-white/5 flex justify-between items-center text-center">
+                        <div>
+                          <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Total Payments</p>
+                          <p className="text-sm font-black text-emerald-400 tabular-nums mt-1">₹{totalPayments.toLocaleString()}</p>
+                        </div>
+                        <div className="w-px h-8 bg-white/5"></div>
+                        <div>
+                          <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Total Bill</p>
+                          <p className="text-sm font-black text-slate-200 tabular-nums mt-1">₹{totalBill.toLocaleString()}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="px-2 space-y-5">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-white/5 rounded-lg border border-white/10"><Calendar className="w-4 h-4 text-indigo-400" /></div>
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Stay Period</span>
+                        </div>
+                        <span className="text-xs font-bold text-slate-200 tabular-nums">{nights}n • {new Date(booking.checkIn).toLocaleDateString()}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-white/5 rounded-lg border border-white/10"><Bed className="w-4 h-4 text-indigo-400" /></div>
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Room Rate</span>
+                        </div>
+                        <span className="text-xs font-bold text-slate-200 tabular-nums">₹{roomRate.toLocaleString()} / N</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-white/5 rounded-lg border border-white/10"><Hash className="w-4 h-4 text-indigo-400" /></div>
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base Total</span>
+                        </div>
+                        <span className="text-xs font-bold text-slate-200 tabular-nums">₹{roomBaseTotal.toLocaleString()}</span>
+                      </div>
+                    </div>
+
+                    {/* Transaction Stream (Last 3) */}
+                    {(booking.payments || []).length > 0 && (
+                      <div className="pt-4 px-2 space-y-4">
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] italic">Audit Stream</p>
+                        <div className="space-y-2">
+                          {(booking.payments || []).slice().reverse().slice(0, 3).map(p => (
+                            <div key={p.id} className="flex items-center justify-between group/tx">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-1.5 h-1.5 rounded-full ${p.status === 'Completed' ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
+                                <span className={`text-[10px] font-bold ${p.status === 'Completed' ? 'text-slate-200' : 'text-slate-500 line-through'}`}>₹{p.amount.toLocaleString()} via {p.method}</span>
+                              </div>
+                              <span className="text-[8px] font-black text-slate-500 uppercase">{new Date(p.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* RIGHT: Detailed Ledger */}
+                  <div className="lg:col-span-8 space-y-6">
+                    <div className="flex items-center justify-between mb-4 px-2">
+                      <div className="flex items-center gap-3">
+                        <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Folio Entries ({booking.folio?.length || 0})</span>
+                      </div>
+                      <div className="flex gap-2">
+                        {Array.from(new Set(booking.folio?.map(f => f.category) || [])).map(cat => (
+                          <div key={cat} className="flex items-center gap-1.5 px-2 py-0.5 bg-white/5 border border-white/10 rounded text-[8px] font-black uppercase text-slate-400">
+                            <span className={`w-1 h-1 rounded-full ${cat === 'F&B' ? 'bg-orange-400' : 'bg-indigo-400'}`}></span>
+                            {cat}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-3 custom-scrollbar-dark pb-4">
+                      {booking.folio && booking.folio.length > 0 ? (
+                        booking.folio.map((item) => (
+                          <div key={item.id} className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/[0.08] transition-all group/item shadow-sm">
+                            <div className="flex items-center gap-4">
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center border shadow-inner ${item.category === 'F&B' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'}`}>
+                                {item.category === 'F&B' ? <Coffee className="w-5 h-5" /> : item.category === 'Room' ? <Bed className="w-5 h-5" /> : <Zap className="w-5 h-5" />}
+                              </div>
+                              <div>
+                                <p className="text-sm font-bold text-slate-100 uppercase tracking-tight">{item.description}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest tabular-nums">{new Date(item.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                                  <span className="w-1 h-1 bg-white/10 rounded-full"></span>
+                                  <span className="text-[9px] font-black text-indigo-400/80 uppercase">{item.category}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-6">
+                              <div className="text-right">
+                                <p className="text-base font-black text-white tabular-nums tracking-tighter">₹{item.amount.toLocaleString()}</p>
+                                <button
+                                  className={`text-[8px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5 transition-all px-2 py-1 rounded-md mt-1.5 ${item.isPaid ? 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/30' : 'text-rose-400 bg-rose-400/10 border border-rose-400/30 animate-pulse'}`}
+                                  onClick={() => {
+                                    if (item.isPaid) {
+                                      const newFolio = (booking.folio || []).map(f => f.id === item.id ? { ...f, isPaid: false, paymentMethod: undefined, paymentId: undefined } : f);
+                                      onUpdateFolio?.(booking.id, newFolio);
+                                    } else {
+                                      setTargetFolioItem(item);
+                                      setPaymentAmount(item.amount.toString());
+                                      setPaymentCategory('Folio');
+                                      setShowPaymentModal(true);
+                                    }
+                                  }}
+                                >
+                                  {item.isPaid ? (
+                                    <div className="flex items-center gap-2">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      <span>{item.paymentMethod || 'Settled'}</span>
+                                      <Printer className="w-3 h-3 opacity-50 hover:opacity-100 transition-opacity ml-1" onClick={(e) => { e.stopPropagation(); printReceipt(item); }} />
+                                    </div>
+                                  ) : 'Mark as Paid'}
+                                </button>
+                              </div>
+                              <button onClick={() => {
+                                const isExtraBed = (item.category === 'Other' || item.category === 'Room') &&
+                                  item.description?.toUpperCase().includes('EXTRA BED');
+
+                                if (isExtraBed) {
+                                  // Using the dedicated handler ensures both count and folio are updated atomically
+                                  onUpdateExtraBeds?.(booking.id, 0);
+                                } else {
+                                  const newFolio = (booking.folio || []).filter(f => f.id !== item.id);
+                                  onUpdateFolio?.(booking.id, newFolio);
+                                }
+                              }} className="p-2 text-white/10 hover:text-rose-400 hover:bg-white/5 rounded-xl transition-all opacity-0 group-hover/item:opacity-100">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="py-16 text-center border-2 border-dashed border-white/5 rounded-[2rem] bg-white/[0.02]">
+                          <Receipt className="w-10 h-10 text-white/5 mx-auto mb-4" />
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">No Folio Entries Found</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
             {/* LINKED ROOMS (Multi-Room Booking) */}
             {relatedBookings.length > 1 && (
               <section className="bg-white rounded-[2.5rem] border-2 border-indigo-200 p-8 shadow-sm">
@@ -1176,242 +1598,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               </section>
             )}
 
-            {/* AUTOMATED FOLIO LOGS */}
-            <section className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3">
-                  <Utensils className="w-5 h-5 text-indigo-500" />
-                  Transaction Ledger
-                </h3>
-                <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 border border-slate-100 rounded-full text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                  {booking.folio?.length || 0} Entries
-                </div>
-              </div>
 
-              <div className="space-y-3">
-                {booking.folio && booking.folio.length > 0 ? (
-                  booking.folio.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:border-indigo-100 transition-all group">
-                      <div className="flex items-center gap-4">
-                        <div className={`p-2 rounded-xl border shadow-sm ${item.category === 'F&B' ? 'bg-orange-50 border-orange-100 text-orange-600' : item.category === 'Room' ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : 'bg-blue-50 border-blue-100 text-blue-600'}`}>
-                          {item.category === 'F&B' ? <Coffee className="w-4 h-4" /> : item.category === 'Room' ? <Bed className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-800">{item.description}</p>
-                          <p className="text-[9px] font-black text-slate-400 uppercase tabular-nums">{new Date(item.timestamp).toLocaleString()}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-right mr-4">
-                          <p className="text-sm font-black text-slate-900 tabular-nums">₹{item.amount.toLocaleString()}</p>
-                          <button
-                            className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all px-2 py-0.5 rounded-md mt-1 ${item.isPaid ? 'text-emerald-500 bg-emerald-50 hover:bg-emerald-100' : 'text-rose-500 bg-rose-50 hover:bg-rose-100'}`}
-                            onClick={() => {
-                              if (item.isPaid) {
-                                // Toggle back to unpaid if needed (optional, but keep for flexibility)
-                                const newFolio = (booking.folio || []).map(f =>
-                                  f.id === item.id ? { ...f, isPaid: false, paymentMethod: undefined, paymentId: undefined } : f
-                                );
-                                onUpdateFolio?.(booking.id, newFolio);
-                              } else {
-                                setTargetFolioItem(item);
-                                setPaymentAmount(item.amount.toString());
-                                setPaymentCategory('Folio');
-                                setShowPaymentModal(true);
-                              }
-                            }}
-                          >
-                            <div className={`w-1.5 h-1.5 rounded-full ${item.isPaid ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'}`}></div>
-                            {item.isPaid ? (
-                              <div className="flex items-center gap-1.5">
-                                <span>{item.paymentMethod || 'Settled'}</span>
-                                <Printer
-                                  className="w-3 h-3 opacity-50 hover:opacity-100 transition-opacity"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    printReceipt(item);
-                                  }}
-                                />
-                              </div>
-                            ) : 'Unpaid'}
-                          </button>
-                        </div>
-                        <button className="p-2 text-slate-300 hover:text-red-500 transition-colors">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="py-12 text-center border-2 border-dashed border-slate-100 rounded-[2rem] bg-slate-50/50">
-                    <Receipt className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                    <p className="text-xs font-bold text-slate-400">No additional charges found for this folio.</p>
-                  </div>
-                )}
-              </div>
-            </section>
           </div>
 
           <div className="space-y-8">
-            <section className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
-                <Receipt className="w-32 h-32" />
-              </div>
-              <div className="flex flex-col gap-6 mb-10 relative z-10">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-black tracking-tight uppercase flex items-center gap-2 text-indigo-100">
-                    <CreditCard className="w-5 h-5 text-indigo-400" />
-                    Folio Status
-                  </h3>
-                  <span className="px-3 py-1 bg-indigo-600 rounded-lg text-[10px] font-black uppercase tracking-widest border border-indigo-500/50 tabular-nums shadow-lg shadow-indigo-900/40">
-                    {nights} {nights === 1 ? 'Night' : 'Nights'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => {
-                      setTargetFolioItem(null);
-                      setPaymentAmount('');
-                      setPaymentCategory('Partial');
-                      setShowPaymentModal(true);
-                    }}
-                    className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border border-white/10 transition-all flex items-center justify-center gap-3 active:scale-95"
-                  >
-                    <CreditCard className="w-4 h-4 shadow-sm" />
-                    Partial Pay
-                  </button>
-                  <button
-                    onClick={printInvoice}
-                    className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border border-white/10 transition-all flex items-center justify-center gap-3 active:scale-95"
-                  >
-                    <Printer className="w-4 h-4 shadow-sm" />
-                    Invoice
-                  </button>
-                </div>
-              </div>
 
-              <div className="space-y-6 relative z-10">
-                <div className="flex gap-5">
-                  <div className="p-3.5 bg-white/10 rounded-2xl shrink-0 border border-white/5"><Calendar className="w-6 h-6 text-indigo-300" /></div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Stay Period</p>
-                    <p className="text-sm font-black tabular-nums">{new Date(booking.checkIn).toLocaleDateString()} - {new Date(booking.checkOut).toLocaleDateString()}</p>
-                  </div>
-                </div>
-
-                {/* Facilities / Folio Breakdown */}
-                {booking.folio && booking.folio.length > 0 && (
-                  <div className="space-y-3 pt-2">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Facilities / Services</p>
-                    <div className="flex flex-wrap gap-2">
-                      {Array.from(new Set(booking.folio.map(f => f.category))).map(cat => (
-                        <div key={cat} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/10 rounded-xl">
-                          {cat === 'F&B' ? <Utensils className="w-3 h-3 text-orange-400" /> :
-                            cat === 'Laundry' ? <Sparkles className="w-3 h-3 text-blue-400" /> :
-                              <Zap className="w-3 h-3 text-amber-400" />}
-                          <span className="text-[9px] font-black uppercase">{cat}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-8 pt-8 border-t border-white/10 space-y-3 relative z-10">
-                <div className="flex justify-between items-center text-slate-400 text-[10px] font-black uppercase tracking-widest">
-                  <span>Room Rate</span>
-                  <span className="text-white">₹{roomRate.toLocaleString()} / night</span>
-                </div>
-                <div className="flex justify-between items-center text-slate-400 text-[10px] font-black uppercase tracking-widest">
-                  <span>Room Base ({nights}n)</span>
-                  <span className="text-white">₹{roomBaseTotal.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center text-slate-400 text-[10px] font-black uppercase tracking-widest">
-                  <span>Add-ons / F&B (Unpaid)</span>
-                  <span className={`${unpaidFolioTotal > 0 ? 'text-indigo-400' : 'text-slate-500'}`}>+ ₹{unpaidFolioTotal.toLocaleString()}</span>
-                </div>
-                {paidFolioTotal > 0 && (
-                  <div className="flex justify-between items-center text-slate-500 text-[10px] font-black uppercase tracking-widest opacity-60">
-                    <span>Paid Separately</span>
-                    <span className="line-through">₹{paidFolioTotal.toLocaleString()}</span>
-                  </div>
-                )}
-
-                <div className="flex justify-between items-end pt-6 border-t border-white/10 mt-6">
-                  <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Net Outstanding</p>
-                    <div className="flex items-baseline gap-4">
-                      <p className={`text-4xl font-black tabular-nums ${netOutstanding <= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        ₹{netOutstanding.toLocaleString()}
-                      </p>
-                      {netOutstanding > 0 && (
-                        <button
-                          onClick={() => {
-                            setTargetFolioItem(null);
-                            setPaymentAmount(netOutstanding.toFixed(2));
-                            setPaymentCategory('Partial');
-                            setShowPaymentModal(true);
-                          }}
-                          className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-lg shadow-indigo-900/40 transition-all active:scale-95"
-                        >
-                          Pay Full
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Total Payments</p>
-                    <p className="text-sm font-black text-emerald-400 tabular-nums">₹{totalPayments.toLocaleString()}</p>
-                  </div>
-                </div>
-
-                {/* Sub-breakdown of payments */}
-                {(booking.payments || []).length > 0 && (
-                  <div className="space-y-4 pt-6 border-t border-white/5">
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Recent Transactions</p>
-                    <div className="space-y-2">
-                      {(booking.payments || []).slice().reverse().slice(0, 5).map(p => (
-                        <div key={p.id} className="p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-between group/tx hover:bg-white/[0.08] transition-all">
-                          <div className="flex items-center gap-4">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${p.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                              <Receipt className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-sm font-black tabular-nums ${p.status === 'Completed' ? 'text-white' : 'text-slate-500 line-through'}`}>₹{p.amount.toLocaleString()}</span>
-                                <span className={`text-[8px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded ${p.status === 'Completed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                                  {p.status}
-                                </span>
-                              </div>
-                              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
-                                {p.method} • {new Date(p.timestamp).toLocaleDateString()}
-                              </p>
-                            </div>
-                          </div>
-
-                          {p.status === 'Completed' && (
-                            <div className="flex items-center gap-2 opacity-0 group-hover/tx:opacity-100 transition-opacity">
-                              <button
-                                onClick={() => handleUpdatePaymentStatus(p.id, 'Refunded')}
-                                className="px-2 py-1 bg-white/5 hover:bg-amber-500/20 text-[8px] font-black text-slate-400 hover:text-amber-400 uppercase tracking-widest rounded-lg border border-white/10 transition-all"
-                              >
-                                Refund
-                              </button>
-                              <button
-                                onClick={() => handleUpdatePaymentStatus(p.id, 'Cancelled')}
-                                className="px-2 py-1 bg-white/5 hover:bg-rose-500/20 text-[8px] font-black text-slate-400 hover:text-rose-400 uppercase tracking-widest rounded-lg border border-white/10 transition-all"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
 
             {/* SPECIAL REQUESTS */}
             <section className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
@@ -1651,6 +1842,112 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         </div>
       )
       }
+      {/* Add Charge (Service) Modal */}
+      {showAddChargeModal && (
+        <div className="fixed inset-0 z-[11000] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300 border border-white/20">
+            <div className="p-8 border-b border-slate-100 bg-slate-50">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xl font-black text-slate-900 tracking-tight uppercase flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-indigo-600" />
+                  Add Service Bill
+                </h3>
+                <button onClick={() => setShowAddChargeModal(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                Add an unpaid charge to guest folio
+              </p>
+            </div>
+
+            <div className="p-8 space-y-6">
+              <div className="space-y-4">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <Edit3 className="w-3 h-3" /> Description
+                </label>
+                <input
+                  type="text"
+                  value={chargeDescription}
+                  onChange={(e) => setChargeDescription(e.target.value)}
+                  className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-600 focus:ring-0 transition-all outline-none"
+                  placeholder="e.g. In-Room Dining, Laundry, Extra Bed..."
+                  autoFocus
+                />
+              </div>
+
+              <div className="space-y-4">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <Receipt className="w-3 h-3" /> Amount (INR)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-6 top-1/2 -translate-y-1/2 text-xl font-black text-slate-300">₹</span>
+                  <input
+                    type="number"
+                    value={chargeAmount}
+                    onChange={(e) => setChargeAmount(e.target.value)}
+                    className="w-full pl-12 pr-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-2xl font-black text-slate-900 focus:border-indigo-600 focus:ring-0 transition-all outline-none"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <Users className="w-3 h-3" /> Category
+                </label>
+                <div className="grid grid-cols-3 gap-3">
+                  {(['F&B', 'Laundry', 'Other'] as const).map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => setChargeCategory(cat)}
+                      className={`py-4 rounded-xl border-2 transition-all flex flex-col items-center gap-1.5 ${chargeCategory === cat ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-600 hover:border-indigo-200'}`}
+                    >
+                      {cat === 'F&B' ? <Coffee className="w-4 h-4" /> : cat === 'Laundry' ? <Sparkles className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+                      <span className="text-[9px] font-black uppercase">{cat}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <label className="flex items-center gap-4 p-5 bg-indigo-50 border-2 border-indigo-100 rounded-[2rem] cursor-pointer group hover:border-indigo-300 transition-all shadow-sm">
+                  <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${isChargeInclusive ? 'bg-indigo-600 border-indigo-600 shadow-md' : 'bg-white border-indigo-200 group-hover:border-indigo-400'}`}>
+                    <input
+                      type="checkbox"
+                      className="hidden"
+                      checked={isChargeInclusive}
+                      onChange={(e) => setIsChargeInclusive(e.target.checked)}
+                    />
+                    {isChargeInclusive && <Check className="w-4 h-4 text-white" />}
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-black text-indigo-900 group-hover:text-indigo-600 uppercase tracking-tight">Amount Includes GST</p>
+                    <p className="text-[9px] font-bold text-indigo-400 uppercase leading-none mt-1">Check if tax is baked into this price</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div className="p-8 border-t border-slate-50 bg-slate-50 flex gap-4">
+              <button
+                onClick={() => setShowAddChargeModal(false)}
+                className="flex-1 py-4 text-xs font-black text-slate-400 uppercase tracking-widest"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddCharge}
+                disabled={!chargeDescription || !chargeAmount}
+                className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add to Folio
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Payment Processing Modal */}
       {showPaymentModal && (
         <div className="fixed inset-0 z-[11000] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
@@ -1709,19 +2006,48 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               </div>
             </div>
 
-            <div className="p-8 border-t border-slate-50 bg-slate-50 flex gap-4">
+            <div className="p-8 border-t border-slate-50 bg-slate-50 space-y-4">
+              {/* Online Payment Button */}
               <button
-                onClick={() => setShowPaymentModal(false)}
-                className="flex-1 py-4 text-xs font-black text-slate-400 uppercase tracking-widest"
+                onClick={handleCollectOnline}
+                disabled={isProcessingOnline || !paymentAmount}
+                className="w-full py-4 bg-emerald-600 text-white rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                Cancel
+                {isProcessingOnline ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Globe className="w-4 h-4" />
+                    Collect Online (Razorpay)
+                  </>
+                )}
               </button>
-              <button
-                onClick={handleRecordPayment}
-                className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95"
-              >
-                Confirm Payment
-              </button>
+
+              {/* Divider */}
+              <div className="flex items-center gap-4">
+                <div className="flex-1 h-px bg-slate-200"></div>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Or Record Offline</span>
+                <div className="flex-1 h-px bg-slate-200"></div>
+              </div>
+
+              {/* Offline Payment Buttons */}
+              <div className="flex gap-4">
+                <button
+                  onClick={() => setShowPaymentModal(false)}
+                  className="flex-1 py-4 text-xs font-black text-slate-400 uppercase tracking-widest"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRecordPayment}
+                  className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95"
+                >
+                  Record {paymentMethod} Payment
+                </button>
+              </div>
             </div>
           </div>
         </div>

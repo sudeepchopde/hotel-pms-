@@ -37,6 +37,138 @@ app = FastAPI(title="SyncGuard PMS API")
 def ping():
     return {"status": "ok", "version": "1.1"}
 
+# ========== RAZORPAY INTEGRATION ==========
+from pydantic import BaseModel as PydanticBaseModel
+import hashlib
+import hmac
+import time
+
+class RazorpayOrderRequest(PydanticBaseModel):
+    amount: float  # In INR
+    bookingId: str
+    description: Optional[str] = "Payment for Hotel Stay"
+
+class RazorpayVerifyRequest(PydanticBaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+    bookingId: str
+    amount: float
+
+@app.post("/api/razorpay/create-order")
+def create_razorpay_order(request: RazorpayOrderRequest, db=Depends(get_db)):
+    """Create a Razorpay order for payment collection"""
+    # Get property settings to retrieve Razorpay keys
+    prop = None
+    if USE_DATABASE and db:
+        prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
+    
+    key_id = prop.razorpay_key_id if prop and hasattr(prop, 'razorpay_key_id') else None
+    key_secret = prop.razorpay_key_secret if prop and hasattr(prop, 'razorpay_key_secret') else None
+    
+    if not key_id or not key_secret:
+        raise HTTPException(status_code=400, detail="Razorpay credentials not configured. Please set them in Property Setup > Integrations.")
+    
+    try:
+        import razorpay
+        client = razorpay.Client(auth=(key_id, key_secret))
+        
+        # Amount in paise (INR * 100)
+        order_data = {
+            "amount": int(request.amount * 100),
+            "currency": "INR",
+            "receipt": f"booking_{request.bookingId}",
+            "notes": {
+                "booking_id": request.bookingId,
+                "description": request.description
+            }
+        }
+        
+        order = client.order.create(data=order_data)
+        return {
+            "order_id": order["id"],
+            "amount": request.amount,
+            "currency": "INR",
+            "key_id": key_id  # Frontend needs this to open checkout
+        }
+    except ImportError:
+        raise HTTPException(status_code=500, detail="Razorpay SDK not installed. Run: pip install razorpay")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create Razorpay order: {str(e)}")
+
+@app.post("/api/razorpay/verify-payment")
+def verify_razorpay_payment(request: RazorpayVerifyRequest, db=Depends(get_db)):
+    """Verify Razorpay payment signature and record payment"""
+    # Get property settings
+    prop = None
+    if USE_DATABASE and db:
+        prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
+    
+    key_secret = prop.razorpay_key_secret if prop and hasattr(prop, 'razorpay_key_secret') else None
+    
+    if not key_secret:
+        raise HTTPException(status_code=400, detail="Razorpay secret not configured")
+    
+    # Verify signature
+    message = f"{request.razorpay_order_id}|{request.razorpay_payment_id}"
+    expected_signature = hmac.new(
+        key_secret.encode(),
+        message.encode(),
+        hashlib.sha256
+    ).hexdigest()
+    
+    if expected_signature != request.razorpay_signature:
+        raise HTTPException(status_code=400, detail="Payment verification failed: Invalid signature")
+    
+    # Payment verified! Now add to booking
+    if USE_DATABASE and db:
+        booking = db.query(BookingDB).filter(BookingDB.id == request.bookingId).first()
+        if not booking:
+            raise HTTPException(status_code=404, detail="Booking not found")
+        
+        # Create payment record
+        new_payment = {
+            "id": request.razorpay_payment_id,
+            "amount": request.amount,
+            "method": "Card",  # Razorpay handles multiple methods
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "category": "Partial",
+            "description": f"Online Payment (Razorpay)",
+            "status": "Completed"
+        }
+        
+        # Add to payments list
+        current_payments = booking.payments or []
+        if isinstance(current_payments, str):
+            import json
+            current_payments = json.loads(current_payments)
+        current_payments.append(new_payment)
+        booking.payments = current_payments
+        
+        # Auto-reconcile: Mark unpaid folio items as paid (oldest first)
+        remaining = request.amount
+        current_folio = booking.folio or []
+        if isinstance(current_folio, str):
+            import json
+            current_folio = json.loads(current_folio)
+        
+        for item in current_folio:
+            if remaining <= 0:
+                break
+            if not item.get('isPaid', False):
+                item['isPaid'] = True
+                item['paymentMethod'] = 'Card'
+                item['paymentId'] = request.razorpay_payment_id
+                remaining -= item.get('amount', 0)
+        
+        booking.folio = current_folio
+        db.commit()
+        
+        return {"status": "success", "payment_id": request.razorpay_payment_id, "message": "Payment recorded successfully"}
+    
+    return {"status": "success", "payment_id": request.razorpay_payment_id}
+
+
 
 # Configure CORS
 origins = [
@@ -91,7 +223,9 @@ FALLBACK_PROPERTY = PropertySettings(
     phone='+91 98765 43210',
     email='contact@hotelsatsangi.com',
     gstNumber='20ABCDE1234F1Z5',
-    gstRate=12.0
+    gstRate=12.0,
+    foodGstRate=5.0,
+    otherGstRate=18.0
 )
 
 FALLBACK_BOOKINGS: List[Booking] = []
@@ -189,7 +323,11 @@ if USE_DATABASE:
             phone=db_prop.phone,
             email=db_prop.email,
             gstNumber=db_prop.gst_number,
-            gstRate=db_prop.gst_rate
+            gstRate=db_prop.gst_rate,
+            foodGstRate=db_prop.food_gst_rate if hasattr(db_prop, 'food_gst_rate') else 5.0,
+            otherGstRate=db_prop.other_gst_rate if hasattr(db_prop, 'other_gst_rate') else 18.0,
+            razorpayKeyId=db_prop.razorpay_key_id if hasattr(db_prop, 'razorpay_key_id') else None,
+            razorpayKeySecret=db_prop.razorpay_key_secret if hasattr(db_prop, 'razorpay_key_secret') else None
         )
 
 @app.get("/")
@@ -318,6 +456,10 @@ def update_property_settings(settings: PropertySettings, db=Depends(get_db)):
         prop.email = settings.email
         prop.gst_number = settings.gstNumber
         prop.gst_rate = settings.gstRate
+        prop.food_gst_rate = settings.foodGstRate
+        prop.other_gst_rate = settings.otherGstRate
+        prop.razorpay_key_id = settings.razorpayKeyId
+        prop.razorpay_key_secret = settings.razorpayKeySecret
         
         db.commit()
         db.refresh(prop)

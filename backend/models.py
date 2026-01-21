@@ -8,6 +8,10 @@ class PropertySettings(BaseModel):
     email: Optional[str] = None
     gstNumber: Optional[str] = None
     gstRate: float = 12.0
+    foodGstRate: float = 5.0
+    otherGstRate: float = 18.0
+    razorpayKeyId: Optional[str] = None
+    razorpayKeySecret: Optional[str] = None
 
 class WeeklyRule(BaseModel):
     isActive: bool

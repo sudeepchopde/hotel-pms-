@@ -5,7 +5,11 @@ export interface PropertySettings {
   email?: string;
   gstNumber?: string;
   gstRate: number;
+  foodGstRate?: number;
+  otherGstRate?: number;
   geminiApiKey?: string;
+  razorpayKeyId?: string;
+  razorpayKeySecret?: string;
 }
 
 export interface Hotel {
@@ -155,6 +159,7 @@ export interface FolioItem {
   category: 'F&B' | 'Laundry' | 'Room' | 'Other';
   timestamp: string;
   isPaid?: boolean;
+  isInclusive?: boolean; // If true, amount includes GST
   paymentMethod?: string;
   paymentId?: string; // Link to a Payment record if paid
 }
