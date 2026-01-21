@@ -564,7 +564,7 @@ const App: React.FC = () => {
           )}
         </div>
 
-        <div className="flex flex-col gap-1 mt-2 w-full">
+        <div className="flex-1 flex flex-col gap-1 mt-2 w-full overflow-y-auto min-h-0 custom-scrollbar">
           {navItems.map(item => (
             <div
               key={item.id}
@@ -584,8 +584,8 @@ const App: React.FC = () => {
               <button
                 onClick={() => setActiveTab(item.id as any)}
                 className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all cursor-grab active:cursor-grabbing group ${activeTab === item.id
-                    ? 'bg-indigo-600 text-white shadow-lg'
-                    : 'hover:bg-slate-700/50 text-slate-400'
+                  ? 'bg-indigo-600 text-white shadow-lg'
+                  : 'hover:bg-slate-700/50 text-slate-400'
                   } ${isSidebarCollapsed ? 'justify-center' : ''}`}
                 title={isSidebarCollapsed ? item.label : undefined}
               >

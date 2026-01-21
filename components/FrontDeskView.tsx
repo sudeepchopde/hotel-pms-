@@ -1713,7 +1713,7 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
                 style={{ height: STICKY_HEADER_TOTAL_HEIGHT }}
               >
                 {/* Left Card - Matches Room Rows */}
-                <div className="w-64 h-[72px] shrink-0 bg-white rounded-2xl shadow-xl border border-slate-300/30 px-6 flex flex-col justify-center sticky left-0 z-[56]">
+                <div className="w-44 h-[72px] shrink-0 bg-white rounded-2xl shadow-xl border border-slate-300/30 px-6 flex flex-col justify-center sticky left-0 z-[56]">
                   <span className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-1">Grid Context</span>
                   <div className="flex items-center justify-between">
                     <span className="text-xl font-black text-slate-800 tracking-tighter">Inventory</span>
@@ -1763,7 +1763,7 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
                   <div className="space-y-4 animate-pulse">
                     {[1, 2, 3, 4].map(i => (
                       <div key={i} className="flex flex-col md:flex-row gap-3">
-                        <div className="w-full md:w-64 h-[48px] bg-slate-200 rounded-xl shrink-0"></div>
+                        <div className="w-full md:w-44 h-[48px] bg-slate-200 rounded-xl shrink-0"></div>
                         <div className="flex-1 h-[48px] bg-slate-200 rounded-xl"></div>
                       </div>
                     ))}
@@ -1777,7 +1777,7 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
                       const gradientStyle = CATEGORY_GRADIENTS[index % CATEGORY_GRADIENTS.length];
                       return (
                         <div key={row.id} className="sticky top-[72px] z-30 flex flex-col md:flex-row gap-3 pt-3">
-                          <div onClick={() => toggleExpand(row.id)} className="w-full md:w-64 shrink-0 rounded-xl shadow-xl px-4 py-2 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] border border-white/20 backdrop-blur-lg relative overflow-hidden group sticky left-0 z-40" style={gradientStyle}>
+                          <div onClick={() => toggleExpand(row.id)} className="w-full md:w-44 shrink-0 rounded-xl shadow-xl px-4 py-2 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] border border-white/20 backdrop-blur-lg relative overflow-hidden group sticky left-0 z-40" style={gradientStyle}>
                             <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 100%)' }}></div>
                             <div className="flex items-center gap-3 relative z-10">
                               <div className="p-1.5 bg-black/30 rounded-lg text-white shadow-inner"><Bed className="w-4 h-4" /></div>
@@ -1802,7 +1802,7 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
 
                     return (
                       <div key={row.id} className="flex flex-col md:flex-row gap-3 group animate-in slide-in-from-top-2 fade-in duration-300 ease-out fill-mode-forwards">
-                        <div className="w-full md:w-64 md:sticky md:left-0 z-20 shrink-0">
+                        <div className="w-full md:w-44 md:sticky md:left-0 z-20 shrink-0">
                           <div className={`h-[48px] w-full ${isAlerted ? 'bg-amber-100 ring-2 ring-amber-400' : ''} rounded-xl shadow-lg border ${isAlerted ? 'border-amber-500' : 'border-slate-300/30'} px-3 py-1 flex flex-col justify-center hover:shadow-indigo-500/10 transition-all group-hover:border-indigo-400/50 relative overflow-hidden`} style={isAlerted ? {} : labelTintStyle}>
                             <div className={`absolute top-0 left-0 w-1.5 h-full ${isAlerted ? 'bg-amber-600' : 'bg-indigo-600'} opacity-0 group-hover:opacity-100 transition-opacity`}></div>
                             <div className="flex justify-between items-center">
@@ -1863,7 +1863,7 @@ Important: Read handwritten text carefully. Dates should be in YYYY-MM-DD format
           </div>
         </div>
 
-        <div className="w-80 bg-white border-l border-slate-200 h-full overflow-y-auto hidden xl:flex flex-col shrink-0 z-30 shadow-2xl custom-scrollbar">
+        <div className="w-56 bg-white border-l border-slate-200 h-full overflow-y-auto hidden xl:flex flex-col shrink-0 z-30 shadow-2xl custom-scrollbar">
           <div className="p-6 border-b border-slate-100 bg-slate-50/50"><h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2"><Zap className="w-5 h-5 text-amber-500" />Live Activity</h3><p className="text-xs text-slate-500 font-bold mt-1 uppercase tracking-widest">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p></div>
           <div className="flex-1 p-6 space-y-8">
             <div className="space-y-4 p-4 bg-indigo-50/40 rounded-2xl border border-indigo-100/50">
