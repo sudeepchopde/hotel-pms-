@@ -16,6 +16,9 @@ class PropertySettingsDB(Base):
     other_gst_rate = Column(Float, default=18.0)
     razorpay_key_id = Column(String, nullable=True)
     razorpay_key_secret = Column(String, nullable=True)
+    last_invoice_number = Column(Integer, default=0)
+    public_base_url = Column(String, nullable=True)
+    gemini_api_key = Column(String, nullable=True)
 
 class HotelDB(Base):
     __tablename__ = "hotels"
@@ -66,6 +69,9 @@ class BookingDB(Base):
     is_settled = Column(Boolean, default=False)
     rejection_reason = Column(String, nullable=True)
     payments = Column(JSON, default=[])
+    invoice_number = Column(String, nullable=True)
+    invoice_path = Column(String, nullable=True)
+    receipt_path = Column(String, nullable=True)
 
 class OTAConnectionDB(Base):
     __tablename__ = "ota_connections"

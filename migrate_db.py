@@ -22,7 +22,10 @@ def migrate():
                 'channel_sync': 'JSON',
                 'rejection_reason': 'VARCHAR',
                 'is_settled': 'BOOLEAN DEFAULT FALSE',
-                'payments': 'JSON DEFAULT \'[]\''
+                'payments': 'JSON DEFAULT \'[]\'',
+                'invoice_number': 'VARCHAR',
+                'invoice_path': 'VARCHAR',
+                'receipt_path': 'VARCHAR'
             }
             for col, col_type in missing_cols.items():
                 res = conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name='bookings' AND column_name='{col}'"))
@@ -101,7 +104,12 @@ def migrate():
             # Check for property_settings missing columns
             ps_cols = {
                 'food_gst_rate': 'FLOAT DEFAULT 5.0',
-                'other_gst_rate': 'FLOAT DEFAULT 18.0'
+                'other_gst_rate': 'FLOAT DEFAULT 18.0',
+                'razorpay_key_id': 'VARCHAR',
+                'razorpay_key_secret': 'VARCHAR',
+                'last_invoice_number': 'INTEGER DEFAULT 0',
+                'public_base_url': 'VARCHAR',
+                'gemini_api_key': 'VARCHAR'
             }
             for col, col_type in ps_cols.items():
                 res = conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name='property_settings' AND column_name='{col}'"))

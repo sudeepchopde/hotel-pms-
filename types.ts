@@ -10,6 +10,8 @@ export interface PropertySettings {
   geminiApiKey?: string;
   razorpayKeyId?: string;
   razorpayKeySecret?: string;
+  lastInvoiceNumber?: number;
+  publicBaseUrl?: string;
 }
 
 export interface Hotel {
@@ -187,6 +189,9 @@ export interface Booking {
   specialRequests?: string;
   isVIP?: boolean;
   isSettled?: boolean;
+  invoiceNumber?: string;
+  invoicePath?: string;
+  receiptPath?: string;
   folio?: FolioItem[];
   payments?: Payment[];
 }

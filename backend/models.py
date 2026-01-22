@@ -12,6 +12,9 @@ class PropertySettings(BaseModel):
     otherGstRate: float = 18.0
     razorpayKeyId: Optional[str] = None
     razorpayKeySecret: Optional[str] = None
+    lastInvoiceNumber: Optional[int] = 0
+    publicBaseUrl: Optional[str] = None
+    geminiApiKey: Optional[str] = None
 
 class WeeklyRule(BaseModel):
     isActive: bool
@@ -144,6 +147,9 @@ class Booking(BaseModel):
     isSettled: Optional[bool] = None
     folio: Optional[List[FolioItem]] = None
     payments: Optional[List[Payment]] = None
+    invoiceNumber: Optional[str] = None
+    invoicePath: Optional[str] = None
+    receiptPath: Optional[str] = None
 class RoomTransferRequest(BaseModel):
     bookingId: str
     newRoomTypeId: str

@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+import os
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from backend.models import Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest, PropertySettings
@@ -32,6 +34,10 @@ except Exception as e:
         yield None
 
 app = FastAPI(title="SyncGuard PMS API")
+
+# Mount Billing folder for PDF access
+os.makedirs("Billing", exist_ok=True)
+app.mount("/billing", StaticFiles(directory="Billing"), name="billing")
 
 @app.get("/ping")
 def ping():
@@ -225,7 +231,9 @@ FALLBACK_PROPERTY = PropertySettings(
     gstNumber='20ABCDE1234F1Z5',
     gstRate=12.0,
     foodGstRate=5.0,
-    otherGstRate=18.0
+    otherGstRate=18.0,
+    publicBaseUrl='http://localhost:3000',
+    geminiApiKey=''
 )
 
 FALLBACK_BOOKINGS: List[Booking] = []
@@ -292,6 +300,10 @@ if USE_DATABASE:
             extraBeds=db_booking.extra_beds,
             specialRequests=db_booking.special_requests,
             isVIP=db_booking.is_vip,
+            isSettled=db_booking.is_settled,
+            invoiceNumber=db_booking.invoice_number,
+            invoicePath=db_booking.invoice_path,
+            receiptPath=db_booking.receipt_path,
             folio=safe_json_list(db_booking.folio),
             payments=safe_json_list(db_booking.payments)
         )
@@ -327,7 +339,10 @@ if USE_DATABASE:
             foodGstRate=db_prop.food_gst_rate if hasattr(db_prop, 'food_gst_rate') else 5.0,
             otherGstRate=db_prop.other_gst_rate if hasattr(db_prop, 'other_gst_rate') else 18.0,
             razorpayKeyId=db_prop.razorpay_key_id if hasattr(db_prop, 'razorpay_key_id') else None,
-            razorpayKeySecret=db_prop.razorpay_key_secret if hasattr(db_prop, 'razorpay_key_secret') else None
+            razorpayKeySecret=db_prop.razorpay_key_secret if hasattr(db_prop, 'razorpay_key_secret') else None,
+            publicBaseUrl=db_prop.public_base_url if hasattr(db_prop, 'public_base_url') else None,
+            geminiApiKey=db_prop.gemini_api_key if hasattr(db_prop, 'gemini_api_key') else None,
+            lastInvoiceNumber=db_prop.last_invoice_number if hasattr(db_prop, 'last_invoice_number') else 0
         )
 
 @app.get("/")
@@ -460,6 +475,9 @@ def update_property_settings(settings: PropertySettings, db=Depends(get_db)):
         prop.other_gst_rate = settings.otherGstRate
         prop.razorpay_key_id = settings.razorpayKeyId
         prop.razorpay_key_secret = settings.razorpayKeySecret
+        prop.last_invoice_number = settings.lastInvoiceNumber or 0
+        prop.public_base_url = settings.publicBaseUrl
+        prop.gemini_api_key = settings.geminiApiKey
         
         db.commit()
         db.refresh(prop)
@@ -660,6 +678,7 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
         db_booking.special_requests = booking.specialRequests
         db_booking.is_vip = booking.isVIP or False
         db_booking.is_settled = booking.isSettled or False
+        db_booking.invoice_number = booking.invoiceNumber
         db_booking.folio = [f.dict() for f in booking.folio] if booking.folio else []
         db_booking.payments = [p.dict() for p in booking.payments] if booking.payments else []
         
@@ -790,16 +809,12 @@ def transfer_booking(booking_id: str, transfer: RoomTransferRequest, db=Depends(
             return db_booking_to_pydantic(db_booking)
         
         # Mid-stay split (Room Switch)
-        # 1. Create a new booking for the second segment
         import uuid
         import time
         new_id = f"switch-{str(uuid.uuid4())[:8]}"
-        
-        # Use existing reservation_id or create one to link them
         res_id = db_booking.reservation_id or f"res-{db_booking.id}"
-        db_booking.reservation_id = res_id
         
-        # Calculate rates for the new booking if not keeping original rate
+        # Calculate rates
         new_amount = db_booking.amount
         if not transfer.keepRate:
             rt = db.query(RoomTypeDB).filter(RoomTypeDB.id == transfer.newRoomTypeId).first()
@@ -818,7 +833,7 @@ def transfer_booking(booking_id: str, transfer: RoomTransferRequest, db=Depends(
             room_number=transfer.newRoomNumber,
             guest_name=db_booking.guest_name,
             source=db_booking.source,
-            status=db_booking.status, # Usually 'CheckedIn'
+            status=db_booking.status,
             timestamp=int(time.time() * 1000),
             check_in=transfer.effectiveDate,
             check_out=db_booking.check_out,
@@ -835,14 +850,100 @@ def transfer_booking(booking_id: str, transfer: RoomTransferRequest, db=Depends(
             is_vip=db_booking.is_vip
         )
         
-        # 2. Update original booking's check_out date
         db_booking.check_out = transfer.effectiveDate
-        # If it was CheckedIn, it stays CheckedIn until the effectiveDate (which is usually today)
-        # But conceptually the segment in room A is finishing.
-        # In many systems, we might set status to 'CheckedOut' for the first segment if it's completely past.
-        # For now let's keep it consistent with the transfer request.
+        db_booking.reservation_id = res_id
         
         db.add(new_booking)
+        db.commit()
+        db.refresh(new_booking)
+        return db_booking_to_pydantic(new_booking)
+    raise HTTPException(status_code=400, detail="Database mode required for transfers")
+
+@app.post("/api/bookings/{booking_id}/checkout")
+def checkout_booking(booking_id: str, db=Depends(get_db)):
+    if not USE_DATABASE or not db:
+        raise HTTPException(status_code=400, detail="Database required for checkout processing")
+    
+    booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property settings not found")
+        
+    import os
+    import time
+    from backend.billing_utils import generate_invoice_pdf, generate_receipt_pdf
+
+    # Generate Invoice Number
+    year = time.strftime("%Y")
+    new_serial = (prop.last_invoice_number or 0) + 1
+    invoice_num = f"INV-{year}-{new_serial:04d}"
+    
+    # Update Property Settings
+    prop.last_invoice_number = new_serial
+    
+    # Update Booking
+    booking.invoice_number = invoice_num
+    booking.status = "CheckedOut"
+    booking.is_settled = True # Finalized
+    
+    # Reflect zero balance (mark all folio as paid)
+    current_folio = booking.folio or []
+    if isinstance(current_folio, str):
+        import json
+        current_folio = json.loads(current_folio)
+    
+    for item in current_folio:
+        if not item.get('isPaid'):
+            item['isPaid'] = True
+            item['paymentMethod'] = 'Settled'
+    
+    booking.folio = current_folio
+    
+    # Prepare data for PDF
+    booking_pydantic = db_booking_to_pydantic(booking)
+    prop_pydantic = db_property_to_pydantic(prop)
+    
+    booking_dict = booking_pydantic.dict()
+    # Add room type name for PDF
+    rt = db.query(RoomTypeDB).filter(RoomTypeDB.id == booking.room_type_id).first()
+    booking_dict['roomTypeName'] = rt.name if rt else "Standard"
+    
+    prop_dict = prop_pydantic.dict()
+    
+    # PDF paths
+    os.makedirs("Billing", exist_ok=True)
+    invoice_path = f"Billing/Invoice_{invoice_num}.pdf"
+    receipt_path = f"Billing/Receipt_{invoice_num}.pdf"
+    
+    try:
+        generate_invoice_pdf(booking_dict, prop_dict, invoice_num, invoice_path)
+        
+        # Check if paid to generate receipt
+        total_paid = sum(p['amount'] for p in (booking.payments or []) if p.get('status') == 'Completed')
+        # We also count paid folio items
+        total_paid += sum(f.get('amount', 0) for f in (booking.folio or []) if f.get('isPaid'))
+        
+        if total_paid > 0:
+            generate_receipt_pdf(booking_dict, prop_dict, invoice_num, receipt_path)
+            
+        # Save paths to DB
+        booking.invoice_path = invoice_path
+        if total_paid > 0:
+            booking.receipt_path = receipt_path
+            
+        db.commit()
+        return {
+            "status": "success", 
+            "invoiceNumber": invoice_num,
+            "invoicePath": invoice_path,
+            "receiptPath": receipt_path if total_paid > 0 else None
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Checkout failed: {str(e)}")
         
         # 3. Update guest profile with latest move if it exists
         if db_booking.guest_details:

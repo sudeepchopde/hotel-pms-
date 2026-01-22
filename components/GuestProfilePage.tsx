@@ -1,15 +1,18 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X, User, Calendar, MapPin, Smartphone, Mail, FileBadge,
   Bed, Users, Star, AlertCircle, CheckCircle2, CreditCard,
   Clock, ShieldAlert, Plus, Trash2, Edit3, MessageSquare, ChevronDown,
   Hash, LogIn, FileText, ScanLine, Lock, Eye, Shield, FileImage, RotateCcw,
   Utensils, Coffee, Zap, Receipt, Globe, Plane, Briefcase, Sparkles, Sofa,
-  Minus, ArrowRightCircle, AlertTriangle, Printer, Check, History, IndianRupee
+  Minus, ArrowRightCircle, AlertTriangle, Printer, Check, History, IndianRupee,
+  Camera, Upload, Loader2, Keyboard
 } from 'lucide-react';
+import { GoogleGenAI } from "@google/genai";
 import { Booking, RoomType, SyncEvent, FolioItem, GuestDetails, Payment, PropertySettings } from '../types';
-import { fetchGuestHistory } from '../api';
+import { fetchGuestHistory, updateBooking, lookupGuest } from '../api';
+import { NATIONALITIES } from '../constants';
 
 interface GuestProfilePageProps {
   booking: Booking;
@@ -84,6 +87,49 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   const [isChargeInclusive, setIsChargeInclusive] = useState(true);
   const [targetFolioItem, setTargetFolioItem] = useState<FolioItem | null>(null);
 
+  // New State for Integrated Check-in & Editing
+  const [editableDetails, setEditableDetails] = useState<GuestDetails>(booking.guestDetails || {
+    name: booking.guestName,
+    phoneNumber: '',
+    email: '',
+    idType: 'Aadhar',
+    idNumber: '',
+    address: '',
+    dob: '',
+    nationality: 'Indian',
+    gender: 'Male',
+    visaType: 'Tourist',
+    purposeOfVisit: 'Tourism',
+    arrivalPort: 'Delhi (DEL)'
+  });
+
+  const [idImages, setIdImages] = useState<{ front: string | null; back: string | null; visa: string | null; additional: string[] }>({
+    front: booking.guestDetails?.idImage || null,
+    back: booking.guestDetails?.idImageBack || null,
+    visa: booking.guestDetails?.visaPage || null,
+    additional: booking.guestDetails?.additionalDocs || []
+  });
+
+  const [ocrStep, setOcrStep] = useState<'idle' | 'scan_front' | 'scan_back' | 'scan_visa' | 'scan_additional' | 'scan_form' | 'processing' | 'success'>('idle');
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [isIdMasked, setIsIdMasked] = useState(booking.status === 'CheckedIn' || booking.status === 'CheckedOut');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [isAddingAccessory, setIsAddingAccessory] = useState(false);
+  const [editingAccessoryIndex, setEditingAccessoryIndex] = useState<number | null>(null);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const isCameraActiveRef = useRef<boolean>(false);
+
+  // Synchronize image state when side changes
+  useEffect(() => {
+    if (idImages.front && activeSide === 'front') setIsIdRevealed(true);
+  }, [activeSide]);
+
+  const details = editableDetails;
+
   const roomType = roomTypes.find(rt => rt.id === booking.roomTypeId);
 
   const getStatusStyles = (status: string) => {
@@ -139,13 +185,315 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
   const [history, setHistory] = useState<Booking[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
-  const details = booking.guestDetails;
+  const [checkoutDocs, setCheckoutDocs] = useState<{ invoice?: string; receipt?: string } | null>(
+    (booking.invoicePath || booking.receiptPath) ? { invoice: booking.invoicePath, receipt: booking.receiptPath } : null
+  );
+
+  // OCR & Camera Logic
+  const startCamera = async (step: typeof ocrStep) => {
+    try {
+      setOcrStep(step);
+      setIsCameraActive(true);
+      isCameraActiveRef.current = true;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Camera access failed", err);
+      setToastMessage("Could not access camera. Please upload manually.");
+      setIsCameraActive(false);
+      isCameraActiveRef.current = false;
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+    isCameraActiveRef.current = false;
+  };
+
+  const captureImage = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(video, 0, 0);
+      const imgData = canvas.toDataURL('image/jpeg', 0.82);
+
+      stopCamera();
+
+      if (ocrStep === 'scan_front') {
+        setIdImages(prev => ({ ...prev, front: imgData }));
+        setOcrStep('processing');
+        analyzeIdImage(imgData.split(',')[1]);
+      } else if (ocrStep === 'scan_back') {
+        setIdImages(prev => ({ ...prev, back: imgData }));
+        setOcrStep('success');
+      } else if (ocrStep === 'scan_visa') {
+        setIdImages(prev => ({ ...prev, visa: imgData }));
+        setOcrStep('success');
+      } else if (ocrStep === 'scan_form') {
+        setIdImages(prev => ({ ...prev, front: imgData }));
+        setOcrStep('processing');
+        analyzeFilledForm(imgData.split(',')[1]);
+      } else if (ocrStep === 'scan_additional') {
+        setIdImages(prev => ({ ...prev, additional: [...prev.additional, imgData] }));
+        setOcrStep('success');
+      }
+    }
+  };
+
+  const analyzeIdImage = async (base64Img: string) => {
+    try {
+      const apiKey = propertySettings?.geminiApiKey || process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error("API Key missing");
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: 'gemini-1.5-flash',
+        contents: [{
+          parts: [
+            { text: "Extract guest name, ID number, address, DOB, gender, nationality from this ID card. Return as clean JSON only." },
+            { inlineData: { mimeType: "image/jpeg", data: base64Img } }
+          ]
+        }],
+        config: { responseMimeType: 'application/json' }
+      });
+
+      if (response.text) {
+        const data = JSON.parse(response.text);
+        setEditableDetails(prev => ({
+          ...prev,
+          name: data.name || data.Name || prev.name,
+          idNumber: data.idNumber || data.ID_Number || prev.idNumber,
+          address: data.address || data.Address || prev.address,
+          dob: data.dob || data.DOB || prev.dob,
+          gender: data.gender || data.Gender || prev.gender,
+          nationality: data.nationality || data.Nationality || prev.nationality
+        }));
+        setOcrStep('success');
+        setToastMessage("Data extracted successfully!");
+      }
+    } catch (err) {
+      console.error("OCR failed", err);
+      setOcrStep('success');
+      setToastMessage("OCR extraction failed, please enter details manually.");
+    }
+  };
+
+  const analyzeFilledForm = async (base64Img: string) => {
+    try {
+      const apiKey = propertySettings?.geminiApiKey || process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error("API Key missing");
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: 'gemini-1.5-flash',
+        contents: [{
+          parts: [
+            { text: "Extract all guest information from this registration form. Return as JSON." },
+            { inlineData: { mimeType: "image/jpeg", data: base64Img } }
+          ]
+        }],
+        config: { responseMimeType: 'application/json' }
+      });
+
+      if (response.text) {
+        const data = JSON.parse(response.text);
+        setEditableDetails(prev => ({ ...prev, ...data }));
+        setOcrStep('success');
+        setToastMessage("Form data extracted!");
+      }
+    } catch (err) {
+      console.error("Form OCR failed", err);
+      setOcrStep('success');
+    }
+  };
+
+  const handleInputChange = (field: keyof GuestDetails, value: any) => {
+    setEditableDetails(prev => ({ ...prev, [field]: value }));
+  };
+
+  const validateDetails = () => {
+    const errors: string[] = [];
+    if (!editableDetails.name) errors.push("Full Name");
+    if (!editableDetails.phoneNumber) errors.push("Mobile Number");
+    if (!editableDetails.idType) errors.push("ID Type");
+    if (!editableDetails.idNumber) errors.push("ID Number");
+    if (!editableDetails.address) errors.push("Address");
+    if (!idImages.front) errors.push("ID Front Scan");
+
+    if (editableDetails.nationality !== 'Indian') {
+      if (!editableDetails.passportNumber) errors.push("Passport Number");
+      if (!idImages.visa) errors.push("Visa Page Scan");
+    }
+
+    setValidationErrors(errors);
+    return errors.length === 0;
+  };
+
+  const resetToPrimaryGuest = () => {
+    setIsAddingAccessory(false);
+    setEditingAccessoryIndex(null);
+    setEditableDetails(booking.guestDetails || {
+      name: booking.guestName,
+      phoneNumber: '',
+      email: '',
+      idType: 'Aadhar',
+      idNumber: '',
+      address: '',
+      dob: '',
+      nationality: 'Indian',
+      gender: 'Male',
+      visaType: 'Tourist',
+      purposeOfVisit: 'Tourism',
+      arrivalPort: 'Delhi (DEL)'
+    });
+    setIdImages({
+      front: booking.guestDetails?.idImage || null,
+      back: booking.guestDetails?.idImageBack || null,
+      visa: booking.guestDetails?.visaPage || null,
+      additional: booking.guestDetails?.additionalDocs || []
+    });
+    setValidationErrors([]);
+  };
+
+  const handleEditAccessory = (idx: number) => {
+    const guest = booking.accessoryGuests?.[idx];
+    if (!guest) return;
+    setIsAddingAccessory(true);
+    setEditingAccessoryIndex(idx);
+    setEditableDetails(guest);
+    setIdImages({
+      front: guest.idImage || null,
+      back: guest.idImageBack || null,
+      visa: guest.visaPage || null,
+      additional: guest.additionalDocs || []
+    });
+    setValidationErrors([]);
+    // Scroll to top or form section
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const startAddingAccessory = () => {
+    setIsAddingAccessory(true);
+    setEditingAccessoryIndex(null);
+    setEditableDetails({
+      name: '',
+      phoneNumber: '',
+      email: '',
+      idType: 'Aadhar',
+      idNumber: '',
+      address: '',
+      dob: '',
+      nationality: 'Indian',
+      gender: 'Male',
+      visaType: 'Tourist',
+      purposeOfVisit: 'Tourism',
+      arrivalPort: 'Delhi (DEL)'
+    });
+    setIdImages({ front: null, back: null, visa: null, additional: [] });
+    setValidationErrors([]);
+  };
+
+  const handleCheckInNow = async () => {
+    if (!validateDetails()) {
+      setToastMessage("Please complete all required fields and scans.");
+      return;
+    }
+
+    let updated: Booking;
+
+    if (isAddingAccessory) {
+      const currentAccessories = [...(booking.accessoryGuests || [])];
+      const guestWithDocs: GuestDetails = {
+        ...editableDetails,
+        idImage: idImages.front || undefined,
+        idImageBack: idImages.back || undefined,
+        visaPage: idImages.visa || undefined,
+        additionalDocs: idImages.additional.length > 0 ? idImages.additional : undefined,
+      };
+
+      if (editingAccessoryIndex !== null) {
+        currentAccessories[editingAccessoryIndex] = guestWithDocs;
+      } else {
+        currentAccessories.push(guestWithDocs);
+      }
+
+      updated = {
+        ...booking,
+        accessoryGuests: currentAccessories,
+        timestamp: Date.now()
+      };
+    } else {
+      updated = {
+        ...booking,
+        status: booking.status === 'Confirmed' ? 'CheckedIn' : booking.status,
+        guestName: editableDetails.name,
+        guestDetails: {
+          ...editableDetails,
+          idImage: idImages.front || undefined,
+          idImageBack: idImages.back || undefined,
+          visaPage: idImages.visa || undefined,
+          additionalDocs: idImages.additional.length > 0 ? idImages.additional : undefined,
+          arrivalTime: booking.status === 'Confirmed' ? new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) : (booking.guestDetails?.arrivalTime || '')
+        },
+        timestamp: Date.now()
+      };
+    }
+
+    try {
+      await updateBooking(updated);
+      if (!isAddingAccessory && booking.status === 'Confirmed') {
+        onUpdateStatus(booking.id, 'CheckedIn');
+      } else {
+        // Just refresh local state if possible or wait for sync
+        // For now, assume child can't force parent refresh easily beyond status
+        setToastMessage(isAddingAccessory ? "Guest saved successfully!" : "Update successful!");
+      }
+
+      if (isAddingAccessory) {
+        resetToPrimaryGuest();
+      }
+    } catch (err: any) {
+      setToastMessage(`Error: ${err.message}`);
+    }
+  };
+
+  const triggerFileUpload = () => fileInputRef.current?.click();
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const imgData = ev.target?.result as string;
+        if (ocrStep === 'scan_front' || ocrStep === 'idle') {
+          setIdImages(prev => ({ ...prev, front: imgData }));
+          setOcrStep('processing');
+          analyzeIdImage(imgData.split(',')[1]);
+        } else if (ocrStep === 'scan_form') {
+          setIdImages(prev => ({ ...prev, front: imgData }));
+          setOcrStep('processing');
+          analyzeFilledForm(imgData.split(',')[1]);
+        }
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    }
+  };
+
+  const isForeigner = (editableDetails.nationality || 'Indian').toLowerCase() !== 'indian';
 
   useEffect(() => {
     const loadHistory = async () => {
       setLoadingHistory(true);
       try {
-        const data = await fetchGuestHistory(booking.guestName, details?.phoneNumber, booking.id);
+        const data = await fetchGuestHistory(booking.guestName, editableDetails?.phoneNumber, booking.id);
         setHistory(data);
       } catch (err) {
         console.error("Failed to load visit history:", err);
@@ -154,12 +502,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       }
     };
     loadHistory();
-  }, [booking.id, booking.guestName, details?.phoneNumber]);
-  const isForeigner = (details?.nationality || 'Indian').toLowerCase() !== 'indian';
+  }, [booking.id, booking.guestName, editableDetails?.phoneNumber]);
 
-  const frontSrc = details?.idImage || MOCK_ID_IMAGE;
-  const backSrc = details?.idImageBack;
-  const visaSrc = details?.visaPage;
+  const frontSrc = idImages.front || 'https://images.unsplash.com/photo-1548543604-a87c9909abec?q=80&w=2528&auto=format&fit=crop';
+  const backSrc = idImages.back;
+  const visaSrc = idImages.visa;
 
   const currentImageSrc = activeSide === 'front'
     ? frontSrc
@@ -167,7 +514,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       ? (backSrc || frontSrc)
       : activeSide === 'visa'
         ? (visaSrc || frontSrc)
-        : (details?.additionalDocs?.[activeAdditionalIndex] || frontSrc);
+        : (idImages.additional?.[activeAdditionalIndex] || frontSrc);
 
   const handleAddCharge = () => {
     if (!chargeDescription || !chargeAmount) return;
@@ -348,57 +695,66 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     const receiptHtml = `
       <html>
         <head>
-          <title>Receipt - ${item.description}</title>
+          <title>Payment Receipt - ${item.description}</title>
           <script src="https://cdn.tailwindcss.com"></script>
-          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+          <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
           <style>
-            body { font-family: 'Inter', sans-serif; }
+            body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-print-color-adjust: exact; }
             @media print { .no-print { display: none; } }
+            .premium-gradient { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); }
           </style>
         </head>
-        <body class="bg-white p-10 flex items-center justify-center min-h-screen">
-          <div class="w-96 border-2 border-slate-900 p-8 rounded-[2rem] shadow-2xl relative overflow-hidden">
-            <div class="absolute top-0 right-0 p-4 opacity-5"><Receipt class="w-24 h-24" /></div>
-            <div class="text-center mb-8">
-              <h1 class="text-2xl font-black text-slate-900 tracking-tighter uppercase">${propertySettings?.name || 'Hotel Satsangi'}</h1>
-              <p class="text-[10px] font-bold text-slate-500 uppercase leading-tight mt-1">
-                ${propertySettings?.address || 'Near Main Chowk, Valley Road, Manali'}<br/>
+        <body class="bg-white p-6 md:p-12 flex items-center justify-center min-h-screen">
+          <div class="w-full max-w-sm border-2 border-slate-900 p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden bg-white">
+            <div class="absolute -top-12 -right-12 w-32 h-32 premium-gradient opacity-10 rounded-full blur-3xl"></div>
+            
+            <div class="text-center mb-10">
+              <div class="inline-block px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[8px] font-black uppercase tracking-widest mb-4 border border-indigo-100">Official Receipt</div>
+              <h1 class="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-tight">${propertySettings?.name || 'Hotel Satsangi'}</h1>
+              <p class="text-[9px] font-bold text-slate-400 uppercase leading-relaxed mt-2">
+                ${propertySettings?.address || 'Property Address Not Registered'}<br/>
                 ${propertySettings?.phone ? 'Ph: ' + propertySettings.phone : ''} ${propertySettings?.email ? '• ' + propertySettings.email : ''}
               </p>
-              <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-3">Official Payment Receipt</p>
             </div>
             
-            <div class="space-y-4 mb-8">
-              <div class="flex justify-between items-end border-b border-slate-100 pb-2">
-                <p class="text-[9px] font-black text-slate-400 uppercase">Service</p>
-                <p class="text-xs font-black text-slate-900 uppercase">${item.description}</p>
+            <div class="space-y-5 mb-10">
+              <div class="flex justify-between items-baseline border-b border-slate-100 pb-3">
+                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Description</p>
+                <p class="text-sm font-bold text-slate-800 uppercase">${item.description}</p>
               </div>
-              <div class="flex justify-between items-end border-b border-slate-100 pb-2">
-                <p class="text-[9px] font-black text-slate-400 uppercase">Date</p>
-                <p class="text-xs font-black text-slate-900">${new Date(item.timestamp).toLocaleDateString()}</p>
+              <div class="flex justify-between items-baseline border-b border-slate-100 pb-3">
+                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Date</p>
+                <p class="text-sm font-black text-slate-800 tabular-nums">${new Date(item.timestamp).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</p>
               </div>
-              <div class="flex justify-between items-end border-b border-slate-100 pb-2">
-                <p class="text-[9px] font-black text-slate-400 uppercase">Method</p>
-                <p class="text-xs font-black text-indigo-600 uppercase">${item.paymentMethod || 'Settled'}</p>
+              <div class="flex justify-between items-baseline border-b border-slate-100 pb-3">
+                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Mode</p>
+                <p class="text-sm font-black text-indigo-600 uppercase italic">${item.paymentMethod || 'Settled'}</p>
               </div>
             </div>
 
-            <div class="bg-slate-50 rounded-2xl p-6 text-center mb-8 border border-slate-100">
-                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Amount Paid</p>
-                <p class="text-3xl font-black text-slate-900 tabular-nums">₹${item.amount.toLocaleString()}</p>
+            <div class="bg-slate-950 rounded-3xl p-8 text-center mb-10 shadow-inner">
+                <p class="text-[9px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-2">Total Amount Paid</p>
+                <div class="flex items-center justify-center gap-1">
+                  <span class="text-lg font-black text-white opacity-50">₹</span>
+                  <p class="text-3xl font-black text-white tabular-nums">${item.amount.toLocaleString()}</p>
+                </div>
             </div>
 
-            <div class="text-center">
-              <div class="inline-block px-4 py-1.5 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100 mb-6">
-                Status: Settled
+            <div class="text-center space-y-6">
+              <div class="flex items-center justify-center gap-2">
+                <div class="px-3 py-1 bg-emerald-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-200">
+                  Trans. Verified
+                </div>
               </div>
-              <p class="text-[8px] font-bold text-slate-400 uppercase leading-relaxed">
-                Thank you for choosing ${propertySettings?.name || 'Hotel Satsangi'}.<br/>This is a computer generated receipt.
+              <p class="text-[8px] font-bold text-slate-400 uppercase leading-relaxed max-w-[200px] mx-auto">
+                Thank you for choosing ${propertySettings?.name || 'Hotel Satsangi'}.<br/>Generated via secure PMS Audit Protocol.
               </p>
             </div>
 
-            <div class="mt-8 text-center no-print">
-              <button onclick="window.print()" class="px-6 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Print Receipt</button>
+            <div class="mt-10 text-center no-print">
+              <button onclick="window.print()" class="w-full py-4 premium-gradient text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-200 hover:scale-[1.02] active:scale-95 transition-all">
+                Print Document
+              </button>
             </div>
           </div>
         </body>
@@ -406,6 +762,36 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     `;
     printWindow.document.write(receiptHtml);
     printWindow.document.close();
+  };
+
+  const handleCheckout = async () => {
+    if (!confirm('Are you sure you want to finalize this booking and check out? This will generate a Tax Invoice and Receipt.')) return;
+
+    try {
+      const response = await fetch(`/api/bookings/${booking.id}/checkout`, {
+        method: 'POST'
+      });
+      if (!response.ok) throw new Error('Checkout failed');
+      const data = await response.json();
+
+      setCheckoutDocs({ invoice: data.invoicePath, receipt: data.receiptPath });
+
+      // Locally update balance to zero to reflect immediate change
+      if (booking.folio) {
+        const settledFolio = booking.folio.map(f => ({ ...f, isPaid: true, paymentMethod: 'Settled' }));
+        onUpdateFolio?.(booking.id, settledFolio);
+      }
+
+      // Update local status via parent
+      onUpdateStatus?.(booking.id, 'CheckedOut');
+
+      // Optionally open the files (though the user said 'store them in Billing folder', 
+      // which the backend already did).
+      alert(`Checkout Successful! Invoice ${data.invoiceNumber} generated.`);
+    } catch (err) {
+      console.error(err);
+      alert('Checkout failed. Please try again.');
+    }
   };
 
   const printInvoice = () => {
@@ -453,12 +839,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     const finalNetInvoiceTotal = netSubtotal + totalTax;
     const cgst = totalTax / 2;
     const sgst = totalTax / 2;
-    const balanceDue = finalNetInvoiceTotal - totalPayments;
 
     const invoiceHtml = `
       <html>
         <head>
-          <title>Invoice - ${booking.guestName}</title>
+          <title>Tax Invoice - ${booking.guestName}</title>
           <script src="https://cdn.tailwindcss.com"></script>
           <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
           <style>
@@ -475,16 +860,16 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               <div>
                 <h1 class="text-4xl font-black text-slate-900 tracking-tighter mb-2">${(propertySettings?.name || 'HOTEL SATSANGI').toUpperCase()}</h1>
                 <p class="text-xs font-bold text-slate-500 uppercase tracking-widest leading-relaxed">
-                  ${(propertySettings?.address || 'Near Main Chowk, Valley Road<br/>Manali, Himachal Pradesh - 175131').replace(/\n/g, '<br/>')}<br/>
+                  ${(propertySettings?.address || '').replace(/\n/g, '<br/>')}<br/>
                   ${propertySettings?.phone ? 'Ph: ' + propertySettings.phone : ''} ${propertySettings?.email ? '• ' + propertySettings.email : ''}<br/>
                   GSTIN: ${propertySettings?.gstNumber || '02AAACH2341M1Z1'}
                 </p>
               </div>
               <div class="text-right">
-                <h2 class="text-xl font-black text-indigo-600 uppercase tracking-[0.2em] mb-4">Invoice</h2>
+                <h2 class="text-xl font-black text-indigo-600 uppercase tracking-[0.2em] mb-4">Tax Invoice</h2>
                 <div class="space-y-1">
                   <p class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Invoice No</p>
-                  <p class="text-sm font-black text-slate-900 uppercase">#INV-${booking.id.split('-')[1]?.substring(0, 6) || '8721'}</p>
+                  <p class="text-sm font-black text-slate-900 uppercase">#${booking.invoiceNumber || ('INV-' + new Date().getFullYear() + '-' + (booking.id.split('-')[1]?.substring(0, 4) || 'TEMP'))}</p>
                 </div>
                 <div class="mt-4 space-y-1">
                   <p class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Date</p>
@@ -498,9 +883,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Guest Details</p>
                 <h3 class="text-lg font-black text-slate-900 mb-1">${booking.guestName}</h3>
                 <p class="text-xs font-bold text-slate-500 leading-relaxed">
-                  ${details?.address || 'Address Not Provided'}<br/>
-                  ${details?.city ? details.city + ', ' : ''}${details?.country || ''}<br/>
-                  Ph: ${details?.phoneNumber || 'N/A'}
+                  ${booking.guestDetails?.address || 'Address Not Provided'}<br/>
+                  ${booking.guestDetails?.city ? booking.guestDetails.city + ', ' : ''}${booking.guestDetails?.country || ''}<br/>
+                  Ph: ${booking.guestDetails?.phoneNumber || 'N/A'}
                 </p>
               </div>
               <div class="text-right">
@@ -533,8 +918,6 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   <th class="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Qty</th>
                   <th class="text-right py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Rate</th>
                   <th class="text-right py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Amount</th>
-                  <th class="text-right py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Paid</th>
-                  <th class="text-right py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Balance</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
@@ -546,8 +929,6 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">${nights}</td>
                   <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${roomRate.toLocaleString()}</td>
                   <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${roomBaseTotal.toLocaleString()}</td>
-                  <td class="py-6 text-right text-sm font-black text-emerald-600 tabular-nums">₹0.00</td>
-                  <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${roomBaseTotal.toLocaleString()}</td>
                 </tr>
                 ${folioRows.map(item => `
                   <tr>
@@ -558,38 +939,10 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">1</td>
                     <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${item.base.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${item.base.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="py-6 text-right text-sm font-black text-emerald-600 tabular-nums">₹${item.isPaid ? item.displayAmount.toLocaleString() : '0.00'}</td>
-                    <td class="py-6 text-right text-sm font-black text-dark-900 tabular-nums">₹${item.isPaid ? '0.00' : item.displayAmount.toLocaleString()}</td>
                   </tr>
                 `).join('')}
               </tbody>
             </table>
-
-            ${(booking.payments && booking.payments.length > 0) ? `
-            <div class="mb-16">
-              <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Payment History</h4>
-              <table class="w-full border border-slate-100 rounded-2xl overflow-hidden">
-                <thead class="bg-slate-50">
-                  <tr>
-                    <th class="text-left p-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Date</th>
-                    <th class="text-left p-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Method</th>
-                    <th class="text-left p-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Description</th>
-                    <th class="text-right p-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Amount</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                  ${booking.payments.map(p => `
-                    <tr>
-                      <td class="p-4 text-xs font-bold text-slate-600">${new Date(p.timestamp).toLocaleDateString()}</td>
-                      <td class="p-4 text-xs font-black text-indigo-600 uppercase">${p.method}</td>
-                      <td class="p-4 text-xs font-medium text-slate-500">${p.description || 'General Payment'}</td>
-                      <td class="p-4 text-right text-xs font-black text-slate-900">₹${p.amount.toLocaleString()}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>
-            ` : ''}
 
             <div class="flex justify-end">
               <div class="w-80 space-y-4">
@@ -606,16 +959,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   <span class="text-slate-900 font-black tabular-nums">₹${sgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 <div class="flex justify-between items-center py-4 border-y border-slate-200 mt-4">
-                  <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Total Invoice Amount</span>
-                  <span class="text-xl font-black text-slate-900 tabular-nums">₹${finalNetInvoiceTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-                <div class="flex justify-between text-xs font-bold uppercase tracking-widest text-emerald-600">
-                  <span>Total Payments</span>
-                  <span class="font-black tabular-nums">- ₹${totalPayments.toLocaleString()}</span>
-                </div>
-                <div class="flex justify-between items-center py-6 border-t-2 border-slate-900 mt-2">
-                  <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Balance Due</span>
-                  <span class="text-3xl font-black text-indigo-600 tabular-nums">₹${balanceDue.toLocaleString()}</span>
+                  <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Final Invoice Total</span>
+                  <span class="text-xl font-black text-indigo-600 tabular-nums">₹${finalNetInvoiceTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
             </div>
@@ -666,7 +1011,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       email: details?.email || '________________',
       address: details?.address || '________________________________________________',
       idType: details?.idType || '________________',
-      idNumber: details?.idNumber ? `XXXX-XXXX-${details.idNumber.slice(-4)}` : '________________',
+      idNumber: details?.idNumber ? `XXXX - XXXX - ${details.idNumber.slice(-4)} ` : '________________',
       purpose: details?.purposeOfVisit || '________________',
       from: details?.arrivedFrom || '________________'
     };
@@ -775,7 +1120,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
           </script>
         </body>
       </html>
-    `;
+  `;
 
     printWindow.document.write(html);
     printWindow.document.close();
@@ -847,10 +1192,19 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div>
-                      <div className="flex items-center gap-3">
-                        <h3 className="text-2xl font-black text-slate-900">{booking.guestName}</h3>
+                  <div className="flex-1 flex flex-col md:flex-row md:items-end justify-between gap-6">
+                    <div className="flex flex-col gap-3">
+                      {isAddingAccessory && (
+                        <div className="flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full w-fit mb-2 border border-indigo-100 animate-in fade-in slide-in-from-left-2 transition-all">
+                          <Users className="w-3 h-3" />
+                          <span className="text-[9px] font-black uppercase tracking-[0.2em]">Editing Co-Guest Mode</span>
+                          <button onClick={resetToPrimaryGuest} className="ml-2 hover:text-indigo-800"><X className="w-3 h-3" /></button>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-4">
+                        <h2 className="text-4xl font-black text-slate-900 tracking-tight leading-tight">
+                          {isAddingAccessory ? editableDetails.name || 'New Co-Guest' : booking.guestName}
+                        </h2>
                         {booking.roomNumber && (
                           <span className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm">
                             Room {booking.roomNumber}
@@ -870,24 +1224,33 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     {/* Action buttons next to guest name */}
                     <div className="flex items-center gap-2 ml-4">
 
-                      {onCheckIn && (
+                      {(booking.status === 'Confirmed' || isAddingAccessory) && (
                         <button
-                          onClick={() => onCheckIn(booking, false)}
-                          className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-md flex items-center gap-2"
+                          onClick={handleCheckInNow}
+                          className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg flex items-center gap-2 ${isAddingAccessory ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
                         >
-                          <Edit3 className="w-4 h-4" />
-                          Check In
+                          {isAddingAccessory ? <CheckCircle2 className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
+                          {isAddingAccessory ? (editingAccessoryIndex !== null ? 'Save Changes' : 'Add Co-Guest') : 'Complete Check-In'}
                         </button>
                       )}
-                      <button
-                        onClick={() => onToggleVIP?.(booking.id)}
-                        className={`p-2.5 rounded-xl transition-all shadow-sm border ${booking.isVIP
-                          ? 'bg-violet-100 border-violet-200 text-violet-600'
-                          : 'bg-slate-50 border-slate-100 text-slate-300 hover:text-violet-400 hover:border-violet-100'
-                          }`}
-                      >
-                        <Star className={`w-5 h-5 ${booking.isVIP ? 'fill-current' : ''}`} />
-                      </button>
+                      {isAddingAccessory && (
+                        <button
+                          onClick={resetToPrimaryGuest}
+                          className="px-6 py-2.5 bg-slate-100 text-slate-500 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-200 transition-all border border-slate-200"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                      {!isAddingAccessory && (
+                        <button
+                          onClick={() => onToggleVIP?.(booking.id)}
+                          className={`p-2.5 rounded-xl transition-all shadow-sm border ${booking.isVIP
+                            ? 'bg-violet-100 border-violet-200 text-violet-600'
+                            : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600'}`}
+                        >
+                          <Star className={`w-5 h-5 ${booking.isVIP ? 'fill-current' : ''}`} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -895,79 +1258,162 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-6">
-                  <div className="flex items-center gap-4 group">
+                  <div className={`flex items-center gap-4 group p-2 rounded-2xl transition-all ${validationErrors.includes("Mobile Number") ? 'bg-rose-50 ring-2 ring-rose-200' : ''}`}>
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Smartphone className="w-5 h-5" /></div>
-                    <div>
+                    <div className="flex-1">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mobile Number</p>
-                      <p className="text-sm font-bold text-slate-700 tabular-nums">{details?.phoneNumber || 'Not Provided'}</p>
+                      <input
+                        type="text"
+                        value={editableDetails.phoneNumber || ''}
+                        onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
+                        placeholder="Required for Check-in"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
+                      />
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 group">
+                  <div className="flex items-center gap-4 group p-2 rounded-2xl transition-all">
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Mail className="w-5 h-5" /></div>
-                    <div>
+                    <div className="flex-1">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email Address</p>
-                      <p className="text-sm font-bold text-slate-700 truncate max-w-[200px]">{details?.email || 'Not Provided'}</p>
+                      <input
+                        type="email"
+                        value={editableDetails.email || ''}
+                        onChange={(e) => handleInputChange('email', e.target.value)}
+                        placeholder="Optional"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
+                      />
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 group">
+                  <div className="flex items-center gap-4 group p-2 rounded-2xl transition-all">
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Users className="w-5 h-5" /></div>
-                    <div>
+                    <div className="flex-1">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Father's/Husband's Name</p>
-                      <p className="text-sm font-bold text-slate-700">{details?.fatherOrHusbandName || 'Not Provided'}</p>
+                      <input
+                        type="text"
+                        value={editableDetails.fatherOrHusbandName || ''}
+                        onChange={(e) => handleInputChange('fatherOrHusbandName', e.target.value)}
+                        placeholder="Full Name"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
+                      />
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 group">
+                  <div className="flex items-center gap-4 group p-2 rounded-2xl transition-all">
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Calendar className="w-5 h-5" /></div>
-                    <div>
+                    <div className="flex-1">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date of Birth</p>
-                      <p className="text-sm font-bold text-slate-700 tabular-nums">{details?.dob || 'Not Disclosed'}</p>
+                      <input
+                        type="date"
+                        value={editableDetails.dob || ''}
+                        onChange={(e) => handleInputChange('dob', e.target.value)}
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0"
+                      />
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 group">
+                  <div className="flex items-center gap-4 group p-2 rounded-2xl transition-all">
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><User className="w-5 h-5" /></div>
-                    <div>
+                    <div className="flex-1">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gender</p>
-                      <p className="text-sm font-bold text-slate-700">{details?.gender || 'Not Disclosed'}</p>
+                      <select
+                        value={editableDetails.gender || 'Male'}
+                        onChange={(e) => handleInputChange('gender', e.target.value)}
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 appearance-none cursor-pointer"
+                      >
+                        <option>Male</option>
+                        <option>Female</option>
+                        <option>Other</option>
+                      </select>
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-6">
-                  <div className="flex items-center gap-4 group">
+                  <div className={`flex items-center gap-4 group p-2 rounded-2xl transition-all ${validationErrors.includes("ID Number") ? 'bg-rose-50 ring-2 ring-rose-200' : ''}`}>
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><FileBadge className="w-5 h-5" /></div>
-                    <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{details?.idType || 'Identification'}</p>
-                      <p className="text-sm font-bold text-slate-700 tabular-nums">{details?.idNumber || 'Awaiting Verification'}</p>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <select
+                          value={editableDetails.idType || 'Aadhar'}
+                          onChange={(e) => handleInputChange('idType', e.target.value)}
+                          className="bg-transparent border-none p-0 text-[10px] font-black text-slate-400 uppercase tracking-widest focus:ring-0 appearance-none cursor-pointer"
+                        >
+                          <option>Aadhar</option>
+                          <option>Passport</option>
+                          <option>DL</option>
+                          <option>Voter ID</option>
+                        </select>
+                      </div>
+                      <input
+                        type="text"
+                        value={isIdMasked && editableDetails.idNumber ? `XXXX-XXXX-${editableDetails.idNumber.slice(-4)}` : editableDetails.idNumber || ''}
+                        onFocus={() => setIsIdMasked(false)}
+                        onChange={(e) => handleInputChange('idNumber', e.target.value)}
+                        placeholder="Document #"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
+                      />
                     </div>
                   </div>
 
-                  <div className="relative w-full h-64 bg-slate-900 rounded-2xl overflow-hidden shadow-md group/id">
-                    <img
-                      src={currentImageSrc}
-                      alt="Scanned ID"
-                      className={`w-full h-full object-cover transition-all duration-700 ${isIdRevealed ? 'blur-0 opacity-100' : 'blur-xl opacity-60'}`}
-                    />
+                  <div className={`relative w-full h-64 bg-slate-900 rounded-2xl overflow-hidden shadow-md group/id ${validationErrors.includes("ID Front Scan") ? 'ring-2 ring-rose-400' : ''}`}>
+                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
 
-                    {!isIdRevealed ? (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 backdrop-blur-sm z-10 space-y-3">
-                        <Lock className="w-8 h-8 text-slate-300" />
-                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">PII Masked</p>
-                        <button onClick={handleRevealId} className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-[10px] font-black text-white uppercase tracking-widest">View ID</button>
+                    {isCameraActive ? (
+                      <div className="absolute inset-0 z-50 bg-black">
+                        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                        <canvas ref={canvasRef} className="hidden" />
+                        <div className="absolute inset-x-0 bottom-8 flex justify-center items-center gap-8">
+                          <button onClick={stopCamera} className="p-4 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-all"><X className="w-6 h-6" /></button>
+                          <button onClick={captureImage} className="w-20 h-20 bg-white rounded-full border-8 border-indigo-400/50 flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-2xl">
+                            <div className="w-12 h-12 bg-indigo-600 rounded-full"></div>
+                          </button>
+                          <button onClick={triggerFileUpload} className="p-4 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-all"><Upload className="w-6 h-6" /></button>
+                        </div>
+                        <div className="absolute top-4 left-4 right-4 text-center">
+                          <span className="px-4 py-2 bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg">Capturing {ocrStep.replace('scan_', '').toUpperCase()}</span>
+                        </div>
                       </div>
                     ) : (
-                      <div className="absolute top-3 left-3 right-3 flex flex-wrap gap-2 z-20">
-                        <button onClick={() => setActiveSide('front')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'front' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Front</button>
-                        <button onClick={() => setActiveSide('back')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'back' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Back</button>
-                        {isForeigner && <button onClick={() => setActiveSide('visa')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'visa' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Visa</button>}
-                        {details?.additionalDocs?.map((_, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => { setActiveSide('additional'); setActiveAdditionalIndex(idx); }}
-                            className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'additional' && activeAdditionalIndex === idx ? 'bg-indigo-600 text-white' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}
-                          >
-                            Page {idx + 1}
-                          </button>
-                        ))}
+                      <>
+                        <img
+                          src={activeSide === 'front' ? idImages.front || 'https://images.unsplash.com/photo-1548543604-a87c9909abec?q=80&w=2528&auto=format&fit=crop' : activeSide === 'back' ? idImages.back || '' : activeSide === 'visa' ? idImages.visa || '' : idImages.additional[activeAdditionalIndex] || ''}
+                          alt="Scanned ID"
+                          className={`w-full h-full object-cover transition-all duration-700 ${isIdRevealed ? 'blur-0 opacity-100' : 'blur-xl opacity-60'}`}
+                        />
+
+                        {!isIdRevealed ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 backdrop-blur-sm z-10 space-y-3 px-8 text-center">
+                            <Lock className="w-8 h-8 text-slate-300" />
+                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">ID Documents Hidden</p>
+                            <div className="flex gap-2">
+                              <button onClick={handleRevealId} className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-[10px] font-black text-white uppercase tracking-widest">View ID</button>
+                              <button onClick={() => startCamera('scan_front')} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-[10px] font-black text-white uppercase tracking-widest flex items-center gap-2">
+                                <Camera className="w-3.5 h-3.5" /> Scan ID
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="absolute top-3 inset-x-3 flex flex-wrap gap-2 z-20">
+                            <button onClick={() => setActiveSide('front')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'front' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Front</button>
+                            <button onClick={() => setActiveSide('back')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'back' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Back</button>
+                            {isForeigner && <button onClick={() => setActiveSide('visa')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'visa' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Visa</button>}
+                            {idImages.additional?.map((_, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => { setActiveSide('additional'); setActiveAdditionalIndex(idx); }}
+                                className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'additional' && activeAdditionalIndex === idx ? 'bg-indigo-600 text-white' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}
+                              >
+                                {idx + 1}
+                              </button>
+                            ))}
+                            <button onClick={() => startCamera('scan_front')} className="p-1 px-2 bg-indigo-500 text-white rounded hover:bg-indigo-600 ml-auto"><Camera className="w-3.5 h-3.5" /></button>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {ocrStep === 'processing' && (
+                      <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md flex flex-col items-center justify-center z-[60] space-y-4">
+                        <Loader2 className="w-12 h-12 text-indigo-400 animate-spin" />
+                        <p className="text-xs font-black text-white uppercase tracking-widest">Gemini AI OCR Processing...</p>
                       </div>
                     )}
                   </div>
@@ -977,48 +1423,80 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               {/* Consolidated Stay Details & Address */}
               <div className="mt-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Purpose of Visit</p>
-                    <p className="text-sm font-bold text-slate-700">{details?.purposeOfVisit || 'Not Declared'}</p>
+                    <select
+                      value={editableDetails.purposeOfVisit || 'Tourism'}
+                      onChange={(e) => handleInputChange('purposeOfVisit', e.target.value)}
+                      className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0 appearance-none cursor-pointer"
+                    >
+                      <option>Tourism</option>
+                      <option>Business</option>
+                      <option>Personal</option>
+                      <option>Medical</option>
+                      <option>Transit</option>
+                    </select>
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Arrived From</p>
-                    <p className="text-sm font-bold text-slate-700">{details?.arrivedFrom || 'Not Recorded'}</p>
+                    <input
+                      type="text"
+                      value={editableDetails.arrivedFrom || ''}
+                      onChange={(e) => handleInputChange('arrivedFrom', e.target.value)}
+                      placeholder="City/Place"
+                      className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                    />
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Arrival Time</p>
-                    <p className="text-sm font-bold text-slate-700 tabular-nums">
-                      {booking.checkIn} {details?.arrivalTime ? `@ ${details.arrivalTime}` : ''}
-                    </p>
+                    <input
+                      type="time"
+                      value={editableDetails.arrivalTime || ''}
+                      onChange={(e) => handleInputChange('arrivalTime', e.target.value)}
+                      className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                    />
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Next Destination</p>
-                    <p className="text-sm font-bold text-slate-700">{details?.destination || details?.nextDestination || 'Not Declared'}</p>
+                    <input
+                      type="text"
+                      value={editableDetails.nextDestination || ''}
+                      onChange={(e) => handleInputChange('nextDestination', e.target.value)}
+                      placeholder="City/Place"
+                      className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                    />
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Departure Date</p>
-                    <p className="text-sm font-bold text-slate-700 tabular-nums">
-                      {booking.status === 'CheckedOut' ? booking.checkOut : 'In-House'}
-                      {details?.departureTime ? ` @ ${details.departureTime}` : ''}
-                    </p>
+                    <input
+                      type="date"
+                      value={booking.checkOut}
+                      readOnly
+                      className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-400 focus:ring-0"
+                    />
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Digital Signature</p>
-                    {details?.signature ? (
-                      <img src={details.signature} alt="Signature" className="h-8 object-contain" />
-                    ) : (
-                      <p className="text-sm font-bold text-slate-400 italic">Not Captured</p>
-                    )}
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Digital Signature</p>
+                      {editableDetails.signature ? (
+                        <img src={editableDetails.signature} alt="Signature" className="h-8 object-contain" />
+                      ) : (
+                        <p className="text-sm font-bold text-slate-300 italic">Required at Desk</p>
+                      )}
+                    </div>
+                    <button onClick={() => startCamera('scan_form')} className="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-colors flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      <span className="text-[8px] font-black uppercase">Scan Form</span>
+                    </button>
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 md:col-span-3">
+                  <div className={`p-4 bg-slate-50 rounded-2xl border border-slate-100 md:col-span-3 transition-all ${validationErrors.includes("Address") ? 'ring-2 ring-rose-200' : ''}`}>
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Permanent Residential Address</p>
-                    <p className="text-sm font-bold text-slate-700">
-                      {details?.address || 'N/A'}
-                      {details?.city && `, ${details.city}`}
-                      {details?.state && `, ${details.state}`}
-                      {details?.pinCode && ` - ${details.pinCode}`}
-                      {details?.country && `, ${details.country}`}
-                    </p>
+                    <textarea
+                      value={editableDetails.address || ''}
+                      onChange={(e) => handleInputChange('address', e.target.value)}
+                      placeholder="Full residential address for police verification"
+                      className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0 min-h-[40px] resize-none"
+                    />
                   </div>
                 </div>
               </div>
@@ -1037,23 +1515,27 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {booking.accessoryGuests && booking.accessoryGuests.map((guest, idx) => (
-                  <div key={idx} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl hover:border-indigo-100 transition-all group flex items-center justify-between">
+                  <div key={idx} className={`p-4 border rounded-2xl transition-all group flex items-center justify-between ${editingAccessoryIndex === idx ? 'bg-indigo-50 border-indigo-200 ring-2 ring-indigo-200/50' : 'bg-slate-50 border-slate-100 hover:border-indigo-100'}`}>
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-slate-400 group-hover:text-indigo-500 transition-colors shadow-sm">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors shadow-sm ${editingAccessoryIndex === idx ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 group-hover:text-indigo-500'}`}>
                         <User className="w-5 h-5" />
                       </div>
                       <div>
-                        <p className="text-sm font-bold text-slate-800">{guest.name}</p>
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{guest.idType}: {guest.idNumber || 'PENDING'}</p>
+                        <p className={`text-sm font-bold ${editingAccessoryIndex === idx ? 'text-indigo-900' : 'text-slate-800'}`}>{guest.name}</p>
+                        <p className={`text-[9px] font-black uppercase tracking-widest ${editingAccessoryIndex === idx ? 'text-indigo-400' : 'text-slate-400'}`}>{guest.idType}: {guest.idNumber || 'PENDING'}</p>
                       </div>
                     </div>
-                    <button onClick={() => onCheckIn?.(booking, true, idx)} className="p-2 text-slate-300 hover:text-indigo-500 hover:bg-white rounded-lg transition-all opacity-0 group-hover:opacity-100"><Edit3 className="w-4 h-4" /></button>
+                    {!isAddingAccessory && (
+                      <button onClick={() => handleEditAccessory(idx)} className="p-2 text-slate-300 hover:text-indigo-500 hover:bg-white rounded-lg transition-all opacity-0 group-hover:opacity-100"><Edit3 className="w-4 h-4" /></button>
+                    )}
                   </div>
                 ))}
-                <button onClick={() => onCheckIn?.(booking, true)} className="p-4 border-2 border-dashed border-slate-100 rounded-2xl flex items-center justify-center gap-2 text-slate-400 hover:border-indigo-200 hover:text-indigo-500 transition-all">
-                  <Plus className="w-4 h-4" />
-                  <span className="text-xs font-bold uppercase tracking-widest">Add Co-Guest</span>
-                </button>
+                {!isAddingAccessory && (
+                  <button onClick={startAddingAccessory} className="p-4 border-2 border-dashed border-slate-100 rounded-2xl flex items-center justify-center gap-2 text-slate-400 hover:border-indigo-200 hover:text-indigo-500 transition-all">
+                    <Plus className="w-4 h-4" />
+                    <span className="text-xs font-bold uppercase tracking-widest">Add Co-Guest</span>
+                  </button>
+                )}
               </div>
             </section>
 
@@ -1234,6 +1716,37 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     <button onClick={printInvoice} className="px-5 py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest border border-white/10 transition-all flex items-center gap-2">
                       <Printer className="w-4 h-4" /> Invoice
                     </button>
+                    {(booking.invoiceNumber || checkoutDocs?.invoice) && (
+                      <div className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
+                        <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Inv #</span>
+                        <span className="text-[10px] font-black text-white uppercase tracking-widest">{booking.invoiceNumber || (checkoutDocs?.invoice?.split('_').pop()?.split('.')[0])}</span>
+                      </div>
+                    )}
+                    {checkoutDocs?.invoice && (
+                      <a
+                        href={`/billing/${checkoutDocs.invoice.split('/').pop()}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-5 py-2.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest border border-red-500/30 transition-all flex items-center gap-2"
+                      >
+                        <FileText className="w-4 h-4" /> Tax Invoice PDF
+                      </a>
+                    )}
+                    {checkoutDocs?.receipt && (
+                      <a
+                        href={`/billing/${checkoutDocs.receipt.split('/').pop()}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-5 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 rounded-xl text-[10px] font-black uppercase tracking-widest border border-emerald-500/30 transition-all flex items-center gap-2"
+                      >
+                        <Receipt className="w-4 h-4" /> Receipt PDF
+                      </a>
+                    )}
+                    {booking.status === 'CheckedIn' && (
+                      <button onClick={handleCheckout} className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-emerald-900/40">
+                        <CheckCircle2 className="w-4 h-4" /> Finalize & Checkout
+                      </button>
+                    )}
                     <button onClick={() => setShowAddChargeModal(true)} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-indigo-900/40">
                       <Plus className="w-4 h-4" /> Add Charge
                     </button>
@@ -1247,7 +1760,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       <div className="absolute top-0 right-0 p-4 opacity-10 group-hover/card:scale-110 transition-transform"><CheckCircle2 className="w-12 h-12 text-emerald-400" /></div>
                       <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Net Outstanding</p>
                       <div className="flex items-baseline gap-4 mt-2">
-                        <p className={`text-5xl font-black tabular-nums tracking-tighter ${netOutstanding <= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <p className={`text-5xl font-black tabular-nums tracking-tighter ${netOutstanding <= 0 ? 'text-emerald-400' : 'text-rose-400'} `}>
                           ₹{netOutstanding.toLocaleString()}
                         </p>
                       </div>
@@ -1314,8 +1827,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           {(booking.payments || []).slice().reverse().slice(0, 3).map(p => (
                             <div key={p.id} className="flex items-center justify-between group/tx">
                               <div className="flex items-center gap-3">
-                                <div className={`w-1.5 h-1.5 rounded-full ${p.status === 'Completed' ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
-                                <span className={`text-[10px] font-bold ${p.status === 'Completed' ? 'text-slate-200' : 'text-slate-500 line-through'}`}>₹{p.amount.toLocaleString()} via {p.method}</span>
+                                <div className={`w-1.5 h-1.5 rounded-full ${p.status === 'Completed' ? 'bg-emerald-500' : 'bg-rose-500'} `}></div>
+                                <span className={`text-[10px] font-bold ${p.status === 'Completed' ? 'text-slate-200' : 'text-slate-500 line-through'} `}>₹{p.amount.toLocaleString()} via {p.method}</span>
                               </div>
                               <span className="text-[8px] font-black text-slate-500 uppercase">{new Date(p.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                             </div>
@@ -1334,7 +1847,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       <div className="flex gap-2">
                         {Array.from(new Set(booking.folio?.map(f => f.category) || [])).map(cat => (
                           <div key={cat} className="flex items-center gap-1.5 px-2 py-0.5 bg-white/5 border border-white/10 rounded text-[8px] font-black uppercase text-slate-400">
-                            <span className={`w-1 h-1 rounded-full ${cat === 'F&B' ? 'bg-orange-400' : 'bg-indigo-400'}`}></span>
+                            <span className={`w-1 h-1 rounded-full ${cat === 'F&B' ? 'bg-orange-400' : 'bg-indigo-400'} `}></span>
                             {cat}
                           </div>
                         ))}
@@ -1346,7 +1859,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         booking.folio.map((item) => (
                           <div key={item.id} className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/[0.08] transition-all group/item shadow-sm">
                             <div className="flex items-center gap-4">
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center border shadow-inner ${item.category === 'F&B' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'}`}>
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center border shadow-inner ${item.category === 'F&B' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'} `}>
                                 {item.category === 'F&B' ? <Coffee className="w-5 h-5" /> : item.category === 'Room' ? <Bed className="w-5 h-5" /> : <Zap className="w-5 h-5" />}
                               </div>
                               <div>
@@ -1362,7 +1875,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                               <div className="text-right">
                                 <p className="text-base font-black text-white tabular-nums tracking-tighter">₹{item.amount.toLocaleString()}</p>
                                 <button
-                                  className={`text-[8px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5 transition-all px-2 py-1 rounded-md mt-1.5 ${item.isPaid ? 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/30' : 'text-rose-400 bg-rose-400/10 border border-rose-400/30 animate-pulse'}`}
+                                  className={`text-[8px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5 transition-all px-2 py-1 rounded-md mt-1.5 ${item.isPaid ? 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/30' : 'text-rose-400 bg-rose-400/10 border border-rose-400/30 animate-pulse'} `}
                                   onClick={() => {
                                     if (item.isPaid) {
                                       const newFolio = (booking.folio || []).map(f => f.id === item.id ? { ...f, isPaid: false, paymentMethod: undefined, paymentId: undefined } : f);
@@ -1648,7 +2161,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Stay Units</p>
-                    <p className={`text-sm font-bold text-slate-800 transition-all duration-200 ${isUpdatingBeds ? 'scale-110 text-indigo-600' : 'scale-100'}`}>
+                    <p className={`text-sm font-bold text-slate - 800 transition-all duration-200 ${isUpdatingBeds ? 'scale-110 text-indigo-600' : 'scale-100'} `}>
                       {booking.extraBeds || 0} Beds Added
                     </p>
                   </div>
@@ -1708,13 +2221,13 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   <div className="flex bg-slate-100 p-1 rounded-xl">
                     <button
                       onClick={() => setEffectiveDate(booking.checkIn)}
-                      className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${effectiveDate === booking.checkIn ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500'}`}
+                      className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${effectiveDate === booking.checkIn ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500'} `}
                     >
                       Full Move
                     </button>
                     <button
                       onClick={() => setEffectiveDate(new Date().toISOString().split('T')[0])}
-                      className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${effectiveDate !== booking.checkIn ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500'}`}
+                      className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${effectiveDate !== booking.checkIn ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500'} `}
                     >
                       Switch Mid-stay
                     </button>
@@ -1901,7 +2414,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     <button
                       key={cat}
                       onClick={() => setChargeCategory(cat)}
-                      className={`py-4 rounded-xl border-2 transition-all flex flex-col items-center gap-1.5 ${chargeCategory === cat ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-600 hover:border-indigo-200'}`}
+                      className={`py-4 rounded-xl border-2 transition-all flex flex-col items-center gap-1.5 ${chargeCategory === cat ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-600 hover:border-indigo-200'} `}
                     >
                       {cat === 'F&B' ? <Coffee className="w-4 h-4" /> : cat === 'Laundry' ? <Sparkles className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
                       <span className="text-[9px] font-black uppercase">{cat}</span>
@@ -1912,7 +2425,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
               <div className="pt-2">
                 <label className="flex items-center gap-4 p-5 bg-indigo-50 border-2 border-indigo-100 rounded-[2rem] cursor-pointer group hover:border-indigo-300 transition-all shadow-sm">
-                  <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${isChargeInclusive ? 'bg-indigo-600 border-indigo-600 shadow-md' : 'bg-white border-indigo-200 group-hover:border-indigo-400'}`}>
+                  <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${isChargeInclusive ? 'bg-indigo-600 border-indigo-600 shadow-md' : 'bg-white border-indigo-200 group-hover:border-indigo-400'} `}>
                     <input
                       type="checkbox"
                       className="hidden"
@@ -1963,7 +2476,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 </button>
               </div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                {targetFolioItem ? `Settling: ${targetFolioItem.description}` : 'Adding Partial Payment to Bill'}
+                {targetFolioItem ? `Settling: ${targetFolioItem.description} ` : 'Adding Partial Payment to Bill'}
               </p>
             </div>
 
@@ -1996,7 +2509,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     <button
                       key={m}
                       onClick={() => setPaymentMethod(m)}
-                      className={`py-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${paymentMethod === m ? 'bg-indigo-600 border-indigo-600 text-white shadow-xl shadow-indigo-200' : 'bg-white border-slate-100 text-slate-600 hover:border-indigo-200'}`}
+                      className={`py-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${paymentMethod === m ? 'bg-indigo-600 border-indigo-600 text-white shadow-xl shadow-indigo-200' : 'bg-white border-slate-100 text-slate-600 hover:border-indigo-200'} `}
                     >
                       {m === 'Cash' ? <Briefcase className="w-5 h-5" /> : m === 'UPI' ? <Smartphone className="w-5 h-5" /> : <CreditCard className="w-5 h-5" />}
                       <span className="text-[10px] font-black uppercase tracking-widest">{m}</span>
