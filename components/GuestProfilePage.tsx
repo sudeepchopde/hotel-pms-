@@ -385,6 +385,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   const startAddingAccessory = () => {
     setIsAddingAccessory(true);
     setEditingAccessoryIndex(null);
+    const currentTime = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
     setEditableDetails({
       name: '',
       phoneNumber: '',
@@ -397,10 +398,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       gender: 'Male',
       visaType: 'Tourist',
       purposeOfVisit: 'Tourism',
-      arrivalPort: 'Delhi (DEL)'
+      arrivalPort: 'Delhi (DEL)',
+      arrivalTime: currentTime
     });
     setIdImages({ front: null, back: null, visa: null, additional: [] });
     setValidationErrors([]);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleCheckInNow = async () => {
@@ -433,6 +436,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         timestamp: Date.now()
       };
     } else {
+      const currentTime = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
       updated = {
         ...booking,
         status: booking.status === 'Confirmed' ? 'CheckedIn' : booking.status,
@@ -443,7 +447,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
           idImageBack: idImages.back || undefined,
           visaPage: idImages.visa || undefined,
           additionalDocs: idImages.additional.length > 0 ? idImages.additional : undefined,
-          arrivalTime: booking.status === 'Confirmed' ? new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) : (booking.guestDetails?.arrivalTime || '')
+          arrivalTime: currentTime
         },
         timestamp: Date.now()
       };
