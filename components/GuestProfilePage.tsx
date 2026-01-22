@@ -1201,10 +1201,14 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           <button onClick={resetToPrimaryGuest} className="ml-2 hover:text-indigo-800"><X className="w-3 h-3" /></button>
                         </div>
                       )}
-                      <div className="flex items-center gap-4">
-                        <h2 className="text-4xl font-black text-slate-900 tracking-tight leading-tight">
-                          {isAddingAccessory ? editableDetails.name || 'New Co-Guest' : booking.guestName}
-                        </h2>
+                      <div className="flex items-center gap-4 flex-1">
+                        <input
+                          type="text"
+                          value={editableDetails.name || ''}
+                          onChange={(e) => handleInputChange('name', e.target.value)}
+                          placeholder="Guest Name"
+                          className="text-4xl font-black text-slate-900 tracking-tight leading-tight bg-transparent border-b-2 border-transparent hover:border-indigo-300 focus:border-indigo-600 focus:ring-0 outline-none transition-all px-2 flex-1"
+                        />
                         {booking.roomNumber && (
                           <span className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm">
                             Room {booking.roomNumber}
@@ -1258,7 +1262,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-6">
-                  <div className={`flex items-center gap-4 group p-2 rounded-2xl transition-all ${validationErrors.includes("Mobile Number") ? 'bg-rose-50 ring-2 ring-rose-200' : ''}`}>
+                  <div className={`flex items-center gap-4 group p-4 rounded-2xl transition-all ${validationErrors.includes("Mobile Number") ? 'bg-rose-50 ring-2 ring-rose-200' : ''}`}>
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Smartphone className="w-5 h-5" /></div>
                     <div className="flex-1">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mobile Number</p>
@@ -1267,11 +1271,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         value={editableDetails.phoneNumber || ''}
                         onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
                         placeholder="Required for Check-in"
-                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
+                        className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
                       />
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 group p-2 rounded-2xl transition-all">
+                  <div className="flex items-center gap-4 group p-4 rounded-2xl transition-all">
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Mail className="w-5 h-5" /></div>
                     <div className="flex-1">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email Address</p>
@@ -1280,11 +1284,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         value={editableDetails.email || ''}
                         onChange={(e) => handleInputChange('email', e.target.value)}
                         placeholder="Optional"
-                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
+                        className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
                       />
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 group p-2 rounded-2xl transition-all">
+                  <div className="flex items-center gap-4 group p-4 rounded-2xl transition-all">
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Users className="w-5 h-5" /></div>
                     <div className="flex-1">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Father's/Husband's Name</p>
@@ -1293,11 +1297,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         value={editableDetails.fatherOrHusbandName || ''}
                         onChange={(e) => handleInputChange('fatherOrHusbandName', e.target.value)}
                         placeholder="Full Name"
-                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
+                        className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
                       />
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 group p-2 rounded-2xl transition-all">
+                  <div className="flex items-center gap-4 group p-4 rounded-2xl transition-all">
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Calendar className="w-5 h-5" /></div>
                     <div className="flex-1">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date of Birth</p>
@@ -1305,18 +1309,18 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         type="date"
                         value={editableDetails.dob || ''}
                         onChange={(e) => handleInputChange('dob', e.target.value)}
-                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0"
+                        className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 tabular-nums focus:ring-0"
                       />
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 group p-2 rounded-2xl transition-all">
+                  <div className="flex items-center gap-4 group p-4 rounded-2xl transition-all">
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><User className="w-5 h-5" /></div>
                     <div className="flex-1">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gender</p>
                       <select
                         value={editableDetails.gender || 'Male'}
                         onChange={(e) => handleInputChange('gender', e.target.value)}
-                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 appearance-none cursor-pointer"
+                        className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 tabular-nums focus:ring-0 appearance-none cursor-pointer"
                       >
                         <option>Male</option>
                         <option>Female</option>
@@ -1327,7 +1331,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 </div>
 
                 <div className="space-y-6">
-                  <div className={`flex items-center gap-4 group p-2 rounded-2xl transition-all ${validationErrors.includes("ID Number") ? 'bg-rose-50 ring-2 ring-rose-200' : ''}`}>
+                  <div className={`flex items-center gap-4 group p-4 rounded-2xl transition-all ${validationErrors.includes("ID Number") ? 'bg-rose-50 ring-2 ring-rose-200' : ''}`}>
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><FileBadge className="w-5 h-5" /></div>
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
@@ -1348,7 +1352,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         onFocus={() => setIsIdMasked(false)}
                         onChange={(e) => handleInputChange('idNumber', e.target.value)}
                         placeholder="Document #"
-                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
+                        className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
                       />
                     </div>
                   </div>
@@ -1490,12 +1494,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     </button>
                   </div>
                   <div className={`p-4 bg-slate-50 rounded-2xl border border-slate-100 md:col-span-3 transition-all ${validationErrors.includes("Address") ? 'ring-2 ring-rose-200' : ''}`}>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Permanent Residential Address</p>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Permanent Residential Address</p>
                     <textarea
                       value={editableDetails.address || ''}
                       onChange={(e) => handleInputChange('address', e.target.value)}
                       placeholder="Full residential address for police verification"
-                      className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0 min-h-[40px] resize-none"
+                      className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 focus:ring-0 min-h-[80px] resize-none"
                     />
                   </div>
                 </div>
