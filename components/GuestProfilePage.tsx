@@ -1,15 +1,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  X, User, Calendar, MapPin, Smartphone, Mail, FileBadge,
+  X, User, Calendar, MapPin, Smartphone, Mail, FileBadge, XCircle,
   Bed, Users, Star, AlertCircle, CheckCircle2, CreditCard,
   Clock, ShieldAlert, Plus, Trash2, Edit3, MessageSquare, ChevronDown,
-  Hash, LogIn, FileText, ScanLine, Lock, Eye, Shield, FileImage, RotateCcw,
+  Hash, LogIn, LogOut, FileText, ScanLine, Lock, Eye, Shield, FileImage, RotateCcw,
   Utensils, Coffee, Zap, Receipt, Globe, Plane, Briefcase, Sparkles, Sofa,
   Minus, ArrowRightCircle, AlertTriangle, Printer, Check, History, IndianRupee,
-  Camera, Upload, Loader2, Keyboard
+  Camera, Upload, Loader2, Keyboard, Save
 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
 import { Booking, RoomType, SyncEvent, FolioItem, GuestDetails, Payment, PropertySettings } from '../types';
 import { fetchGuestHistory, updateBooking, lookupGuest } from '../api';
 import { NATIONALITIES } from '../constants';
@@ -32,6 +31,7 @@ interface GuestProfilePageProps {
   onUpdateFolio?: (bookingId: string, updatedFolio: FolioItem[]) => void;
   onUpdateSpecialRequests?: (bookingId: string, requests: string) => void;
   onUpdatePayments?: (bookingId: string, payments: Payment[]) => void;
+  onUpdateBooking?: (booking: Booking) => void;
   propertySettings: PropertySettings | null;
 }
 
@@ -44,7 +44,7 @@ const STATUS_OPTIONS = [
 ];
 
 const CURRENT_USER_PERMISSION = 2;
-const MOCK_ID_IMAGE = "https://images.unsplash.com/photo-1548543604-a87c9909abec?q=80&w=2528&auto=format&fit=crop";
+const MOCK_ID_IMAGE = null;
 
 const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   booking,
@@ -64,9 +64,10 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   onUpdateFolio,
   onUpdateSpecialRequests,
   onUpdatePayments,
+  onUpdateBooking,
   propertySettings
 }) => {
-  const [isIdRevealed, setIsIdRevealed] = useState(false);
+
   const [activeSide, setActiveSide] = useState<'front' | 'back' | 'visa' | 'additional'>('front');
   const [activeAdditionalIndex, setActiveAdditionalIndex] = useState<number>(0);
   const [isUpdatingBeds, setIsUpdatingBeds] = useState(false);
@@ -88,45 +89,69 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   const [targetFolioItem, setTargetFolioItem] = useState<FolioItem | null>(null);
 
   // New State for Integrated Check-in & Editing
-  const [editableDetails, setEditableDetails] = useState<GuestDetails>(booking.guestDetails || {
-    name: booking.guestName,
-    phoneNumber: '',
-    email: '',
-    idType: 'Aadhar',
-    idNumber: '',
-    address: '',
-    dob: '',
-    nationality: 'Indian',
-    gender: 'Male',
-    visaType: 'Tourist',
-    purposeOfVisit: 'Tourism',
-    arrivalPort: 'Delhi (DEL)'
+  const [editableDetails, setEditableDetails] = useState<GuestDetails>(() => {
+    const defaultDetails: GuestDetails = {
+      name: booking.guestName,
+      phoneNumber: '',
+      email: '',
+      idType: 'Aadhar',
+      idNumber: '',
+      address: '',
+      dob: '',
+      nationality: 'Indian',
+      gender: 'Male',
+      visaType: 'Tourist',
+      purposeOfVisit: 'Tourism',
+      arrivalPort: 'Delhi (DEL)'
+    };
+    if (booking.guestDetails) {
+      return { ...defaultDetails, ...booking.guestDetails };
+    }
+    return defaultDetails;
   });
 
-  const [idImages, setIdImages] = useState<{ front: string | null; back: string | null; visa: string | null; additional: string[] }>({
+  const [idImages, setIdImages] = useState<{ front: string | null; back: string | null; visa: string | null; additional: string[]; formPages: string[] }>({
     front: booking.guestDetails?.idImage || null,
     back: booking.guestDetails?.idImageBack || null,
     visa: booking.guestDetails?.visaPage || null,
-    additional: booking.guestDetails?.additionalDocs || []
+    additional: booking.guestDetails?.additionalDocs || [],
+    formPages: booking.guestDetails?.formPages || []
   });
 
   const [ocrStep, setOcrStep] = useState<'idle' | 'scan_front' | 'scan_back' | 'scan_visa' | 'scan_additional' | 'scan_form' | 'processing' | 'success'>('idle');
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [isIdRevealed, setIsIdRevealed] = useState(booking.status !== 'CheckedIn' && booking.status !== 'CheckedOut');
   const [isIdMasked, setIsIdMasked] = useState(booking.status === 'CheckedIn' || booking.status === 'CheckedOut');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isAddingAccessory, setIsAddingAccessory] = useState(false);
   const [editingAccessoryIndex, setEditingAccessoryIndex] = useState<number | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [pendingDeleteSide, setPendingDeleteSide] = useState<{ side: typeof activeSide; addIdx: number } | null>(null);
+
+  // Repeat Guest Lookup State
+  const [lookupResults, setLookupResults] = useState<any[]>([]);
+  const [isLookupLoading, setIsLookupLoading] = useState(false);
+  const [showLookupDropdown, setShowLookupDropdown] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isCameraActiveRef = useRef<boolean>(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Synchronize image state when side changes
   useEffect(() => {
     if (idImages.front && activeSide === 'front') setIsIdRevealed(true);
   }, [activeSide]);
+
+  // Clear toast after 3 seconds
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   const details = editableDetails;
 
@@ -229,113 +254,242 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       ctx?.drawImage(video, 0, 0);
       const imgData = canvas.toDataURL('image/jpeg', 0.82);
 
-      stopCamera();
-
       if (ocrStep === 'scan_front') {
-        setIdImages(prev => ({ ...prev, front: imgData }));
-        setOcrStep('processing');
-        analyzeIdImage(imgData.split(',')[1]);
+        // First ID page - store as front, stay in camera for more pages
+        if (!idImages.front) {
+          setIdImages(prev => ({ ...prev, front: imgData }));
+          setToastMessage("Page 1 captured! Add more pages or tap Finish.");
+        } else if (!idImages.back) {
+          setIdImages(prev => ({ ...prev, back: imgData }));
+          setToastMessage("Page 2 captured! Add more pages or tap Finish.");
+        } else {
+          // Additional ID pages go to additional array
+          setIdImages(prev => ({ ...prev, additional: [...prev.additional, imgData] }));
+          setToastMessage(`Page ${3 + idImages.additional.length} captured! Add more or Finish.`);
+        }
       } else if (ocrStep === 'scan_back') {
         setIdImages(prev => ({ ...prev, back: imgData }));
-        setOcrStep('success');
+        setToastMessage("Back captured! Add more pages or tap Finish.");
       } else if (ocrStep === 'scan_visa') {
         setIdImages(prev => ({ ...prev, visa: imgData }));
+        stopCamera();
         setOcrStep('success');
       } else if (ocrStep === 'scan_form') {
-        setIdImages(prev => ({ ...prev, front: imgData }));
-        setOcrStep('processing');
-        analyzeFilledForm(imgData.split(',')[1]);
+        setIdImages(prev => ({ ...prev, formPages: [...prev.formPages, imgData] }));
+        // For form, we stay in camera mode to allow more pages
+        setToastMessage(`Page ${idImages.formPages.length + 1} captured! Add more or Finish.`);
       } else if (ocrStep === 'scan_additional') {
         setIdImages(prev => ({ ...prev, additional: [...prev.additional, imgData] }));
-        setOcrStep('success');
+        setToastMessage(`Additional page captured! Add more or Finish.`);
       }
     }
   };
 
-  const analyzeIdImage = async (base64Img: string) => {
-    try {
-      const apiKey = propertySettings?.geminiApiKey || process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API Key missing");
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
-        contents: [{
-          parts: [
-            { text: "Extract guest name, ID number, address, DOB, gender, nationality from this ID card. Return as clean JSON only." },
-            { inlineData: { mimeType: "image/jpeg", data: base64Img } }
-          ]
-        }],
-        config: { responseMimeType: 'application/json' }
-      });
-
-      if (response.text) {
-        const data = JSON.parse(response.text);
-        setEditableDetails(prev => ({
-          ...prev,
-          name: data.name || data.Name || prev.name,
-          idNumber: data.idNumber || data.ID_Number || prev.idNumber,
-          address: data.address || data.Address || prev.address,
-          dob: data.dob || data.DOB || prev.dob,
-          gender: data.gender || data.Gender || prev.gender,
-          nationality: data.nationality || data.Nationality || prev.nationality
-        }));
+  const finishScanning = async () => {
+    stopCamera();
+    if (ocrStep === 'scan_front' || ocrStep === 'scan_back') {
+      setOcrStep('processing');
+      try {
+        if (idImages.front) {
+          await analyzeIdImage(idImages.front.split(',')[1], 'id_front');
+        }
+        if (idImages.back) {
+          await analyzeIdImage(idImages.back.split(',')[1], 'id_back');
+        }
+      } catch (e) {
+        console.error("Scanning flow error", e);
+      } finally {
         setOcrStep('success');
-        setToastMessage("Data extracted successfully!");
       }
-    } catch (err) {
-      console.error("OCR failed", err);
+    } else if (ocrStep === 'scan_form') {
+      if (idImages.formPages.length > 0) {
+        setOcrStep('processing');
+        await analyzeFilledForm();
+      } else {
+        setOcrStep('success');
+      }
+    } else {
       setOcrStep('success');
-      setToastMessage("OCR extraction failed, please enter details manually.");
     }
   };
 
-  const analyzeFilledForm = async (base64Img: string) => {
+  const analyzeIdImage = async (base64Img: string, type: 'id_front' | 'id_back' = 'id_front') => {
     try {
-      const apiKey = propertySettings?.geminiApiKey || process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API Key missing");
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
-        contents: [{
-          parts: [
-            { text: "Extract all guest information from this registration form. Return as JSON." },
-            { inlineData: { mimeType: "image/jpeg", data: base64Img } }
-          ]
-        }],
-        config: { responseMimeType: 'application/json' }
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64Img, type })
       });
 
-      if (response.text) {
-        const data = JSON.parse(response.text);
-        setEditableDetails(prev => ({ ...prev, ...data }));
-        setOcrStep('success');
-        setToastMessage("Form data extracted!");
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || `Server Error: ${response.status}`);
       }
-    } catch (err) {
+
+      const result = await response.json();
+      const text = result.text;
+
+      if (text) {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        const jsonStr = jsonMatch ? jsonMatch[0] : text.replace(/```json\n?|\n?```/g, '').trim();
+
+        try {
+          const data = JSON.parse(jsonStr);
+          setEditableDetails(prev => ({
+            ...prev,
+            name: data.name || data.Name || prev.name,
+            idNumber: data.idNumber || data.ID_Number || prev.idNumber,
+            address: data.address || data.Address || prev.address,
+            dob: data.dob || data.DOB || prev.dob,
+            gender: data.gender || data.Gender || prev.gender,
+            nationality: data.nationality || data.Nationality || prev.nationality
+          }));
+          setToastMessage(`Processed ${type === 'id_front' ? 'Front' : 'Back'} of ID`);
+          setIsIdRevealed(true);
+        } catch (e) {
+          console.error("JSON Parse Error", e);
+          setToastMessage(`OCR Error: Could not parse ${type === 'id_front' ? 'Front' : 'Back'} ID data.`);
+        }
+      }
+    } catch (err: any) {
+      console.error("OCR failed", err);
+      const errorMessage = err.message || "Unknown error";
+      setToastMessage(`OCR Failed: ${errorMessage.substring(0, 40)}...`);
+    }
+  };
+
+  const analyzeFilledForm = async () => {
+    const base64Img = idImages.formPages[0];
+    if (!base64Img) return;
+
+    try {
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64Img, type: 'form' })
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || `Server Error: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const text = result.text;
+
+      if (text) {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        const jsonStr = jsonMatch ? jsonMatch[0] : text.replace(/```json\n?|\n?```/g, '').trim();
+
+        try {
+          const data = JSON.parse(jsonStr);
+          setEditableDetails(prev => ({ ...prev, ...data }));
+          setOcrStep('success');
+          setToastMessage("Form analyzed successfully!");
+        } catch (e) {
+          console.error("JSON Parse Error", e);
+          setToastMessage("OCR Error: Could not parse Form data.");
+          setOcrStep('success');
+        }
+      }
+    } catch (err: any) {
       console.error("Form OCR failed", err);
       setOcrStep('success');
+      setToastMessage(`Form Analysis Failed: ${err.message}`);
     }
   };
 
-  const handleInputChange = (field: keyof GuestDetails, value: any) => {
+  const handleInputChange = async (field: keyof GuestDetails, value: any) => {
     setEditableDetails(prev => ({ ...prev, [field]: value }));
+
+    if (field === 'phoneNumber' && value && value.length >= 4) {
+      setIsLookupLoading(true);
+      try {
+        const results = await lookupGuest(undefined, value);
+        if (results && results.length > 0) {
+          setLookupResults(results);
+          setShowLookupDropdown(true);
+        } else {
+          setShowLookupDropdown(false);
+        }
+      } catch (err) {
+        console.error("Lookup failed", err);
+      } finally {
+        setIsLookupLoading(false);
+      }
+    } else if (field === 'phoneNumber') {
+      setShowLookupDropdown(false);
+    }
+  };
+
+  const selectGuestFromLookup = (guest: any) => {
+    setEditableDetails(prev => ({
+      ...prev,
+      profileId: guest.profileId || guest.id,
+      name: guest.name || prev.name,
+      phoneNumber: guest.phone_number || prev.phone_number,
+      email: guest.email || prev.email,
+      idType: guest.idType || prev.idType,
+      idNumber: guest.idNumber || prev.idNumber,
+      address: guest.address || prev.address,
+      dob: guest.dob || prev.dob,
+      nationality: guest.nationality || prev.nationality,
+      gender: guest.gender || prev.gender,
+      fatherOrHusbandName: guest.fatherOrHusbandName || prev.fatherOrHusbandName,
+      city: guest.city || prev.city,
+      state: guest.state || prev.state,
+      pinCode: guest.pinCode || prev.pinCode,
+      country: guest.country || prev.country
+    }));
+
+    setIdImages({
+      front: guest.idImage || null,
+      back: guest.idImageBack || null,
+      visa: guest.visaPage || null,
+      additional: guest.additionalDocs || [],
+      formPages: guest.formPages || []
+    });
+
+    setShowLookupDropdown(false);
+    setToastMessage(`Welcome back, ${guest.name}! Details auto-filled.`);
+    if (guest.idImage) setIsIdRevealed(true);
   };
 
   const validateDetails = () => {
     const errors: string[] = [];
-    if (!editableDetails.name) errors.push("Full Name");
-    if (!editableDetails.phoneNumber) errors.push("Mobile Number");
-    if (!editableDetails.idType) errors.push("ID Type");
-    if (!editableDetails.idNumber) errors.push("ID Number");
-    if (!editableDetails.address) errors.push("Address");
-    if (!idImages.front) errors.push("ID Front Scan");
 
-    if (editableDetails.nationality !== 'Indian') {
-      if (!editableDetails.passportNumber) errors.push("Passport Number");
-      if (!idImages.visa) errors.push("Visa Page Scan");
+    // Mandatory for everyone
+    if (!editableDetails.name) errors.push("Full Name");
+
+    if (isAddingAccessory) {
+      // Co-Guest / Accessory Rules: Only Name & DOB
+      if (!editableDetails.dob) errors.push("Date of Birth");
+    } else {
+      // Primary Guest Rules: Strict
+      if (!editableDetails.phoneNumber) errors.push("Mobile Number");
+      if (!editableDetails.idType) errors.push("ID Type");
+      if (!editableDetails.idNumber) errors.push("ID Number");
+      if (!editableDetails.address) errors.push("Address");
+      if (!idImages.front) errors.push("ID Front Scan");
+
+      if (editableDetails.nationality !== 'Indian') {
+        if (!editableDetails.passportNumber) errors.push("Passport Number");
+        if (!idImages.visa) errors.push("Visa Page Scan");
+      }
     }
 
     setValidationErrors(errors);
+
+    // Auto-scroll to first error
+    if (errors.length > 0) {
+      setTimeout(() => {
+        const firstErrorEl = document.querySelector('.ring-rose-200, .ring-rose-400');
+        if (firstErrorEl) {
+          firstErrorEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+    }
+
     return errors.length === 0;
   };
 
@@ -360,7 +514,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       front: booking.guestDetails?.idImage || null,
       back: booking.guestDetails?.idImageBack || null,
       visa: booking.guestDetails?.visaPage || null,
-      additional: booking.guestDetails?.additionalDocs || []
+      additional: booking.guestDetails?.additionalDocs || [],
+      formPages: booking.guestDetails?.formPages || []
     });
     setValidationErrors([]);
   };
@@ -375,11 +530,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       front: guest.idImage || null,
       back: guest.idImageBack || null,
       visa: guest.visaPage || null,
-      additional: guest.additionalDocs || []
+      additional: guest.additionalDocs || [],
+      formPages: guest.formPages || []
     });
     setValidationErrors([]);
     // Scroll to top or form section
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const startAddingAccessory = () => {
@@ -401,9 +557,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       arrivalPort: 'Delhi (DEL)',
       arrivalTime: currentTime
     });
-    setIdImages({ front: null, back: null, visa: null, additional: [] });
+    setIdImages({ front: null, back: null, visa: null, additional: [], formPages: [] });
     setValidationErrors([]);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleCheckInNow = async () => {
@@ -422,6 +578,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         idImageBack: idImages.back || undefined,
         visaPage: idImages.visa || undefined,
         additionalDocs: idImages.additional.length > 0 ? idImages.additional : undefined,
+        formPages: idImages.formPages.length > 0 ? idImages.formPages : undefined,
       };
 
       if (editingAccessoryIndex !== null) {
@@ -447,6 +604,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
           idImageBack: idImages.back || undefined,
           visaPage: idImages.visa || undefined,
           additionalDocs: idImages.additional.length > 0 ? idImages.additional : undefined,
+          formPages: idImages.formPages.length > 0 ? idImages.formPages : undefined,
           arrivalTime: currentTime
         },
         timestamp: Date.now()
@@ -454,12 +612,18 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     }
 
     try {
-      await updateBooking(updated);
-      if (!isAddingAccessory && booking.status === 'Confirmed') {
-        onUpdateStatus(booking.id, 'CheckedIn');
+      if (onUpdateBooking) {
+        onUpdateBooking(updated);
       } else {
-        // Just refresh local state if possible or wait for sync
-        // For now, assume child can't force parent refresh easily beyond status
+        await updateBooking(updated);
+        if (!isAddingAccessory && (booking.status === 'Confirmed' || booking.status === 'CheckedIn')) {
+          onUpdateStatus(booking.id, 'CheckedIn');
+        }
+      }
+
+      if (!isAddingAccessory && booking.status === 'Confirmed') {
+        alert("Check-in successful! Guest is now In-House.");
+      } else {
         setToastMessage(isAddingAccessory ? "Guest saved successfully!" : "Update successful!");
       }
 
@@ -482,13 +646,46 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
           setOcrStep('processing');
           analyzeIdImage(imgData.split(',')[1]);
         } else if (ocrStep === 'scan_form') {
-          setIdImages(prev => ({ ...prev, front: imgData }));
+          setIdImages(prev => ({ ...prev, formPages: [...prev.formPages, imgData] }));
           setOcrStep('processing');
-          analyzeFilledForm(imgData.split(',')[1]);
+          analyzeFilledForm();
         }
       };
       reader.readAsDataURL(e.target.files[0]);
     }
+  };
+
+  const handleDeleteScan = () => {
+    console.log("Delete scan triggered", { activeSide, activeAdditionalIndex });
+    // Store which scan to delete and show confirmation modal
+    setPendingDeleteSide({ side: activeSide, addIdx: activeAdditionalIndex });
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteScan = () => {
+    if (!pendingDeleteSide) return;
+    const { side, addIdx } = pendingDeleteSide;
+
+    setIdImages(prev => {
+      const updated = { ...prev };
+      if (side === 'front') updated.front = null;
+      else if (side === 'back') updated.back = null;
+      else if (side === 'visa') updated.visa = null;
+      else if (side === 'additional') {
+        if (addIdx >= 100) {
+          const idx = addIdx - 100;
+          updated.formPages = updated.formPages.filter((_, i) => i !== idx);
+        } else {
+          updated.additional = updated.additional.filter((_, i) => i !== addIdx);
+        }
+        setActiveSide('front');
+        setActiveAdditionalIndex(0);
+      }
+      return updated;
+    });
+    setToastMessage("Scan deleted. Remember to Save/Check-in to persist changes.");
+    setShowDeleteConfirm(false);
+    setPendingDeleteSide(null);
   };
 
   const isForeigner = (editableDetails.nationality || 'Indian').toLowerCase() !== 'indian';
@@ -508,7 +705,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     loadHistory();
   }, [booking.id, booking.guestName, editableDetails?.phoneNumber]);
 
-  const frontSrc = idImages.front || 'https://images.unsplash.com/photo-1548543604-a87c9909abec?q=80&w=2528&auto=format&fit=crop';
+  const frontSrc = idImages.front;
   const backSrc = idImages.back;
   const visaSrc = idImages.visa;
 
@@ -769,6 +966,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   };
 
   const handleCheckout = async () => {
+    if (netOutstanding > 0) {
+      setToastMessage(`Cannot check out. Outstanding balance: ₹${netOutstanding.toLocaleString()}. Please settle all payments first.`);
+      return;
+    }
+
     if (!confirm('Are you sure you want to finalize this booking and check out? This will generate a Tax Invoice and Receipt.')) return;
 
     try {
@@ -789,12 +991,21 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       // Update local status via parent
       onUpdateStatus?.(booking.id, 'CheckedOut');
 
-      // Optionally open the files (though the user said 'store them in Billing folder', 
-      // which the backend already did).
-      alert(`Checkout Successful! Invoice ${data.invoiceNumber} generated.`);
-    } catch (err) {
+      setToastMessage(`Checkout Successful! Invoice ${data.invoiceNumber || ''} generated.`);
+    } catch (err: any) {
       console.error(err);
-      alert('Checkout failed. Please try again.');
+      setToastMessage(`Checkout failed: ${err.message || 'Please try again.'}`);
+    }
+  };
+
+  const handleCancelBooking = async () => {
+    if (!confirm('Are you sure you want to cancel this booking? This will release the room inventory.')) return;
+    try {
+      onUpdateStatus?.(booking.id, 'Cancelled');
+      setToastMessage('Booking cancelled successfully.');
+    } catch (err: any) {
+      console.error(err);
+      setToastMessage(`Cancellation failed: ${err.message || 'Please try again.'}`);
     }
   };
 
@@ -1061,6 +1272,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               <div class="label">Room Number</div>
               <div class="value">#${data.roomNumber}</div>
             </div>
+            ${(booking.accessoryGuests || []).map((guest, i) => `
+              <div class="field">
+                <div class="label">Co-Guest ${i + 1}</div>
+                <div class="value">${guest.name}</div>
+              </div>
+            `).join('')}
             <div class="field">
               <div class="label">Nationality</div>
               <div class="value">${data.nationality}</div>
@@ -1149,39 +1366,68 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="relative group">
-            <button className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg transition-all ${getStatusStyles(booking.status)}`}>
-              {booking.status === 'Rejected' ? 'Warning/Unpaid' : booking.status === 'CheckedIn' ? 'In-House' : booking.status}
-              <ChevronDown className="w-4 h-4" />
+        <div className="flex items-center gap-2">
+          {/* Main Actions Group */}
+          <div className="flex items-center gap-2 mr-4 border-r border-slate-200 pr-4">
+            <button
+              onClick={printRegCard}
+              className="px-5 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg flex items-center gap-2"
+            >
+              <FileText className="w-4 h-4" />
+              Reg Card
             </button>
-            <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-slate-200 rounded-2xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[101] p-2">
-              {STATUS_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => onUpdateStatus(booking.id, opt.value)}
-                  className="w-full text-left p-3 hover:bg-slate-50 rounded-xl flex items-center gap-3 transition-colors"
-                >
-                  <div className={`w-3 h-3 rounded-full ${opt.bg}`}></div>
-                  <span className="text-xs font-bold text-slate-700">{opt.label === 'Rejected' ? 'Warning/Unpaid' : opt.label}</span>
-                </button>
-              ))}
-            </div>
           </div>
 
+          {/* Status & Check-in/Out Group */}
+          <div className="flex items-center gap-3">
+            {(booking.status === 'Confirmed' || isAddingAccessory) && (
+              <button
+                onClick={handleCheckInNow}
+                className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg flex items-center gap-2 ${isAddingAccessory ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
+              >
+                {isAddingAccessory ? <CheckCircle2 className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
+                {isAddingAccessory ? (editingAccessoryIndex !== null ? 'Save Changes' : 'Add Co-Guest') : 'Complete Check-In'}
+              </button>
+            )}
 
+            {!isAddingAccessory && booking.status === 'CheckedIn' && (
+              <button
+                onClick={handleCheckInNow}
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg flex items-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                Save Changes
+              </button>
+            )}
 
-          <button
-            onClick={printRegCard}
-            className="px-6 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg flex items-center gap-2"
-          >
-            <FileText className="w-4 h-4" />
-            Reg Card
-          </button>
+            {booking.status === 'CheckedIn' && (
+              <button
+                onClick={handleCheckout}
+                className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg flex items-center gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                Check-Out
+              </button>
+            )}
+
+            {booking.status === 'Confirmed' && (
+              <button
+                onClick={handleCancelBooking}
+                className="px-6 py-2.5 bg-rose-50 text-rose-600 border border-rose-200 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-rose-100 transition-all shadow-sm flex items-center gap-2"
+              >
+                <XCircle className="w-4 h-4" />
+                Cancel Booking
+              </button>
+            )}
+
+            <div className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg transition-all ${getStatusStyles(booking.status)}`}>
+              {booking.status === 'Rejected' ? 'Warning/Unpaid' : booking.status === 'CheckedOut' ? 'Checked Out' : booking.status}
+            </div>
+          </div>
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-8 custom-scrollbar">
         <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-24">
 
           <div className="lg:col-span-2 space-y-8">
@@ -1210,8 +1456,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           type="text"
                           value={editableDetails.name || ''}
                           onChange={(e) => handleInputChange('name', e.target.value)}
-                          placeholder="Guest Name"
-                          className="text-4xl font-black text-slate-900 tracking-tight leading-tight bg-transparent border-b-2 border-transparent hover:border-indigo-300 focus:border-indigo-600 focus:ring-0 outline-none transition-all px-2 flex-1"
+                          placeholder="Guest Name *"
+                          className={`text-4xl font-black text-slate-900 tracking-tight leading-tight bg-transparent border-b-2 transition-all px-2 flex-1 outline-none ring-offset-4 rounded-lg ${validationErrors.includes("Full Name") ? 'border-rose-300 bg-rose-50 ring-2 ring-rose-200' : 'border-transparent hover:border-indigo-300 focus:border-indigo-600'}`}
                         />
                         {booking.roomNumber && (
                           <span className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm">
@@ -1223,108 +1469,185 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Primary Resident
                         </span>
-                        <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100 uppercase tracking-widest">
-                          {details?.nationality || 'Indian'}
-                        </span>
+                        {editableDetails.profileId && (
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-black uppercase tracking-widest border border-slate-200">
+                            Profile ID: #{editableDetails.profileId}
+                          </span>
+                        )}
+                        <select
+                          value={editableDetails.nationality || 'Indian'}
+                          onChange={(e) => handleInputChange('nationality', e.target.value)}
+                          className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100 uppercase tracking-widest cursor-pointer focus:ring-0 appearance-none"
+                        >
+                          <option value="Indian">Indian</option>
+                          <option value="American">American</option>
+                          <option value="British">British</option>
+                          <option value="Canadian">Canadian</option>
+                          <option value="Australian">Australian</option>
+                          <option value="German">German</option>
+                          <option value="French">French</option>
+                          <option value="Japanese">Japanese</option>
+                          <option value="Chinese">Chinese</option>
+                          <option value="Russian">Russian</option>
+                          <option value="UAE">UAE</option>
+                          <option value="Saudi">Saudi</option>
+                          <option value="Nepalese">Nepalese</option>
+                          <option value="Bangladeshi">Bangladeshi</option>
+                          <option value="Sri Lankan">Sri Lankan</option>
+                          <option value="Other">Other</option>
+                        </select>
+                        {/* VIP Toggle - next to nationality */}
+                        {!isAddingAccessory && (
+                          <button
+                            onClick={() => onToggleVIP?.(booking.id)}
+                            className={`p-1.5 rounded-lg transition-all shadow-sm border ${booking.isVIP
+                              ? 'bg-violet-100 border-violet-200 text-violet-600'
+                              : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600'}`}
+                          >
+                            <Star className={`w-4 h-4 ${booking.isVIP ? 'fill-current' : ''}`} />
+                          </button>
+                        )}
                       </div>
-                    </div>
-
-                    {/* Action buttons next to guest name */}
-                    <div className="flex items-center gap-2 ml-4">
-
-                      {(booking.status === 'Confirmed' || isAddingAccessory) && (
-                        <button
-                          onClick={handleCheckInNow}
-                          className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg flex items-center gap-2 ${isAddingAccessory ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
-                        >
-                          {isAddingAccessory ? <CheckCircle2 className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
-                          {isAddingAccessory ? (editingAccessoryIndex !== null ? 'Save Changes' : 'Add Co-Guest') : 'Complete Check-In'}
-                        </button>
-                      )}
-                      {isAddingAccessory && (
-                        <button
-                          onClick={resetToPrimaryGuest}
-                          className="px-6 py-2.5 bg-slate-100 text-slate-500 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-200 transition-all border border-slate-200"
-                        >
-                          Cancel
-                        </button>
-                      )}
-                      {!isAddingAccessory && (
-                        <button
-                          onClick={() => onToggleVIP?.(booking.id)}
-                          className={`p-2.5 rounded-xl transition-all shadow-sm border ${booking.isVIP
-                            ? 'bg-violet-100 border-violet-200 text-violet-600'
-                            : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600'}`}
-                        >
-                          <Star className={`w-5 h-5 ${booking.isVIP ? 'fill-current' : ''}`} />
-                        </button>
-                      )}
                     </div>
                   </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-6">
-                  <div className={`flex items-center gap-4 group p-4 rounded-2xl transition-all ${validationErrors.includes("Mobile Number") ? 'bg-rose-50 ring-2 ring-rose-200' : ''}`}>
-                    <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Smartphone className="w-5 h-5" /></div>
-                    <div className="flex-1">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mobile Number</p>
-                      <input
-                        type="text"
-                        value={editableDetails.phoneNumber || ''}
-                        onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
-                        placeholder="Required for Check-in"
-                        className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
-                      />
+                <div className="space-y-4">
+                  {/* Row 1: Mobile and Father's Name side by side */}
+                  {/* Mobile Number Field */}
+                  <div className={`flex items-center gap-3 group p-4 rounded-2xl transition-all ${validationErrors.includes("Mobile Number") ? 'bg-rose-50 ring-2 ring-rose-200' : ''}`}>
+                    <div className="p-2.5 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Smartphone className="w-4 h-4" /></div>
+                    <div className="flex-1 min-w-0 relative">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Mobile Number {!isAddingAccessory && <span className="text-rose-500">*</span>}</p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={editableDetails.phoneNumber || ''}
+                          onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
+                          onBlur={() => setTimeout(() => setShowLookupDropdown(false), 200)}
+                          placeholder={isAddingAccessory ? "Optional" : "Required"}
+                          className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
+                        />
+                        {isLookupLoading && <Loader2 className="w-3 h-3 text-indigo-500 animate-spin" />}
+                      </div>
+
+                      {/* Lookup Results Dropdown */}
+                      {showLookupDropdown && lookupResults.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 z-[1000] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                          <div className="p-3 bg-indigo-50 border-b border-indigo-100">
+                            <p className="text-[8px] font-black text-indigo-600 uppercase tracking-widest">Repeat Guest Found</p>
+                          </div>
+                          <div className="max-h-48 overflow-y-auto">
+                            {lookupResults.map((guest, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => selectGuestFromLookup(guest)}
+                                className="w-full text-left p-4 hover:bg-slate-50 flex items-center gap-4 transition-colors border-b border-slate-50 last:border-0"
+                              >
+                                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-500">
+                                  {(guest.name || 'G').charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 overflow-hidden">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-xs font-black text-slate-900 truncate uppercase">{guest.name}</p>
+                                    <span className="text-[8px] font-black text-slate-400">ID: #{guest.profileId || guest.id}</span>
+                                  </div>
+                                  <p className="text-[9px] font-bold text-slate-500 truncate">{guest.idType}: {guest.idNumber}</p>
+                                </div>
+                                <ArrowRightCircle className="w-4 h-4 text-indigo-500" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 group p-4 rounded-2xl transition-all">
-                    <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Mail className="w-5 h-5" /></div>
-                    <div className="flex-1">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email Address</p>
-                      <input
-                        type="email"
-                        value={editableDetails.email || ''}
-                        onChange={(e) => handleInputChange('email', e.target.value)}
-                        placeholder="Optional"
-                        className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 group p-4 rounded-2xl transition-all">
-                    <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Users className="w-5 h-5" /></div>
-                    <div className="flex-1">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Father's/Husband's Name</p>
+
+                  {/* Father's/Husband's Name Field */}
+                  <div className="flex items-center gap-3 group p-4 rounded-2xl transition-all">
+                    <div className="p-2.5 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Users className="w-4 h-4" /></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Father's/Husband's Name</p>
                       <input
                         type="text"
                         value={editableDetails.fatherOrHusbandName || ''}
                         onChange={(e) => handleInputChange('fatherOrHusbandName', e.target.value)}
                         placeholder="Full Name"
-                        className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
                       />
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 group p-4 rounded-2xl transition-all">
-                    <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Calendar className="w-5 h-5" /></div>
+
+                  {/* Nationality Field */}
+                  <div className="flex items-center gap-3 group p-4 rounded-2xl transition-all">
+                    <div className="p-2.5 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Globe className="w-4 h-4" /></div>
                     <div className="flex-1">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date of Birth</p>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Nationality</p>
+                      <select
+                        value={editableDetails.nationality || 'Indian'}
+                        onChange={(e) => handleInputChange('nationality', e.target.value)}
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0 appearance-none cursor-pointer"
+                      >
+                        <option value="Indian">Indian</option>
+                        <option value="American">American</option>
+                        <option value="British">British</option>
+                        <option value="Canadian">Canadian</option>
+                        <option value="Australian">Australian</option>
+                        <option value="German">German</option>
+                        <option value="French">French</option>
+                        <option value="Japanese">Japanese</option>
+                        <option value="Chinese">Chinese</option>
+                        <option value="Russian">Russian</option>
+                        <option value="UAE">UAE</option>
+                        <option value="Saudi">Saudi</option>
+                        <option value="Nepalese">Nepalese</option>
+                        <option value="Bangladeshi">Bangladeshi</option>
+                        <option value="Sri Lankan">Sri Lankan</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Email Field */}
+                  <div className="flex items-center gap-3 group p-4 rounded-2xl transition-all">
+                    <div className="p-2.5 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Mail className="w-4 h-4" /></div>
+                    <div className="flex-1">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Email Address</p>
+                      <input
+                        type="email"
+                        value={editableDetails.email || ''}
+                        onChange={(e) => handleInputChange('email', e.target.value)}
+                        placeholder="Optional"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Date of Birth Field */}
+                  <div className="flex items-center gap-3 group p-4 rounded-2xl transition-all">
+                    <div className="p-2.5 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><Calendar className="w-4 h-4" /></div>
+                    <div className="flex-1">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Date of Birth <span className="text-rose-500">*</span></p>
                       <input
                         type="date"
                         value={editableDetails.dob || ''}
                         onChange={(e) => handleInputChange('dob', e.target.value)}
-                        className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 tabular-nums focus:ring-0"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0"
                       />
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 group p-4 rounded-2xl transition-all">
-                    <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><User className="w-5 h-5" /></div>
+
+                  {/* Gender Field */}
+                  <div className="flex items-center gap-3 group p-4 rounded-2xl transition-all">
+                    <div className="p-2.5 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><User className="w-4 h-4" /></div>
                     <div className="flex-1">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gender</p>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Gender</p>
                       <select
                         value={editableDetails.gender || 'Male'}
                         onChange={(e) => handleInputChange('gender', e.target.value)}
-                        className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 tabular-nums focus:ring-0 appearance-none cursor-pointer"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 appearance-none cursor-pointer"
                       >
                         <option>Male</option>
                         <option>Female</option>
@@ -1335,15 +1658,16 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 </div>
 
                 <div className="space-y-6">
-                  <div className={`flex items-center gap-4 group p-4 rounded-2xl transition-all ${validationErrors.includes("ID Number") ? 'bg-rose-50 ring-2 ring-rose-200' : ''}`}>
+                  <div className={`flex items-center gap-4 group p-4 rounded-2xl transition-all ${validationErrors.includes("ID Number") || validationErrors.includes("ID Type") ? 'bg-rose-50 ring-2 ring-rose-200' : ''}`}>
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors"><FileBadge className="w-5 h-5" /></div>
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
                         <select
-                          value={editableDetails.idType || 'Aadhar'}
+                          value={editableDetails.idType || ''}
                           onChange={(e) => handleInputChange('idType', e.target.value)}
-                          className="bg-transparent border-none p-0 text-[10px] font-black text-slate-400 uppercase tracking-widest focus:ring-0 appearance-none cursor-pointer"
+                          className={`bg-transparent border-none p-0 text-[10px] font-black uppercase tracking-widest focus:ring-0 appearance-none cursor-pointer transition-colors ${validationErrors.includes("ID Type") ? 'text-rose-600' : 'text-slate-400'}`}
                         >
+                          <option value="">Select ID Type {!isAddingAccessory ? '*' : ''}</option>
                           <option>Aadhar</option>
                           <option>Passport</option>
                           <option>DL</option>
@@ -1355,42 +1679,86 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         value={isIdMasked && editableDetails.idNumber ? `XXXX-XXXX-${editableDetails.idNumber.slice(-4)}` : editableDetails.idNumber || ''}
                         onFocus={() => setIsIdMasked(false)}
                         onChange={(e) => handleInputChange('idNumber', e.target.value)}
-                        placeholder="Document #"
+                        placeholder={isAddingAccessory ? "Document #" : "Document # *"}
                         className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
                       />
                     </div>
                   </div>
 
-                  <div className={`relative w-full h-64 bg-slate-900 rounded-2xl overflow-hidden shadow-md group/id ${validationErrors.includes("ID Front Scan") ? 'ring-2 ring-rose-400' : ''}`}>
+                  <div className={`relative w-full h-64 bg-black rounded-2xl overflow-hidden shadow-md group/id ${validationErrors.includes("ID Front Scan") ? 'ring-2 ring-rose-400' : ''}`}>
                     <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
 
                     {isCameraActive ? (
                       <div className="absolute inset-0 z-50 bg-black">
                         <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                         <canvas ref={canvasRef} className="hidden" />
-                        <div className="absolute inset-x-0 bottom-8 flex justify-center items-center gap-8">
+                        <div className="absolute inset-x-0 bottom-8 flex justify-center items-center gap-4">
                           <button onClick={stopCamera} className="p-4 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-all"><X className="w-6 h-6" /></button>
                           <button onClick={captureImage} className="w-20 h-20 bg-white rounded-full border-8 border-indigo-400/50 flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-2xl">
                             <div className="w-12 h-12 bg-indigo-600 rounded-full"></div>
                           </button>
+                          {/* Finish button for ID scanning */}
+                          {(ocrStep === 'scan_front' || ocrStep === 'scan_back') && (idImages.front || idImages.back) && (
+                            <button
+                              onClick={finishScanning}
+                              className="px-6 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl"
+                            >
+                              Finish ({(idImages.front ? 1 : 0) + (idImages.back ? 1 : 0) + idImages.additional.length} pgs)
+                            </button>
+                          )}
+                          {/* Finish button for Form scanning */}
+                          {ocrStep === 'scan_form' && idImages.formPages.length > 0 && (
+                            <button
+                              onClick={finishScanning}
+                              className="px-6 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl"
+                            >
+                              Finish ({idImages.formPages.length} pgs)
+                            </button>
+                          )}
                           <button onClick={triggerFileUpload} className="p-4 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-all"><Upload className="w-6 h-6" /></button>
                         </div>
                         <div className="absolute top-4 left-4 right-4 text-center">
-                          <span className="px-4 py-2 bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg">Capturing {ocrStep.replace('scan_', '').toUpperCase()}</span>
+                          <span className="px-4 py-2 bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg">
+                            {ocrStep === 'scan_front'
+                              ? `Scan ID (Page ${(idImages.front ? 1 : 0) + (idImages.back ? 1 : 0) + idImages.additional.length + 1})`
+                              : ocrStep === 'scan_back'
+                                ? `Scan ID Back`
+                                : ocrStep === 'scan_form'
+                                  ? `Scan Doc (Page ${idImages.formPages.length + 1})`
+                                  : `Scanning ${ocrStep.replace('scan_', '').toUpperCase()}`}
+                          </span>
                         </div>
                       </div>
                     ) : (
                       <>
-                        <img
-                          src={activeSide === 'front' ? idImages.front || 'https://images.unsplash.com/photo-1548543604-a87c9909abec?q=80&w=2528&auto=format&fit=crop' : activeSide === 'back' ? idImages.back || '' : activeSide === 'visa' ? idImages.visa || '' : idImages.additional[activeAdditionalIndex] || ''}
-                          alt="Scanned ID"
-                          className={`w-full h-full object-cover transition-all duration-700 ${isIdRevealed ? 'blur-0 opacity-100' : 'blur-xl opacity-60'}`}
-                        />
+                        {(() => {
+                          const src = activeSide === 'front' ? idImages.front
+                            : activeSide === 'back' ? idImages.back
+                              : activeSide === 'visa' ? idImages.visa
+                                : (activeAdditionalIndex >= 100 ? idImages.formPages[activeAdditionalIndex - 100] : idImages.additional[activeAdditionalIndex]);
+
+                          if (!src) return (
+                            <div className="w-full h-full flex flex-col items-center justify-center gap-3">
+                              <div className="p-4 bg-white/5 rounded-3xl backdrop-blur-sm border border-white/10">
+                                <FileImage className="w-10 h-10 text-slate-700" />
+                              </div>
+                              <p className="text-[9px] font-black text-slate-700 uppercase tracking-[0.2em]">No Document Scanned</p>
+                            </div>
+                          );
+
+                          return (
+                            <img
+                              src={src}
+                              alt="Scanned ID"
+                              className={`w-full h-full object-cover transition-all duration-700 ${isIdRevealed ? 'blur-0 opacity-100' : 'blur-xl opacity-60'}`}
+                            />
+                          );
+                        })()}
 
                         {!isIdRevealed ? (
                           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 backdrop-blur-sm z-10 space-y-3 px-8 text-center">
                             <Lock className="w-8 h-8 text-slate-300" />
-                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">ID Documents Hidden</p>
+                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">ID Documents Hidden <span className="text-rose-500">*</span></p>
                             <div className="flex gap-2">
                               <button onClick={handleRevealId} className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-[10px] font-black text-white uppercase tracking-widest">View ID</button>
                               <button onClick={() => startCamera('scan_front')} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-[10px] font-black text-white uppercase tracking-widest flex items-center gap-2">
@@ -1399,20 +1767,42 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                             </div>
                           </div>
                         ) : (
-                          <div className="absolute top-3 inset-x-3 flex flex-wrap gap-2 z-20">
-                            <button onClick={() => setActiveSide('front')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'front' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Front</button>
-                            <button onClick={() => setActiveSide('back')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'back' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Back</button>
-                            {isForeigner && <button onClick={() => setActiveSide('visa')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'visa' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Visa</button>}
-                            {idImages.additional?.map((_, idx) => (
-                              <button
-                                key={idx}
-                                onClick={() => { setActiveSide('additional'); setActiveAdditionalIndex(idx); }}
-                                className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'additional' && activeAdditionalIndex === idx ? 'bg-indigo-600 text-white' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}
-                              >
-                                {idx + 1}
-                              </button>
-                            ))}
-                            <button onClick={() => startCamera('scan_front')} className="p-1 px-2 bg-indigo-500 text-white rounded hover:bg-indigo-600 ml-auto"><Camera className="w-3.5 h-3.5" /></button>
+                          <div className="absolute top-3 inset-x-3 flex items-start justify-between pointer-events-none z-[110]">
+                            <div className="flex flex-wrap gap-2 pointer-events-auto">
+                              <button onClick={() => setActiveSide('front')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'front' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Front</button>
+                              <button onClick={() => setActiveSide('back')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'back' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Back</button>
+                              {isForeigner && <button onClick={() => setActiveSide('visa')} className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'visa' ? 'bg-white text-indigo-600' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}>Visa</button>}
+                              {idImages.formPages?.map((_, idx) => (
+                                <button
+                                  key={`form-${idx}`}
+                                  onClick={() => { setActiveSide('additional'); setActiveAdditionalIndex(100 + idx); }}
+                                  className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'additional' && activeAdditionalIndex === (100 + idx) ? 'bg-emerald-600 text-white' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}
+                                >
+                                  Form {idx + 1}
+                                </button>
+                              ))}
+                              {idImages.additional?.map((_, idx) => (
+                                <button
+                                  key={idx}
+                                  onClick={() => { setActiveSide('additional'); setActiveAdditionalIndex(idx); }}
+                                  className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase transition-all shadow-sm ${activeSide === 'additional' && activeAdditionalIndex === idx ? 'bg-indigo-600 text-white' : 'bg-black/40 text-white/70 hover:bg-black/60'}`}
+                                >
+                                  {idx + 1}
+                                </button>
+                              ))}
+                            </div>
+
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleDeleteScan();
+                              }}
+                              className="p-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition-all shadow-2xl active:scale-90 pointer-events-auto flex items-center justify-center border-2 border-white/20"
+                              title="Delete this scan"
+                            >
+                              <Trash2 className="w-5 h-5 shadow-sm" />
+                            </button>
                           </div>
                         )}
                       </>
@@ -1422,6 +1812,46 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md flex flex-col items-center justify-center z-[60] space-y-4">
                         <Loader2 className="w-12 h-12 text-indigo-400 animate-spin" />
                         <p className="text-xs font-black text-white uppercase tracking-widest">Gemini AI OCR Processing...</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ACTION BUTTONS - Below ID Image */}
+                  <div className="flex flex-col gap-3 mt-4">
+                    <button
+                      onClick={() => startCamera('scan_front')}
+                      className="w-full py-3 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-lg"
+                    >
+                      <Camera className="w-4 h-4" />
+                      Scan ID
+                    </button>
+                    <button
+                      onClick={() => startCamera('scan_form')}
+                      className="w-full py-3 bg-slate-700 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-600 transition-all flex items-center justify-center gap-2 shadow-lg"
+                    >
+                      <ScanLine className="w-4 h-4" />
+                      Scan Doc
+                    </button>
+                    {isAddingAccessory && (
+                      <>
+                        <button
+                          onClick={handleCheckInNow}
+                          className="w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          {editingAccessoryIndex !== null ? 'Save Changes' : 'Save Co-Guest'}
+                        </button>
+                        <button
+                          onClick={resetToPrimaryGuest}
+                          className="w-full py-3 bg-slate-100 text-slate-500 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-200 transition-all border border-slate-200"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    )}
+                    {!isAddingAccessory && booking.status === 'Confirmed' && (
+                      <div className="flex flex-col gap-3">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Complete check-in in the header above</p>
                       </div>
                     )}
                   </div>
@@ -1492,13 +1922,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         <p className="text-sm font-bold text-slate-300 italic">Required at Desk</p>
                       )}
                     </div>
-                    <button onClick={() => startCamera('scan_form')} className="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-colors flex items-center gap-2">
-                      <FileText className="w-4 h-4" />
-                      <span className="text-[8px] font-black uppercase">Scan Form</span>
-                    </button>
                   </div>
-                  <div className={`p-4 bg-slate-50 rounded-2xl border border-slate-100 md:col-span-3 transition-all ${validationErrors.includes("Address") ? 'ring-2 ring-rose-200' : ''}`}>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Permanent Residential Address</p>
+                  <div className={`p-4 bg-slate-50 rounded-2xl border border-slate-100 md:col-span-3 transition-all ${validationErrors.includes("Address") ? 'bg-rose-50 ring-2 ring-rose-200' : ''}`}>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Permanent Residential Address {!isAddingAccessory && <span className="text-rose-500">*</span>}</p>
                     <textarea
                       value={editableDetails.address || ''}
                       onChange={(e) => handleInputChange('address', e.target.value)}
@@ -1508,6 +1934,156 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* FORM C - Foreigner Registration (only shows for non-Indian nationality) */}
+              {editableDetails.nationality && editableDetails.nationality !== 'Indian' && (
+                <div className="mt-6 p-6 bg-amber-50 rounded-2xl border border-amber-200">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2.5 bg-amber-100 rounded-xl text-amber-600">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-base font-black text-amber-900 tracking-tight">Form C - Foreigner Registration</h4>
+                      <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Required for Police Compliance</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="p-4 bg-white rounded-xl border border-amber-100">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Passport Number</p>
+                      <input
+                        type="text"
+                        value={editableDetails.passportNumber || ''}
+                        onChange={(e) => handleInputChange('passportNumber', e.target.value)}
+                        placeholder="Enter passport #"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                      />
+                    </div>
+                    <div className="p-4 bg-white rounded-xl border border-amber-100">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Passport Issue Date</p>
+                      <input
+                        type="date"
+                        value={editableDetails.passportIssueDate || ''}
+                        onChange={(e) => handleInputChange('passportIssueDate', e.target.value)}
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                      />
+                    </div>
+                    <div className="p-4 bg-white rounded-xl border border-amber-100">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Passport Expiry Date</p>
+                      <input
+                        type="date"
+                        value={editableDetails.passportExpiry || ''}
+                        onChange={(e) => handleInputChange('passportExpiry', e.target.value)}
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                      />
+                    </div>
+                    <div className="p-4 bg-white rounded-xl border border-amber-100">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Place of Issue</p>
+                      <input
+                        type="text"
+                        value={editableDetails.passportPlaceIssue || ''}
+                        onChange={(e) => handleInputChange('passportPlaceIssue', e.target.value)}
+                        placeholder="City/Country"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                      />
+                    </div>
+                    <div className="p-4 bg-white rounded-xl border border-amber-100">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Visa Number</p>
+                      <input
+                        type="text"
+                        value={editableDetails.visaNumber || ''}
+                        onChange={(e) => handleInputChange('visaNumber', e.target.value)}
+                        placeholder="Enter visa #"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                      />
+                    </div>
+                    <div className="p-4 bg-white rounded-xl border border-amber-100">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Visa Type</p>
+                      <select
+                        value={editableDetails.visaType || 'Tourist'}
+                        onChange={(e) => handleInputChange('visaType', e.target.value)}
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0 appearance-none cursor-pointer"
+                      >
+                        <option>Tourist</option>
+                        <option>Business</option>
+                        <option>Medical</option>
+                        <option>Employment</option>
+                        <option>Student</option>
+                        <option>Transit</option>
+                        <option>Conference</option>
+                        <option>E-Visa</option>
+                      </select>
+                    </div>
+                    <div className="p-4 bg-white rounded-xl border border-amber-100">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Visa Issue Date</p>
+                      <input
+                        type="date"
+                        value={editableDetails.visaIssueDate || ''}
+                        onChange={(e) => handleInputChange('visaIssueDate', e.target.value)}
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                      />
+                    </div>
+                    <div className="p-4 bg-white rounded-xl border border-amber-100">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Visa Expiry Date</p>
+                      <input
+                        type="date"
+                        value={editableDetails.visaExpiry || ''}
+                        onChange={(e) => handleInputChange('visaExpiry', e.target.value)}
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                      />
+                    </div>
+                    <div className="p-4 bg-white rounded-xl border border-amber-100">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Visa Place of Issue</p>
+                      <input
+                        type="text"
+                        value={editableDetails.visaPlaceIssue || ''}
+                        onChange={(e) => handleInputChange('visaPlaceIssue', e.target.value)}
+                        placeholder="Embassy/Consulate"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                      />
+                    </div>
+                    <div className="p-4 bg-white rounded-xl border border-amber-100">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Port of Arrival</p>
+                      <input
+                        type="text"
+                        value={editableDetails.arrivalPort || ''}
+                        onChange={(e) => handleInputChange('arrivalPort', e.target.value)}
+                        placeholder="Airport/Port"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                      />
+                    </div>
+                    <div className="p-4 bg-white rounded-xl border border-amber-100">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Date of Arrival in India</p>
+                      <input
+                        type="date"
+                        value={editableDetails.arrivalDateIndia || ''}
+                        onChange={(e) => handleInputChange('arrivalDateIndia', e.target.value)}
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                      />
+                    </div>
+                    <div className="p-4 bg-white rounded-xl border border-amber-100">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Employment Details</p>
+                      <input
+                        type="text"
+                        value={editableDetails.employmentDetails || ''}
+                        onChange={(e) => handleInputChange('employmentDetails', e.target.value)}
+                        placeholder="Employer/Business"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-4 p-4 bg-white rounded-xl border border-amber-100">
+                    <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Address in India (if different from above)</p>
+                    <textarea
+                      value={editableDetails.addressInIndia || ''}
+                      onChange={(e) => handleInputChange('addressInIndia', e.target.value)}
+                      placeholder="Contact address during stay in India"
+                      className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0 min-h-[60px] resize-none"
+                    />
+                  </div>
+                </div>
+              )}
             </section>
 
             {/* CO-GUESTS (ACCESSORY GUESTS) */}
@@ -1767,8 +2343,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     <div className="bg-white/5 border border-white/10 rounded-[2rem] p-8 shadow-inner relative overflow-hidden group/card">
                       <div className="absolute top-0 right-0 p-4 opacity-10 group-hover/card:scale-110 transition-transform"><CheckCircle2 className="w-12 h-12 text-emerald-400" /></div>
                       <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Net Outstanding</p>
-                      <div className="flex items-baseline gap-4 mt-2">
-                        <p className={`text-5xl font-black tabular-nums tracking-tighter ${netOutstanding <= 0 ? 'text-emerald-400' : 'text-rose-400'} `}>
+                      <div className="flex items-baseline gap-4 mt-2 overflow-hidden">
+                        <p className={`text-3xl md:text-4xl font-black tabular-nums tracking-tighter truncate ${netOutstanding <= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                           ₹{netOutstanding.toLocaleString()}
                         </p>
                       </div>
@@ -2569,6 +3145,43 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   Record {paymentMethod} Payment
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {toastMessage && (
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[20000] animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <div className="bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl border border-white/10 flex items-center gap-4">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[10px] font-black uppercase tracking-[0.2em]">{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Scan Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[25000] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-300 mx-4">
+            <div className="p-8 text-center">
+              <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8 text-rose-600" />
+              </div>
+              <h3 className="text-xl font-black text-slate-900 mb-2">Delete This Scan?</h3>
+              <p className="text-sm text-slate-500">This will remove the {pendingDeleteSide?.side === 'additional' ? 'document page' : `${pendingDeleteSide?.side} scan`}. You'll need to scan again if needed.</p>
+            </div>
+            <div className="flex border-t border-slate-100">
+              <button
+                onClick={() => { setShowDeleteConfirm(false); setPendingDeleteSide(null); }}
+                className="flex-1 py-4 text-sm font-black text-slate-500 uppercase tracking-widest hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteScan}
+                className="flex-1 py-4 text-sm font-black text-rose-600 uppercase tracking-widest hover:bg-rose-50 transition-colors border-l border-slate-100"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>

@@ -539,8 +539,23 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
     }
   };
 
+  const handleUpdateBooking = async (updatedBooking: Booking) => {
+    // Optimistically update local state
+    setSyncEvents(prev => prev.map(e => e.id === updatedBooking.id && e.type === 'booking' ? { ...updatedBooking, type: 'booking' } as SyncEvent : e));
+    if (selectedBooking?.id === updatedBooking.id) setSelectedBooking(updatedBooking);
 
-
+    try {
+      const response = await updateBooking(updatedBooking);
+      setSyncEvents(prev => prev.map(e => e.id === updatedBooking.id && e.type === 'booking' ? { ...response, type: 'booking' } as SyncEvent : e));
+      if (selectedBooking?.id === updatedBooking.id) setSelectedBooking(response);
+      setToastMessage("Booking updated successfully");
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err: any) {
+      console.error("Failed to update booking", err);
+      setToastMessage(`Persistence Error: ${err.message}`);
+      setTimeout(() => setToastMessage(null), 3000);
+    }
+  };
 
   const updateEventChannelStatus = (eventId: string, channel: string, status: ChannelStatus) => {
     setSyncEvents(prev => prev.map(e => {
@@ -577,7 +592,8 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
     phoneNumber?: string,
     email?: string,
     guestDetails?: Partial<GuestDetails>,
-    rooms: Array<{ roomTypeId: string, checkIn: string, checkOut: string }>
+    rooms: Array<{ roomTypeId: string, checkIn: string, checkOut: string }>,
+    source?: 'Direct' | 'MMT' | 'Booking.com' | 'Expedia'
   }) => {
     const reservationId = `res-${Date.now()}`;
     // Track rooms already assigned in THIS booking session to avoid duplicates
@@ -608,16 +624,32 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
           }
         }
       }
+      const duration = Math.max(1, Math.ceil((new Date(room.checkOut).getTime() - new Date(room.checkIn).getTime()) / (1000 * 3600 * 24)));
+
+      let rate = roomType?.basePrice || 0;
+      if (data.source && data.source !== 'Direct') {
+        const conn = connections.find(c => c.name === data.source);
+        if (conn && conn.markupValue) {
+          if (conn.markupType === 'percentage') {
+            rate = rate + (rate * conn.markupValue / 100);
+          } else if (conn.markupType === 'fixed') {
+            rate = rate + conn.markupValue;
+          }
+        }
+      }
+      const totalAmount = rate * duration;
+
       return {
-        id: `direct-${Date.now()}-${idx}`,
+        id: `${(data.source || 'Direct').toLowerCase().replace(/[^a-z0-9]/g, '')}-${Date.now()}-${idx}`,
         guestName: data.guestName,
         roomTypeId: room.roomTypeId,
         roomNumber: assignedRoom,
         checkIn: room.checkIn,
         checkOut: room.checkOut,
         status: 'Confirmed',
-        source: 'Direct',
+        source: data.source || 'Direct',
         timestamp: Date.now(),
+        amount: totalAmount,
         numberOfRooms: data.rooms.length,
         reservationId,
         channelSync: {},
@@ -841,12 +873,14 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                       </div>
                     ))}
                   </div>
-                ) : (
-                  gridRows.map((row, index) => {
+                ) : (() => {
+                  const todayStrLocal = new Date().toLocaleDateString('en-CA');
+                  const todayIndex = timelineDates.indexOf(todayStrLocal);
+
+                  return gridRows.map((row, index) => {
                     const isHeader = row.type === 'header';
                     if (isHeader) {
-                      const todayStr = new Date().toLocaleDateString('en-CA'); // More reliable YYYY-MM-DD
-                      const occupiedCount = assignedBookings.filter(b => b.roomTypeId === row.id && b.status !== 'Cancelled' && b.status !== 'Rejected' && b.checkIn <= todayStr && b.checkOut > todayStr).length;
+                      const occupiedCount = assignedBookings.filter(b => b.roomTypeId === row.id && b.status !== 'Cancelled' && b.status !== 'Rejected' && b.checkIn <= todayStrLocal && b.checkOut > todayStrLocal).length;
                       const gradientStyle = CATEGORY_GRADIENTS[index % CATEGORY_GRADIENTS.length];
                       return (
                         <div key={row.id} className="sticky top-[72px] z-30 flex flex-col md:flex-row gap-3 pt-3">
@@ -863,18 +897,29 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                               <div className="p-1 bg-white/20 rounded-md text-white hover:bg-white/30 transition-colors shadow-sm shrink-0">{expandedTypes[row.id] ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}</div>
                             </div>
                           </div>
-                          <div className="hidden md:flex flex-1 bg-slate-200/40 rounded-2xl items-center relative overflow-hidden group/lane">
+                          <div className="hidden md:flex flex-1 bg-slate-200/40 rounded-2xl items-center relative overflow-hidden group/lane h-[48px]">
                             <div className="h-px bg-slate-300/50 absolute left-0 right-0 top-1/2 -translate-y-1/2 z-0"></div>
-                            <div className="relative z-10 flex items-center justify-center h-full border-x-2 border-cyan-400/20 bg-cyan-400/5" style={{ width: CELL_WIDTH }}>
-                              <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full border-2 border-cyan-400/50 shadow-[0_0_15px_rgba(34,211,238,0.2)]">
-                                <span className="text-[9px] font-black text-cyan-600 uppercase tracking-widest flex items-center gap-1">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></div>
-                                  Today
-                                </span>
-                                <span className="text-sm font-black text-slate-900 tabular-nums">{occupiedCount}</span>
-                                <span className="text-[9px] font-bold text-slate-400 uppercase">/ {row.capacity}</span>
+                            {todayIndex !== -1 && (
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleExpand(row.id);
+                                }}
+                                className="absolute z-20 flex items-center justify-center h-full border-x-2 border-cyan-400/40 bg-cyan-400/10 shadow-[0_0_20px_rgba(34,211,238,0.1)] transition-all duration-500 cursor-pointer group/today-col hover:bg-cyan-400/20"
+                                style={{ width: CELL_WIDTH, left: todayIndex * CELL_WIDTH }}
+                              >
+                                <div
+                                  className="flex items-center gap-2 bg-white/95 backdrop-blur-md px-3 py-1 rounded-full border-2 border-cyan-400/50 shadow-[0_0_15px_rgba(34,211,238,0.2)] group-hover/today-col:border-cyan-400 group-hover/today-col:shadow-cyan-400/30 group-active/today-col:scale-95 transition-all duration-200 select-none group/badge"
+                                >
+                                  <span className="text-[9px] font-black text-cyan-600 uppercase tracking-widest flex items-center gap-1">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse group-hover/badge:scale-125 transition-transform"></div>
+                                    Today
+                                  </span>
+                                  <span className="text-sm font-black text-slate-900 tabular-nums">{occupiedCount}</span>
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase">/ {row.capacity}</span>
+                                </div>
                               </div>
-                            </div>
+                            )}
                             <div className="relative z-10 flex-1 flex items-center justify-end px-6 opacity-0 group-hover/lane:opacity-100 transition-opacity">
                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Click heading to {expandedTypes[row.id] ? 'collapse' : 'expand'}</span>
                             </div>
@@ -947,7 +992,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                       </div>
                     );
                   })
-                )}
+                })()}
               </div>
             </div>
           </div>
@@ -1019,6 +1064,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
             onUpdateFolio={handleUpdateFolioFromProfile}
             onUpdateSpecialRequests={handleUpdateSpecialRequestsFromProfile}
             onUpdatePayments={handleUpdatePaymentsFromProfile}
+            onUpdateBooking={handleUpdateBooking}
             onUpdateExtraBeds={onUpdateExtraBeds}
             propertySettings={propertySettings}
             onEditInventory={() => { setToastMessage("Drag and drop to edit inventory."); setTimeout(() => setToastMessage(null), 3000); }}

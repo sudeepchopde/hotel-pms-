@@ -77,7 +77,9 @@ def migrate():
                 'country': 'VARCHAR',
                 'arrival_time': 'VARCHAR',
                 'departure_time': 'VARCHAR',
-                'signature': 'VARCHAR'
+                'signature': 'VARCHAR',
+                'additional_docs': 'JSON DEFAULT \'[]\'',
+                'form_pages': 'JSON DEFAULT \'[]\''
             }
             for col, col_type in gp_cols.items():
                 res = conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name='guest_profiles' AND column_name='{col}'"))

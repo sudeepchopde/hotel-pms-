@@ -18,6 +18,8 @@ class PropertySettingsDB(Base):
     razorpay_key_secret = Column(String, nullable=True)
     last_invoice_number = Column(Integer, default=0)
     public_base_url = Column(String, nullable=True)
+    check_in_time = Column(String, default="12:00")
+    check_out_time = Column(String, default="11:00")
     gemini_api_key = Column(String, nullable=True)
 
 class HotelDB(Base):
@@ -132,6 +134,8 @@ class GuestProfileDB(Base):
     id_image = Column(String) # Path to ID image
     id_image_back = Column(String)
     visa_page = Column(String)
+    additional_docs = Column(JSON, default=[])
+    form_pages = Column(JSON, default=[])
     signature = Column(String)
     preferences = Column(String)
     last_check_in = Column(String)

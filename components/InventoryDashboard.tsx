@@ -150,9 +150,11 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
       }
     });
 
-    // 3. Deduct Confirmed Bookings
-    const confirmedBookings = syncEvents.filter(e => e.type === 'booking' && e.status === 'Confirmed') as Booking[];
-    confirmedBookings.forEach(b => {
+    // 3. Deduct Confirmed & Active Bookings
+    const occupiedBookings = syncEvents.filter(e =>
+      e.type === 'booking' && (e.status === 'Confirmed' || e.status === 'CheckedIn' || e.status === 'CheckedOut')
+    ) as Booking[];
+    occupiedBookings.forEach(b => {
       let d = new Date(b.checkIn);
       const end = new Date(b.checkOut);
       while (d < end) {
@@ -340,10 +342,10 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
         ? rt.roomNumbers
         : Array.from({ length: rt.totalCapacity }, (_, i) => `${rt.name.substring(0, 2).toUpperCase()}-${101 + i}`);
 
-      // Get confirmed bookings that overlap with this new booking
+      // Get active bookings that overlap with this new booking
       const overlappingBookings = eventsRef.current.filter(e =>
         e.type === 'booking' &&
-        e.status === 'Confirmed' &&
+        (e.status === 'Confirmed' || e.status === 'CheckedIn' || e.status === 'CheckedOut') &&
         e.roomTypeId === roomTypeId &&
         e.checkIn < checkOut && e.checkOut > checkIn
       ) as Booking[];
@@ -594,8 +596,8 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
                           setIsSyncing(false);
                         }}
                         className={`px-3 py-4 border-2 font-black text-[10px] rounded-xl flex flex-col items-center gap-2 transition-all active:scale-95 ${isStopped
-                            ? 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed opacity-60'
-                            : 'bg-white border-slate-100 hover:border-indigo-400 text-slate-900 shadow-sm'
+                          ? 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed opacity-60'
+                          : 'bg-white border-slate-100 hover:border-indigo-400 text-slate-900 shadow-sm'
                           }`}
                       >
                         {isStopped ? <Hand className="w-4 h-4" /> : <Share2 className="w-4 h-4 text-indigo-400" />}

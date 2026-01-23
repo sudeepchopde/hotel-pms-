@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Plus, Minus, Calendar, Bed, User, ArrowRight, CheckCircle2, AlertTriangle, Search, Smartphone, Mail, Sparkles, RotateCcw } from 'lucide-react';
+import { X, Plus, Minus, Calendar, Bed, User, ArrowRight, CheckCircle2, AlertTriangle, Search, Smartphone, Mail, Sparkles, RotateCcw, Globe } from 'lucide-react';
 import { RoomType, Booking, SyncEvent, GuestDetails } from '../types';
 import { lookupGuest } from '../api';
 
@@ -14,7 +14,8 @@ interface NewBookingModalProps {
         phoneNumber?: string,
         email?: string,
         guestDetails?: Partial<GuestDetails>,
-        rooms: Array<{ roomTypeId: string, checkIn: string, checkOut: string }>
+        rooms: Array<{ roomTypeId: string, checkIn: string, checkOut: string }>,
+        source?: 'Direct' | 'MMT' | 'Booking.com' | 'Expedia'
     }) => void;
     prefill?: { checkIn: string; roomTypeId: string } | null;
 }
@@ -29,6 +30,7 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, room
     const [foundGuest, setFoundGuest] = useState<any>(null);
     const [isSearching, setIsSearching] = useState(false);
     const [guestDetails, setGuestDetails] = useState<Partial<GuestDetails> | null>(null);
+    const [source, setSource] = useState<'Direct' | 'MMT' | 'Booking.com' | 'Expedia'>('Direct');
 
     const today = new Date().toISOString().split('T')[0];
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
@@ -42,6 +44,7 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, room
             setRoomCount(1);
             setFoundGuest(null);
             setGuestDetails(null);
+            setSource('Direct');
         }
     }, [isOpen]);
 
@@ -186,7 +189,8 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, room
             phoneNumber,
             email,
             guestDetails: guestDetails || undefined,
-            rooms: roomDetails.map(({ roomTypeId, checkIn, checkOut }) => ({ roomTypeId, checkIn, checkOut }))
+            rooms: roomDetails.map(({ roomTypeId, checkIn, checkOut }) => ({ roomTypeId, checkIn, checkOut })),
+            source
         });
         onClose();
     };
@@ -263,6 +267,22 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, room
                                     onChange={e => setGuestName(e.target.value)}
                                     className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-lg font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-indigo-50/10 transition-all placeholder:text-slate-300"
                                 />
+                            </div>
+
+                            <div className="space-y-3">
+                                <label className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                                    <Globe className="w-4 h-4 text-indigo-500" /> Booking Source (Simulator)
+                                </label>
+                                <select
+                                    value={source}
+                                    onChange={(e) => setSource(e.target.value as any)}
+                                    className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-lg font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-indigo-50/10 transition-all appearance-none cursor-pointer"
+                                >
+                                    <option value="Direct">Direct Booking</option>
+                                    <option value="MMT">MakeMyTrip (MMT)</option>
+                                    <option value="Booking.com">Booking.com</option>
+                                    <option value="Expedia">Expedia</option>
+                                </select>
                             </div>
 
                             {foundGuest && Array.isArray(foundGuest) && foundGuest.length > 0 && (

@@ -175,8 +175,10 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
     try {
       const updated = await updatePropertySettings(profileFormData);
       setPropertySettings(updated);
+      alert("Property settings saved successfully!");
     } catch (err) {
       console.error("Failed to save property profile", err);
+      alert("Failed to save settings. Please try again.");
     } finally {
       setIsSavingProfile(false);
     }

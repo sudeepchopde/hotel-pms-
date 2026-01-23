@@ -43,6 +43,99 @@ app.mount("/billing", StaticFiles(directory="Billing"), name="billing")
 def ping():
     return {"status": "ok", "version": "1.1"}
 
+# ========== OCR INTEGRATION ==========
+from google import genai
+from google.genai import types
+import base64
+import re
+from pydantic import BaseModel
+
+class OCRRequest(BaseModel):
+    image: str # Base64 string
+    type: str # 'id' or 'form'
+
+@app.post("/api/ocr")
+def process_ocr(request: OCRRequest, db=Depends(get_db)):
+    # 1. Get API Key from DB
+    api_key = None
+    if USE_DATABASE and db:
+        prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
+        if prop and prop.gemini_api_key:
+            api_key = prop.gemini_api_key
+    
+    # Fallback to env var if not in DB (for dev)
+    if not api_key:
+        api_key = os.getenv("GEMINI_API_KEY")
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Gemini API Key not configured in Property Settings")
+
+    try:
+        # Use the newer google-genai SDK
+        client = genai.Client(api_key=api_key)
+        
+        # Clean base64 header if present
+        image_data = request.image
+        if "base64," in image_data:
+            image_data = image_data.split("base64,")[1]
+            
+        try:
+             image_bytes = base64.b64decode(image_data)
+        except:
+             raise HTTPException(status_code=400, detail="Invalid image data")
+
+        prompt = ""
+        if request.type in ['id', 'id_front']:
+            prompt = "Extract guest name, ID number, address, DOB (YYYY-MM-DD), gender, nationality from this ID card. Return as clean JSON with these keys: name, idNumber, address, dob, gender, nationality. Only return the JSON."
+        elif request.type == 'id_back':
+            prompt = "Extract the full address, PIN code, and Father/Husband name from this ID card (Back Side). Return as clean JSON with these keys: address, pinCode, fatherName. Ensure the 'address' field contains the complete address text found."
+        else:
+            prompt = "Extract all guest information from this registration form. Return as clean JSON. Only return the JSON."
+
+        # List of models to try (prioritizing stable ones with higher/separate quota)
+        models_to_try = [
+            'gemini-flash-latest', 
+            'gemini-1.5-flash',
+            'gemini-1.5-flash-8b',
+            'gemini-2.0-flash' 
+        ]
+
+        response = None
+        last_error = None
+
+        for model_name in models_to_try:
+            try:
+                print(f"Attempting OCR with model: {model_name}")
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[
+                        prompt,
+                        types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
+                    ]
+                )
+                if response:
+                    break
+            except Exception as e:
+                print(f"Model {model_name} failed: {e}")
+                last_error = e
+                # Continue to next model
+        
+        if not response:
+            raise last_error or HTTPException(status_code=500, detail="All OCR models failed")
+        
+        text = response.text
+        # Clean markdown
+        json_match = re.search(r'(\{[\s\S]*\})', text)
+        if json_match:
+            return {"text": json_match.group(1)}
+        else:
+            return {"text": text}
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ========== RAZORPAY INTEGRATION ==========
 from pydantic import BaseModel as PydanticBaseModel
 import hashlib
@@ -342,7 +435,9 @@ if USE_DATABASE:
             razorpayKeySecret=db_prop.razorpay_key_secret if hasattr(db_prop, 'razorpay_key_secret') else None,
             publicBaseUrl=db_prop.public_base_url if hasattr(db_prop, 'public_base_url') else None,
             geminiApiKey=db_prop.gemini_api_key if hasattr(db_prop, 'gemini_api_key') else None,
-            lastInvoiceNumber=db_prop.last_invoice_number if hasattr(db_prop, 'last_invoice_number') else 0
+            lastInvoiceNumber=db_prop.last_invoice_number if hasattr(db_prop, 'last_invoice_number') else 0,
+            checkInTime=db_prop.check_in_time if hasattr(db_prop, 'check_in_time') else "12:00",
+            checkOutTime=db_prop.check_out_time if hasattr(db_prop, 'check_out_time') else "11:00"
         )
 
 @app.get("/")
@@ -478,6 +573,8 @@ def update_property_settings(settings: PropertySettings, db=Depends(get_db)):
         prop.last_invoice_number = settings.lastInvoiceNumber or 0
         prop.public_base_url = settings.publicBaseUrl
         prop.gemini_api_key = settings.geminiApiKey
+        prop.check_in_time = settings.checkInTime
+        prop.check_out_time = settings.checkOutTime
         
         db.commit()
         db.refresh(prop)
@@ -501,6 +598,7 @@ def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, db=Dep
             results = []
             for profile in profiles:
                 results.append({
+                    "profileId": profile.id,
                     "id": profile.id,
                     "name": profile.name,
                     "phone_number": profile.phone_number,
@@ -529,6 +627,8 @@ def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, db=Dep
                     "idImage": profile.id_image,
                     "idImageBack": profile.id_image_back,
                     "visaPage": profile.visa_page,
+                    "additionalDocs": profile.additional_docs or [],
+                    "formPages": profile.form_pages or [],
                     "serialNumber": profile.serial_number,
                     "fatherOrHusbandName": profile.father_or_husband_name,
                     "city": profile.city,
@@ -685,10 +785,17 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
         # Save or update guest profile whenever guest details are present
         if booking.guestDetails and booking.guestDetails.name and booking.guestDetails.phoneNumber:
             gd = booking.guestDetails
-            existing_profile = db.query(GuestProfileDB).filter(
-                GuestProfileDB.name == gd.name,
-                GuestProfileDB.phone_number == gd.phoneNumber
-            ).first()
+            existing_profile = None
+            
+            if gd.profileId:
+                existing_profile = db.query(GuestProfileDB).filter(GuestProfileDB.id == gd.profileId).first()
+            
+            if not existing_profile:
+                # Fallback to name/phone if profileId not provided or not found
+                existing_profile = db.query(GuestProfileDB).filter(
+                    GuestProfileDB.name == gd.name,
+                    GuestProfileDB.phone_number == gd.phoneNumber
+                ).first()
             
             if existing_profile:
                 # Update existing profile with latest info
@@ -699,8 +806,6 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
                 existing_profile.nationality = gd.nationality
                 existing_profile.gender = gd.gender
                 existing_profile.email = gd.email
-                existing_profile.id_type = gd.idType
-                existing_profile.id_number = gd.idNumber
                 existing_profile.passport_number = gd.passportNumber
                 existing_profile.passport_place_issue = gd.passportPlaceIssue
                 existing_profile.passport_issue_date = gd.passportIssueDate
@@ -718,6 +823,8 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
                 existing_profile.id_image = gd.idImage
                 existing_profile.id_image_back = gd.idImageBack
                 existing_profile.visa_page = gd.visaPage
+                existing_profile.additional_docs = gd.additionalDocs or []
+                existing_profile.form_pages = gd.formPages or []
                 existing_profile.serial_number = gd.serialNumber
                 existing_profile.father_or_husband_name = gd.fatherOrHusbandName
                 existing_profile.city = gd.city
@@ -728,6 +835,12 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
                 existing_profile.departure_time = gd.departureTime
                 existing_profile.signature = gd.signature
                 existing_profile.last_check_in = booking.checkIn
+                
+                db.flush() # Get the profile and update it
+                # Ensure the booking's guest_details now reflects this profileId
+                updated_gd = db_booking.guest_details
+                updated_gd['profileId'] = existing_profile.id
+                db_booking.guest_details = updated_gd
             else:
                 # Create new profile
                 new_profile = GuestProfileDB(
@@ -757,8 +870,10 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
                     id_image = gd.idImage,
                     id_image_back = gd.idImageBack,
                     visa_page=gd.visaPage,
+                    additional_docs=gd.additionalDocs or [],
+                    form_pages=gd.formPages or [],
                     serial_number=gd.serialNumber,
-                    father_or_husband_name=gd.fatherOrHusbandName,
+                    father_or_husband_name=gd.father_or_husband_name if hasattr(gd, 'father_or_husband_name') else gd.fatherOrHusbandName,
                     city=gd.city,
                     state=gd.state,
                     pin_code=gd.pinCode,
@@ -769,6 +884,12 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
                     last_check_in=booking.checkIn
                 )
                 db.add(new_profile)
+                db.flush() # Get the new ID
+                
+                # Update booking with the new profile ID
+                updated_gd = db_booking.guest_details
+                updated_gd['profileId'] = new_profile.id
+                db_booking.guest_details = updated_gd
 
         # Since we are using BigInteger for timestamp, ensure it's an int
         import time
@@ -874,7 +995,56 @@ def checkout_booking(booking_id: str, db=Depends(get_db)):
         
     import os
     import time
+    from datetime import datetime, timedelta
     from backend.billing_utils import generate_invoice_pdf, generate_receipt_pdf
+
+    # --- DURATION ADJUSTMENT LOGIC ---
+    try:
+        # Parse dates
+        check_in_date = datetime.strptime(booking.check_in, "%Y-%m-%d").date()
+        orig_check_out = datetime.strptime(booking.check_out, "%Y-%m-%d").date()
+        original_nights = (orig_check_out - check_in_date).days
+        if original_nights < 1: original_nights = 1
+
+        # Current checkout info
+        # Note: In a real app, ensure timezone awareness. Here relying on system time.
+        now = datetime.now()
+        current_date = now.date()
+        current_time_str = now.strftime("%H:%M")
+        
+        # Determine "effective" checkout date based on time
+        cutoff_time = prop.check_out_time or "11:00"
+        
+        # Logic: If checking out AFTER cutoff time, charge for the current night too.
+        # This effectively means the checkout date (billing wise) moves to tomorrow.
+        
+        effective_checkout_date = current_date
+        
+        # If we are strictly after the cutoff time, increment checkout date
+        if current_time_str > cutoff_time:
+             effective_checkout_date = current_date + timedelta(days=1)
+        
+        # Ensure we don't have a checkout before or on checkin (minimum 1 night)
+        if effective_checkout_date <= check_in_date:
+            effective_checkout_date = check_in_date + timedelta(days=1)
+
+        # Calculate actual nights
+        actual_nights = (effective_checkout_date - check_in_date).days
+        
+        # Update Booking Amount if duration changed
+        # We only auto-adjust if the amount seems to be based on nights (simple logic)
+        # or we just enforce the rate. For now, we scale linearly.
+        if actual_nights != original_nights and original_nights > 0:
+             rate_per_night = booking.amount / original_nights
+             new_amount = rate_per_night * actual_nights
+             
+             # Apply updates
+             booking.check_out = effective_checkout_date.strftime("%Y-%m-%d")
+             booking.amount = new_amount
+             print(f"Checkout adjusted: {original_nights} -> {actual_nights} nights. New Amount: {new_amount}")
+
+    except Exception as e:
+        print(f"Warning: Failed to recalculate checkout duration: {e}")
 
     # Generate Invoice Number
     year = time.strftime("%Y")

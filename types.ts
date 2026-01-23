@@ -12,6 +12,8 @@ export interface PropertySettings {
   razorpayKeySecret?: string;
   lastInvoiceNumber?: number;
   publicBaseUrl?: string;
+  checkInTime?: string; // e.g. "12:00"
+  checkOutTime?: string; // e.g. "11:00"
 }
 
 export interface Hotel {
@@ -72,6 +74,7 @@ export interface InventoryItem {
 export type ChannelStatus = 'pending' | 'success' | 'error' | 'retrying' | 'waiting_retry' | 'stopped';
 
 export interface GuestDetails {
+  profileId?: number;
   name?: string;
   phoneNumber?: string;
   email?: string;
@@ -132,6 +135,10 @@ export interface GuestDetails {
   contactInIndiaPhone?: string; // Local reference phone
   contactInIndiaAddress?: string; // Local reference address
 
+  // Employment Info
+  employmentDetails?: string; // Employer or business info
+  addressInIndia?: string; // Address during stay in India
+
   // Form C Submission Status
   isFormCSubmitted?: boolean;
   formCSubmissionDate?: string;
@@ -141,6 +148,7 @@ export interface GuestDetails {
   idImageBack?: string;
   visaPage?: string;
   additionalDocs?: string[];
+  formPages?: string[];
 }
 
 

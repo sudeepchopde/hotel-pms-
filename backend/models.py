@@ -15,6 +15,8 @@ class PropertySettings(BaseModel):
     lastInvoiceNumber: Optional[int] = 0
     publicBaseUrl: Optional[str] = None
     geminiApiKey: Optional[str] = None
+    checkInTime: Optional[str] = "12:00"
+    checkOutTime: Optional[str] = "11:00"
 
 class WeeklyRule(BaseModel):
     isActive: bool
@@ -67,6 +69,7 @@ class Hotel(BaseModel):
     otaConfig: Dict[str, str]
 
 class GuestDetails(BaseModel):
+    profileId: Optional[int] = None
     name: Optional[str] = None
     phoneNumber: Optional[str] = None
     email: Optional[str] = None
@@ -103,6 +106,8 @@ class GuestDetails(BaseModel):
     idImage: Optional[str] = None
     idImageBack: Optional[str] = None
     visaPage: Optional[str] = None
+    additionalDocs: Optional[List[str]] = None
+    formPages: Optional[List[str]] = None
 
 class FolioItem(BaseModel):
     id: str
@@ -169,3 +174,8 @@ class GuestProfile(BaseModel):
     nationality: Optional[str] = None
     preferences: Optional[str] = None
     lastCheckIn: Optional[str] = None
+    idImage: Optional[str] = None
+    idImageBack: Optional[str] = None
+    visaPage: Optional[str] = None
+    additionalDocs: Optional[List[str]] = None
+    formPages: Optional[List[str]] = None
