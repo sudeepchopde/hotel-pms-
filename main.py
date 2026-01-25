@@ -47,8 +47,7 @@ def ping():
     return {"status": "ok", "version": "1.1"}
 
 # ========== OCR INTEGRATION ==========
-from google import genai
-from google.genai import types
+# google-genai is imported lazily inside the OCR function to avoid import-time failures
 import base64
 import re
 from pydantic import BaseModel
@@ -74,6 +73,10 @@ def process_ocr(request: OCRRequest, db=Depends(get_db)):
         raise HTTPException(status_code=400, detail="Gemini API Key not configured in Property Settings")
 
     try:
+        # Lazy import google-genai to avoid import-time failures on Vercel
+        from google import genai
+        from google.genai import types
+        
         # Use the newer google-genai SDK
         client = genai.Client(api_key=api_key)
         
