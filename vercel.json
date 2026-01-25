@@ -3,7 +3,10 @@
     "builds": [
         {
             "src": "api/index.py",
-            "use": "@vercel/python"
+            "use": "@vercel/python",
+            "config": {
+                "maxLambdaSize": "50mb"
+            }
         },
         {
             "src": "package.json",
@@ -16,11 +19,19 @@
     "routes": [
         {
             "src": "/api/(.*)",
-            "dest": "/api/index.py"
+            "dest": "api/index.py"
+        },
+        {
+            "src": "/billing/(.*)",
+            "dest": "/billing/$1"
+        },
+        {
+            "src": "/(.*\\.(js|css|ico|png|jpg|jpeg|svg|woff|woff2|ttf|eot))",
+            "dest": "/dist/$1"
         },
         {
             "src": "/(.*)",
-            "dest": "/dist/$1"
+            "dest": "/dist/index.html"
         }
     ]
 }
