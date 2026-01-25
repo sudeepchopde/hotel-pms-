@@ -1,42 +1,74 @@
 """
 Vercel Serverless Function Entry Point
-This file handles all /api/* routes for Vercel deployment.
+Minimal version to test Vercel Python runtime
 """
-import sys
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import os
+import sys
 
-# Add the project root to Python path for imports
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
+# Create a minimal app first
+app = FastAPI(title="SyncGuard PMS API")
 
-# Set environment variables before importing the app
-from dotenv import load_dotenv
-load_dotenv(os.path.join(project_root, '.env'))
-load_dotenv(os.path.join(project_root, '.env.local'), override=True)
+# Add CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Import the FastAPI app
+@app.get("/api/ping")
+def ping():
+    return {"status": "ok", "version": "1.2", "runtime": "vercel-minimal"}
+
+@app.get("/api/health")
+def health():
+    return {
+        "status": "healthy",
+        "python_version": sys.version,
+        "env_database_url": "set" if os.getenv("DATABASE_URL") else "not set"
+    }
+
+# Try to import the full app, but catch errors gracefully
+_full_app_loaded = False
+_import_error = None
+
 try:
-    from main import app
+    # Add project root to path
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    
+    # Try to import the main app's routes
+    from main import app as main_app
+    
+    # Copy routes from main_app to our app
+    for route in main_app.routes:
+        if hasattr(route, 'path') and route.path not in ['/api/ping', '/api/health']:
+            app.routes.append(route)
+    
+    _full_app_loaded = True
+    
 except Exception as e:
-    # If main import fails, create a minimal error-reporting app
-    from fastapi import FastAPI
-    from fastapi.responses import JSONResponse
+    _import_error = str(e)
     
-    app = FastAPI()
-    
-    @app.get("/api/{path:path}")
-    @app.post("/api/{path:path}")
-    @app.put("/api/{path:path}")
-    @app.delete("/api/{path:path}")
-    async def error_handler(path: str):
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "Failed to import main app",
-                "detail": str(e),
-                "path": path
-            }
-        )
+    # Add error reporting endpoint
+    @app.get("/api/debug")
+    def debug_error():
+        return {
+            "full_app_loaded": _full_app_loaded,
+            "import_error": _import_error,
+            "python_path": sys.path[:5],  # First 5 entries
+            "cwd": os.getcwd(),
+            "files_in_root": os.listdir(project_root) if os.path.exists(project_root) else "not found"
+        }
 
-# Vercel expects 'app' to be the ASGI application
-# This is automatically detected by @vercel/python
+# Always add debug endpoint
+@app.get("/api/status")
+def status():
+    return {
+        "full_app_loaded": _full_app_loaded,
+        "import_error": _import_error
+    }
