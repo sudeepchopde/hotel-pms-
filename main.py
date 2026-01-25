@@ -3,48 +3,125 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 from typing import List, Optional, Dict, Any
-from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from collections import defaultdict
 import json
-from backend.models import Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest, PropertySettings
 
-# Database Connection Logic
-USE_DATABASE = False
+# ========== LAZY IMPORTS FOR VERCEL COMPATIBILITY ==========
+# These will be populated on first use
+_db_imports_loaded = False
+_USE_DATABASE = None
 
-try:
-    from backend.database import get_db as get_db_real
-    from backend.db_models import HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, RateRulesDB, GuestProfileDB, PropertySettingsDB
-    from backend.models import Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest, GuestProfile, PropertySettings
+# Declare these at module level so they can be used throughout
+HotelDB = None
+RoomTypeDB = None
+BookingDB = None
+OTAConnectionDB = None
+RateRulesDB = None
+GuestProfileDB = None
+PropertySettingsDB = None
+Hotel = None
+RoomType = None
+Booking = None
+OTAConnection = None
+RateRulesConfig = None
+RoomTransferRequest = None
+GuestProfile = None
+PropertySettings = None
+get_db_real = None
+engine = None
+
+def _load_db_imports():
+    """Lazy load database imports to avoid import-time failures on Vercel."""
+    global _db_imports_loaded, _USE_DATABASE
+    global HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, RateRulesDB, GuestProfileDB, PropertySettingsDB
+    global Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest, GuestProfile, PropertySettings
+    global get_db_real, engine
     
-    # Test connection
-    from backend.database import engine
-    with engine.connect() as conn:
-        pass
+    if _db_imports_loaded:
+        return _USE_DATABASE
+    
+    try:
+        from backend.database import get_db as _get_db_real
+        from backend.database import engine as _engine
+        from backend.db_models import (
+            HotelDB as _HotelDB, 
+            RoomTypeDB as _RoomTypeDB, 
+            BookingDB as _BookingDB, 
+            OTAConnectionDB as _OTAConnectionDB, 
+            RateRulesDB as _RateRulesDB, 
+            GuestProfileDB as _GuestProfileDB, 
+            PropertySettingsDB as _PropertySettingsDB
+        )
+        from backend.models import (
+            Hotel as _Hotel, 
+            RoomType as _RoomType, 
+            Booking as _Booking, 
+            OTAConnection as _OTAConnection, 
+            RateRulesConfig as _RateRulesConfig, 
+            RoomTransferRequest as _RoomTransferRequest, 
+            GuestProfile as _GuestProfile, 
+            PropertySettings as _PropertySettings
+        )
         
-    USE_DATABASE = True
-    print("✓ Connected to PostgreSQL database")
-
-    def get_db():
-        yield from get_db_real()
-
-except Exception as e:
-    USE_DATABASE = False
-    print(f"WARNING: Database unavailable, using in-memory data: {e}")
+        # Assign to globals
+        get_db_real = _get_db_real
+        engine = _engine
+        HotelDB = _HotelDB
+        RoomTypeDB = _RoomTypeDB
+        BookingDB = _BookingDB
+        OTAConnectionDB = _OTAConnectionDB
+        RateRulesDB = _RateRulesDB
+        GuestProfileDB = _GuestProfileDB
+        PropertySettingsDB = _PropertySettingsDB
+        Hotel = _Hotel
+        RoomType = _RoomType
+        Booking = _Booking
+        OTAConnection = _OTAConnection
+        RateRulesConfig = _RateRulesConfig
+        RoomTransferRequest = _RoomTransferRequest
+        GuestProfile = _GuestProfile
+        PropertySettings = _PropertySettings
+        
+        # Test connection
+        with engine.connect() as conn:
+            pass
+        
+        _USE_DATABASE = True
+        print("✓ Connected to PostgreSQL database")
+        
+    except Exception as e:
+        _USE_DATABASE = False
+        print(f"WARNING: Database unavailable, using in-memory data: {e}")
     
-    # Dummy dependency when DB is offline
-    def get_db():
+    _db_imports_loaded = True
+    return _USE_DATABASE
+
+def USE_DATABASE():
+    """Property-like function to check if database is available."""
+    _load_db_imports()
+    return _USE_DATABASE
+
+def get_db():
+    """Database session dependency - loads imports on first call."""
+    _load_db_imports()
+    if _USE_DATABASE and get_db_real:
+        yield from get_db_real()
+    else:
         yield None
 
 app = FastAPI(title="SyncGuard PMS API")
 
-# Mount Billing folder for PDF access
-os.makedirs("Billing", exist_ok=True)
-app.mount("/billing", StaticFiles(directory="Billing"), name="billing")
+# Mount Billing folder for PDF access (only if directory can be created)
+try:
+    os.makedirs("Billing", exist_ok=True)
+    app.mount("/billing", StaticFiles(directory="Billing"), name="billing")
+except Exception:
+    pass  # Skip on Vercel where filesystem is read-only
 
 @app.get("/ping")
 def ping():
-    return {"status": "ok", "version": "1.1"}
+    return {"status": "ok", "version": "1.1", "database": "lazy"}
 
 # ========== OCR INTEGRATION ==========
 # google-genai is imported lazily inside the OCR function to avoid import-time failures
@@ -60,7 +137,7 @@ class OCRRequest(BaseModel):
 def process_ocr(request: OCRRequest, db=Depends(get_db)):
     # 1. Get API Key from DB
     api_key = None
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
         if prop and prop.gemini_api_key:
             api_key = prop.gemini_api_key
@@ -165,7 +242,7 @@ def create_razorpay_order(request: RazorpayOrderRequest, db=Depends(get_db)):
     """Create a Razorpay order for payment collection"""
     # Get property settings to retrieve Razorpay keys
     prop = None
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
     
     key_id = prop.razorpay_key_id if prop and hasattr(prop, 'razorpay_key_id') else None
@@ -206,7 +283,7 @@ def verify_razorpay_payment(request: RazorpayVerifyRequest, db=Depends(get_db)):
     """Verify Razorpay payment signature and record payment"""
     # Get property settings
     prop = None
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
     
     key_secret = prop.razorpay_key_secret if prop and hasattr(prop, 'razorpay_key_secret') else None
@@ -226,7 +303,7 @@ def verify_razorpay_payment(request: RazorpayVerifyRequest, db=Depends(get_db)):
         raise HTTPException(status_code=400, detail="Payment verification failed: Invalid signature")
     
     # Payment verified! Now add to booking
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         booking = db.query(BookingDB).filter(BookingDB.id == request.bookingId).first()
         if not booking:
             raise HTTPException(status_code=404, detail="Booking not found")
@@ -290,183 +367,211 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Fallback Data ---
-FALLBACK_HOTELS = [
-    Hotel(
-        id='h-1', 
-        name='Hotel Satsangi', 
-        location='Deoghar', 
-        color='indigo', 
-        otaConfig={'expedia': 'active', 'booking': 'active', 'mmt': 'active'}
+# --- Fallback Data (lazy) ---
+_fallback_cache = {}
+
+def get_fallback_hotels():
+    if 'hotels' not in _fallback_cache:
+        _load_db_imports()
+        _fallback_cache['hotels'] = [
+            Hotel(
+                id='h-1', 
+                name='Hotel Satsangi', 
+                location='Deoghar', 
+                color='indigo', 
+                otaConfig={'expedia': 'active', 'booking': 'active', 'mmt': 'active'}
+            )
+        ] if Hotel else []
+    return _fallback_cache['hotels']
+
+def get_fallback_room_types():
+    if 'room_types' not in _fallback_cache:
+        _load_db_imports()
+        _fallback_cache['room_types'] = [
+            RoomType(id='rt-1', name='Delux Room (AC)', totalCapacity=10, basePrice=4500, floorPrice=3000, ceilingPrice=8000, baseOccupancy=2, amenities=['WiFi', 'AC', 'TV'], roomNumbers=['101', '102', '103', '104', '105', '106', '107', '108', '109', '110'], extraBedCharge=1200),
+            RoomType(id='rt-2', name='Double Bed Room', totalCapacity=10, basePrice=2800, floorPrice=1800, ceilingPrice=5000, baseOccupancy=2, amenities=['WiFi', 'Fan'], roomNumbers=['201', '202', '203', '204', '205', '206', '207', '208', '209', '210'], extraBedCharge=800),
+            RoomType(id='rt-3', name='Single Bed Room', totalCapacity=5, basePrice=1800, floorPrice=1200, ceilingPrice=3000, baseOccupancy=1, amenities=['WiFi'], roomNumbers=['301', '302', '303', '304', '305'], extraBedCharge=500),
+            RoomType(id='rt-4', name='Dormitory', totalCapacity=3, basePrice=1200, floorPrice=800, ceilingPrice=2500, baseOccupancy=1, amenities=['WiFi', 'Locker'], roomNumbers=['D-1', 'D-2', 'D-3'], extraBedCharge=300),
+        ] if RoomType else []
+    return _fallback_cache['room_types']
+
+def get_fallback_connections():
+    if 'connections' not in _fallback_cache:
+        _load_db_imports()
+        _fallback_cache['connections'] = [
+            OTAConnection(id='mmt', name='MakeMyTrip', key='mkmt_live_••••••••7d2f', isVisible=False, status='connected', lastValidated='2 hours ago'),
+            OTAConnection(id='booking', name='Booking.com', key='bcom_auth_••••••••a11b', isVisible=False, status='connected', lastValidated='5 mins ago'),
+            OTAConnection(id='expedia', name='Expedia', key='', isVisible=False, status='disconnected'),
+        ] if OTAConnection else []
+    return _fallback_cache['connections']
+
+def get_fallback_rules():
+    if 'rules' not in _fallback_cache:
+        _load_db_imports()
+        _fallback_cache['rules'] = RateRulesConfig(
+            weeklyRules={'isActive': True, 'activeDays': [5, 6], 'modifierType': 'percentage', 'modifierValue': 1.20},
+            specialEvents=[
+                {'id': 'ev-1', 'name': 'Diwali Festival', 'startDate': '2025-10-30', 'endDate': '2025-11-05', 'modifierType': 'percentage', 'modifierValue': 1.5},
+                {'id': 'ev-2', 'name': 'New Year Eve', 'startDate': '2025-12-30', 'endDate': '2026-01-01', 'modifierType': 'fixed', 'modifierValue': 5000}
+            ]
+        ) if RateRulesConfig else None
+    return _fallback_cache['rules']
+
+def get_fallback_property():
+    if 'property' not in _fallback_cache:
+        _load_db_imports()
+        _fallback_cache['property'] = PropertySettings(
+            name='Hotel Satsangi',
+            address='Satsang Nagar, Deoghar, Jharkhand 814112',
+            phone='+91 98765 43210',
+            email='contact@hotelsatsangi.com',
+            gstNumber='20ABCDE1234F1Z5',
+            gstRate=12.0,
+            foodGstRate=5.0,
+            otherGstRate=18.0,
+            publicBaseUrl='http://localhost:3000',
+            geminiApiKey=''
+        ) if PropertySettings else None
+    return _fallback_cache['property']
+
+def get_fallback_bookings():
+    return []
+
+# --- Converters (always defined, called only when DB is available) ---
+def db_hotel_to_pydantic(db_hotel):
+    _load_db_imports()
+    return Hotel(
+        id=db_hotel.id,
+        name=db_hotel.name,
+        location=db_hotel.location,
+        color=db_hotel.color,
+        otaConfig=db_hotel.ota_config or {}
     )
-]
 
-FALLBACK_ROOM_TYPES = [
-    RoomType(id='rt-1', name='Delux Room (AC)', totalCapacity=10, basePrice=4500, floorPrice=3000, ceilingPrice=8000, baseOccupancy=2, amenities=['WiFi', 'AC', 'TV'], roomNumbers=['101', '102', '103', '104', '105', '106', '107', '108', '109', '110'], extraBedCharge=1200),
-    RoomType(id='rt-2', name='Double Bed Room', totalCapacity=10, basePrice=2800, floorPrice=1800, ceilingPrice=5000, baseOccupancy=2, amenities=['WiFi', 'Fan'], roomNumbers=['201', '202', '203', '204', '205', '206', '207', '208', '209', '210'], extraBedCharge=800),
-    RoomType(id='rt-3', name='Single Bed Room', totalCapacity=5, basePrice=1800, floorPrice=1200, ceilingPrice=3000, baseOccupancy=1, amenities=['WiFi'], roomNumbers=['301', '302', '303', '304', '305'], extraBedCharge=500),
-    RoomType(id='rt-4', name='Dormitory', totalCapacity=3, basePrice=1200, floorPrice=800, ceilingPrice=2500, baseOccupancy=1, amenities=['WiFi', 'Locker'], roomNumbers=['D-1', 'D-2', 'D-3'], extraBedCharge=300),
-]
+def db_room_type_to_pydantic(db_room):
+    _load_db_imports()
+    return RoomType(
+        id=db_room.id,
+        name=db_room.name,
+        totalCapacity=db_room.total_capacity,
+        basePrice=db_room.base_price,
+        floorPrice=db_room.floor_price,
+        ceilingPrice=db_room.ceiling_price,
+        baseOccupancy=db_room.base_occupancy,
+        amenities=db_room.amenities or [],
+        roomNumbers=db_room.room_numbers,
+        extraBedCharge=db_room.extra_bed_charge
+    )
 
-FALLBACK_CONNECTIONS = [
-    OTAConnection(id='mmt', name='MakeMyTrip', key='mkmt_live_••••••••7d2f', isVisible=False, status='connected', lastValidated='2 hours ago'),
-    OTAConnection(id='booking', name='Booking.com', key='bcom_auth_••••••••a11b', isVisible=False, status='connected', lastValidated='5 mins ago'),
-    OTAConnection(id='expedia', name='Expedia', key='', isVisible=False, status='disconnected'),
-]
-
-FALLBACK_RULES = RateRulesConfig(
-    weeklyRules={'isActive': True, 'activeDays': [5, 6], 'modifierType': 'percentage', 'modifierValue': 1.20},
-    specialEvents=[
-        {'id': 'ev-1', 'name': 'Diwali Festival', 'startDate': '2025-10-30', 'endDate': '2025-11-05', 'modifierType': 'percentage', 'modifierValue': 1.5},
-        {'id': 'ev-2', 'name': 'New Year Eve', 'startDate': '2025-12-30', 'endDate': '2026-01-01', 'modifierType': 'fixed', 'modifierValue': 5000}
-    ]
-)
-
-FALLBACK_PROPERTY = PropertySettings(
-    name='Hotel Satsangi',
-    address='Satsang Nagar, Deoghar, Jharkhand 814112',
-    phone='+91 98765 43210',
-    email='contact@hotelsatsangi.com',
-    gstNumber='20ABCDE1234F1Z5',
-    gstRate=12.0,
-    foodGstRate=5.0,
-    otherGstRate=18.0,
-    publicBaseUrl='http://localhost:3000',
-    geminiApiKey=''
-)
-
-FALLBACK_BOOKINGS: List[Booking] = []
-
-# --- Converters ---
-if USE_DATABASE:
-    def db_hotel_to_pydantic(db_hotel) -> Hotel:
-        return Hotel(
-            id=db_hotel.id,
-            name=db_hotel.name,
-            location=db_hotel.location,
-            color=db_hotel.color,
-            otaConfig=db_hotel.ota_config or {}
-        )
-
-    def db_room_type_to_pydantic(db_room) -> RoomType:
-        return RoomType(
-            id=db_room.id,
-            name=db_room.name,
-            totalCapacity=db_room.total_capacity,
-            basePrice=db_room.base_price,
-            floorPrice=db_room.floor_price,
-            ceilingPrice=db_room.ceiling_price,
-            baseOccupancy=db_room.base_occupancy,
-            amenities=db_room.amenities or [],
-            roomNumbers=db_room.room_numbers,
-            extraBedCharge=db_room.extra_bed_charge
-        )
-
-    def db_booking_to_pydantic(db_booking) -> Booking:
-        # Handle potentially malformed JSON fields
-        def safe_json_list(value):
-            if value is None:
-                return []
-            if isinstance(value, list):
-                return value
-            if isinstance(value, str):
-                import json
-                try:
-                    parsed = json.loads(value)
-                    return parsed if isinstance(parsed, list) else []
-                except:
-                    return []
+def db_booking_to_pydantic(db_booking):
+    _load_db_imports()
+    # Handle potentially malformed JSON fields
+    def safe_json_list(value):
+        if value is None:
             return []
-        
-        return Booking(
-            id=db_booking.id,
-            roomTypeId=db_booking.room_type_id,
-            roomNumber=db_booking.room_number,
-            guestName=db_booking.guest_name,
-            source=db_booking.source,
-            status=db_booking.status,
-            timestamp=db_booking.timestamp,
-            checkIn=db_booking.check_in,
-            checkOut=db_booking.check_out,
-            reservationId=db_booking.reservation_id,
-            channelSync=db_booking.channel_sync or {},
-            amount=db_booking.amount,
-            rejectionReason=db_booking.rejection_reason,
-            guestDetails=db_booking.guest_details,
-            numberOfRooms=db_booking.number_of_rooms,
-            pax=db_booking.pax,
-            accessoryGuests=safe_json_list(db_booking.accessory_guests),
-            extraBeds=db_booking.extra_beds,
-            specialRequests=db_booking.special_requests,
-            isVIP=db_booking.is_vip,
-            isSettled=db_booking.is_settled,
-            invoiceNumber=db_booking.invoice_number,
-            invoicePath=db_booking.invoice_path,
-            receiptPath=db_booking.receipt_path,
-            folio=safe_json_list(db_booking.folio),
-            payments=safe_json_list(db_booking.payments)
-        )
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            import json
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, list) else []
+            except:
+                return []
+        return []
+    
+    return Booking(
+        id=db_booking.id,
+        roomTypeId=db_booking.room_type_id,
+        roomNumber=db_booking.room_number,
+        guestName=db_booking.guest_name,
+        source=db_booking.source,
+        status=db_booking.status,
+        timestamp=db_booking.timestamp,
+        checkIn=db_booking.check_in,
+        checkOut=db_booking.check_out,
+        reservationId=db_booking.reservation_id,
+        channelSync=db_booking.channel_sync or {},
+        amount=db_booking.amount,
+        rejectionReason=db_booking.rejection_reason,
+        guestDetails=db_booking.guest_details,
+        numberOfRooms=db_booking.number_of_rooms,
+        pax=db_booking.pax,
+        accessoryGuests=safe_json_list(db_booking.accessory_guests),
+        extraBeds=db_booking.extra_beds,
+        specialRequests=db_booking.special_requests,
+        isVIP=db_booking.is_vip,
+        isSettled=db_booking.is_settled,
+        invoiceNumber=db_booking.invoice_number,
+        invoicePath=db_booking.invoice_path,
+        receiptPath=db_booking.receipt_path,
+        folio=safe_json_list(db_booking.folio),
+        payments=safe_json_list(db_booking.payments)
+    )
 
-    def db_connection_to_pydantic(db_conn) -> OTAConnection:
-        return OTAConnection(
-            id=db_conn.id,
-            name=db_conn.name,
-            key=db_conn.key,
-            isVisible=db_conn.is_visible,
-            status=db_conn.status,
-            lastValidated=db_conn.last_validated,
-            category=db_conn.category,
-            markupType=db_conn.markup_type,
-            markupValue=db_conn.markup_value,
-            isStopped=db_conn.is_stopped
-        )
+def db_connection_to_pydantic(db_conn):
+    _load_db_imports()
+    return OTAConnection(
+        id=db_conn.id,
+        name=db_conn.name,
+        key=db_conn.key,
+        isVisible=db_conn.is_visible,
+        status=db_conn.status,
+        lastValidated=db_conn.last_validated,
+        category=db_conn.category,
+        markupType=db_conn.markup_type,
+        markupValue=db_conn.markup_value,
+        isStopped=db_conn.is_stopped
+    )
 
-    def db_rules_to_pydantic(db_rules) -> RateRulesConfig:
-        return RateRulesConfig(
-            weeklyRules=db_rules.weekly_rules or {},
-            specialEvents=db_rules.special_events or []
-        )
+def db_rules_to_pydantic(db_rules):
+    _load_db_imports()
+    return RateRulesConfig(
+        weeklyRules=db_rules.weekly_rules or {},
+        specialEvents=db_rules.special_events or []
+    )
 
-    def db_property_to_pydantic(db_prop) -> PropertySettings:
-        return PropertySettings(
-            name=db_prop.name,
-            address=db_prop.address,
-            phone=db_prop.phone,
-            email=db_prop.email,
-            gstNumber=db_prop.gst_number,
-            gstRate=db_prop.gst_rate,
-            foodGstRate=db_prop.food_gst_rate if hasattr(db_prop, 'food_gst_rate') else 5.0,
-            otherGstRate=db_prop.other_gst_rate if hasattr(db_prop, 'other_gst_rate') else 18.0,
-            razorpayKeyId=db_prop.razorpay_key_id if hasattr(db_prop, 'razorpay_key_id') else None,
-            razorpayKeySecret=db_prop.razorpay_key_secret if hasattr(db_prop, 'razorpay_key_secret') else None,
-            publicBaseUrl=db_prop.public_base_url if hasattr(db_prop, 'public_base_url') else None,
-            geminiApiKey=db_prop.gemini_api_key if hasattr(db_prop, 'gemini_api_key') else None,
-            lastInvoiceNumber=db_prop.last_invoice_number if hasattr(db_prop, 'last_invoice_number') else 0,
-            checkInTime=db_prop.check_in_time if hasattr(db_prop, 'check_in_time') else "12:00",
-            checkOutTime=db_prop.check_out_time if hasattr(db_prop, 'check_out_time') else "11:00"
-        )
+def db_property_to_pydantic(db_prop):
+    _load_db_imports()
+    return PropertySettings(
+        name=db_prop.name,
+        address=db_prop.address,
+        phone=db_prop.phone,
+        email=db_prop.email,
+        gstNumber=db_prop.gst_number,
+        gstRate=db_prop.gst_rate,
+        foodGstRate=db_prop.food_gst_rate if hasattr(db_prop, 'food_gst_rate') else 5.0,
+        otherGstRate=db_prop.other_gst_rate if hasattr(db_prop, 'other_gst_rate') else 18.0,
+        razorpayKeyId=db_prop.razorpay_key_id if hasattr(db_prop, 'razorpay_key_id') else None,
+        razorpayKeySecret=db_prop.razorpay_key_secret if hasattr(db_prop, 'razorpay_key_secret') else None,
+        publicBaseUrl=db_prop.public_base_url if hasattr(db_prop, 'public_base_url') else None,
+        geminiApiKey=db_prop.gemini_api_key if hasattr(db_prop, 'gemini_api_key') else None,
+        lastInvoiceNumber=db_prop.last_invoice_number if hasattr(db_prop, 'last_invoice_number') else 0,
+        checkInTime=db_prop.check_in_time if hasattr(db_prop, 'check_in_time') else "12:00",
+        checkOutTime=db_prop.check_out_time if hasattr(db_prop, 'check_out_time') else "11:00"
+    )
 
 @app.get("/")
 def read_root():
-    return {"message": "SyncGuard PMS API", "database": "connected" if USE_DATABASE else "fallback"}
+    return {"message": "SyncGuard PMS API", "database": "connected" if USE_DATABASE() else "fallback"}
 
 @app.get("/api/hotels", response_model=List[Hotel])
 def get_hotels(db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         hotels = db.query(HotelDB).all()
         return [db_hotel_to_pydantic(h) for h in hotels]
-    return FALLBACK_HOTELS
+    return get_fallback_hotels()
 
 @app.get("/api/room-types", response_model=List[RoomType])
 def get_room_types(db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         room_types = db.query(RoomTypeDB).all()
         return [db_room_type_to_pydantic(rt) for rt in room_types]
-    return FALLBACK_ROOM_TYPES
+    return get_fallback_room_types()
 
 @app.post("/api/room-types", response_model=RoomType)
 def create_room_type(room_type: RoomType, db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         db_room = RoomTypeDB(
             id=room_type.id,
             name=room_type.name,
@@ -483,12 +588,12 @@ def create_room_type(room_type: RoomType, db=Depends(get_db)):
         db.commit()
         db.refresh(db_room)
         return db_room_type_to_pydantic(db_room)
-    FALLBACK_ROOM_TYPES.append(room_type)
+    get_fallback_room_types().append(room_type)
     return room_type
 
 @app.put("/api/room-types/{rt_id}", response_model=RoomType)
 def update_room_type(rt_id: str, room_type: RoomType, db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         db_room = db.query(RoomTypeDB).filter(RoomTypeDB.id == rt_id).first()
         if not db_room:
             raise HTTPException(status_code=404, detail="Room Type not found")
@@ -507,15 +612,15 @@ def update_room_type(rt_id: str, room_type: RoomType, db=Depends(get_db)):
         db.refresh(db_room)
         return db_room_type_to_pydantic(db_room)
     
-    for i, rt in enumerate(FALLBACK_ROOM_TYPES):
+    for i, rt in enumerate(get_fallback_room_types()):
         if rt.id == rt_id:
-            FALLBACK_ROOM_TYPES[i] = room_type
+            get_fallback_room_types()[i] = room_type
             return room_type
     raise HTTPException(status_code=404, detail="Room Type not found")
 
 @app.delete("/api/room-types/{rt_id}")
 def delete_room_type(rt_id: str, db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         db_room = db.query(RoomTypeDB).filter(RoomTypeDB.id == rt_id).first()
         if not db_room:
             raise HTTPException(status_code=404, detail="Room Type not found")
@@ -529,38 +634,37 @@ def delete_room_type(rt_id: str, db=Depends(get_db)):
         db.commit()
         return {"status": "success"}
     
-    global FALLBACK_ROOM_TYPES
-    FALLBACK_ROOM_TYPES = [rt for rt in FALLBACK_ROOM_TYPES if rt.id != rt_id]
+    # In fallback mode, just return success (can't persist changes)
     return {"status": "success"}
 
 @app.get("/api/connections", response_model=List[OTAConnection])
 def get_connections(db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         connections = db.query(OTAConnectionDB).all()
         return [db_connection_to_pydantic(c) for c in connections]
-    return FALLBACK_CONNECTIONS
+    return get_fallback_connections()
 
 @app.get("/api/rules", response_model=RateRulesConfig)
 def get_rules(db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         rules = db.query(RateRulesDB).filter(RateRulesDB.id == "default").first()
         if not rules:
-            return FALLBACK_RULES
+            return get_fallback_rules()
         return db_rules_to_pydantic(rules)
-    return FALLBACK_RULES
+    return get_fallback_rules()
 
 @app.get("/api/property", response_model=PropertySettings)
 def get_property_settings(db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
         if not prop:
-            return FALLBACK_PROPERTY
+            return get_fallback_property()
         return db_property_to_pydantic(prop)
-    return FALLBACK_PROPERTY
+    return get_fallback_property()
 
 @app.put("/api/property", response_model=PropertySettings)
 def update_property_settings(settings: PropertySettings, db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
         if not prop:
             prop = PropertySettingsDB(id="default")
@@ -591,7 +695,7 @@ def update_property_settings(settings: PropertySettings, db=Depends(get_db)):
 
 @app.get("/api/guest/lookup")
 def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         query = db.query(GuestProfileDB)
         if name:
             query = query.filter(GuestProfileDB.name.ilike(f"%{name}%"))
@@ -651,7 +755,7 @@ def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, db=Dep
     
 @app.get("/api/guest/history")
 def get_guest_history(name: str, phone: Optional[str] = None, exclude_booking_id: Optional[str] = None, db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         query = db.query(BookingDB).filter(BookingDB.guest_name == name)
         
         # If phone is provided, it's safer to match by it too if we can find it in guest_details
@@ -666,28 +770,28 @@ def get_guest_history(name: str, phone: Optional[str] = None, exclude_booking_id
 
 @app.get("/api/bookings", response_model=List[Booking])
 def get_bookings(db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         bookings = db.query(BookingDB).all()
         return [db_booking_to_pydantic(b) for b in bookings]
-    return FALLBACK_BOOKINGS
+    return get_fallback_bookings()
 
 @app.get("/api/statistics")
 def get_statistics(db=Depends(get_db)):
     """Fetch aggregated statistics for reports and dashboard"""
     bookings_data = []
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         raw_bookings = db.query(BookingDB).filter(BookingDB.status != 'Cancelled').all()
         bookings_data = [db_booking_to_pydantic(b) for b in raw_bookings]
     else:
-        bookings_data = [b for b in FALLBACK_BOOKINGS if b.status != 'Cancelled']
+        bookings_data = [b for b in get_fallback_bookings() if b.status != 'Cancelled']
 
     # Get Room Types for popularity mapping
     room_types = {}
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         raw_rt = db.query(RoomTypeDB).all()
         room_types = {rt.id: rt.name for rt in raw_rt}
     else:
-        room_types = {rt.id: rt.name for rt in FALLBACK_ROOM_TYPES}
+        room_types = {rt.id: rt.name for rt in get_fallback_room_types()}
 
     now = datetime.now()
     year_start = datetime(now.year, 1, 1)
@@ -785,7 +889,7 @@ def get_statistics(db=Depends(get_db)):
 
 @app.post("/api/bookings", response_model=Booking)
 def create_booking(booking: Booking, db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         db_booking = BookingDB(
             id=booking.id,
             room_type_id=booking.roomTypeId,
@@ -809,12 +913,12 @@ def create_booking(booking: Booking, db=Depends(get_db)):
         return db_booking_to_pydantic(db_booking)
     
     # Fallback
-    FALLBACK_BOOKINGS.append(booking)
+    get_fallback_bookings().append(booking)
     return booking
 
 @app.post("/api/bookings/bulk", response_model=List[Booking])
 def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         try:
             db_bookings = []
             for booking in bookings:
@@ -868,12 +972,12 @@ def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
     
     # Fallback
     for b in bookings:
-        FALLBACK_BOOKINGS.append(b)
+        get_fallback_bookings().append(b)
     return bookings
 
 @app.put("/api/bookings/{booking_id}", response_model=Booking)
 def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         db_booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
         if not db_booking:
             raise HTTPException(status_code=404, detail="Booking not found")
@@ -1018,15 +1122,15 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
         return db_booking_to_pydantic(db_booking)
     
     # Fallback
-    for i, b in enumerate(FALLBACK_BOOKINGS):
+    for i, b in enumerate(get_fallback_bookings()):
         if b.id == booking_id:
-            FALLBACK_BOOKINGS[i] = booking
+            get_fallback_bookings()[i] = booking
             return booking
     raise HTTPException(status_code=404, detail="Booking not found")
 
 @app.post("/api/bookings/{booking_id}/transfer", response_model=Booking)
 def transfer_booking(booking_id: str, transfer: RoomTransferRequest, db=Depends(get_db)):
-    if USE_DATABASE and db:
+    if USE_DATABASE() and db:
         db_booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
         if not db_booking:
             raise HTTPException(status_code=404, detail="Booking not found")
@@ -1100,7 +1204,7 @@ def transfer_booking(booking_id: str, transfer: RoomTransferRequest, db=Depends(
 
 @app.post("/api/bookings/{booking_id}/checkout")
 def checkout_booking(booking_id: str, db=Depends(get_db)):
-    if not USE_DATABASE or not db:
+    if not USE_DATABASE() or not db:
         raise HTTPException(status_code=400, detail="Database required for checkout processing")
     
     booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
