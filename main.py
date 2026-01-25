@@ -555,21 +555,21 @@ def db_property_to_pydantic(db_prop):
 def read_root():
     return {"message": "SyncGuard PMS API", "database": "connected" if USE_DATABASE() else "fallback"}
 
-@app.get("/api/hotels", response_model=List[Hotel])
+@app.get("/api/hotels")
 def get_hotels(db=Depends(get_db)):
     if USE_DATABASE() and db:
         hotels = db.query(HotelDB).all()
         return [db_hotel_to_pydantic(h) for h in hotels]
     return get_fallback_hotels()
 
-@app.get("/api/room-types", response_model=List[RoomType])
+@app.get("/api/room-types")
 def get_room_types(db=Depends(get_db)):
     if USE_DATABASE() and db:
         room_types = db.query(RoomTypeDB).all()
         return [db_room_type_to_pydantic(rt) for rt in room_types]
     return get_fallback_room_types()
 
-@app.post("/api/room-types", response_model=RoomType)
+@app.post("/api/room-types")
 def create_room_type(room_type: RoomType, db=Depends(get_db)):
     if USE_DATABASE() and db:
         db_room = RoomTypeDB(
@@ -591,7 +591,7 @@ def create_room_type(room_type: RoomType, db=Depends(get_db)):
     get_fallback_room_types().append(room_type)
     return room_type
 
-@app.put("/api/room-types/{rt_id}", response_model=RoomType)
+@app.put("/api/room-types/{rt_id}")
 def update_room_type(rt_id: str, room_type: RoomType, db=Depends(get_db)):
     if USE_DATABASE() and db:
         db_room = db.query(RoomTypeDB).filter(RoomTypeDB.id == rt_id).first()
@@ -637,14 +637,14 @@ def delete_room_type(rt_id: str, db=Depends(get_db)):
     # In fallback mode, just return success (can't persist changes)
     return {"status": "success"}
 
-@app.get("/api/connections", response_model=List[OTAConnection])
+@app.get("/api/connections")
 def get_connections(db=Depends(get_db)):
     if USE_DATABASE() and db:
         connections = db.query(OTAConnectionDB).all()
         return [db_connection_to_pydantic(c) for c in connections]
     return get_fallback_connections()
 
-@app.get("/api/rules", response_model=RateRulesConfig)
+@app.get("/api/rules")
 def get_rules(db=Depends(get_db)):
     if USE_DATABASE() and db:
         rules = db.query(RateRulesDB).filter(RateRulesDB.id == "default").first()
@@ -653,7 +653,7 @@ def get_rules(db=Depends(get_db)):
         return db_rules_to_pydantic(rules)
     return get_fallback_rules()
 
-@app.get("/api/property", response_model=PropertySettings)
+@app.get("/api/property")
 def get_property_settings(db=Depends(get_db)):
     if USE_DATABASE() and db:
         prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
@@ -662,7 +662,7 @@ def get_property_settings(db=Depends(get_db)):
         return db_property_to_pydantic(prop)
     return get_fallback_property()
 
-@app.put("/api/property", response_model=PropertySettings)
+@app.put("/api/property")
 def update_property_settings(settings: PropertySettings, db=Depends(get_db)):
     if USE_DATABASE() and db:
         prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
@@ -768,7 +768,7 @@ def get_guest_history(name: str, phone: Optional[str] = None, exclude_booking_id
         return [db_booking_to_pydantic(b) for b in history]
     return []
 
-@app.get("/api/bookings", response_model=List[Booking])
+@app.get("/api/bookings")
 def get_bookings(db=Depends(get_db)):
     if USE_DATABASE() and db:
         bookings = db.query(BookingDB).all()
@@ -887,7 +887,7 @@ def get_statistics(db=Depends(get_db)):
         }
     }
 
-@app.post("/api/bookings", response_model=Booking)
+@app.post("/api/bookings")
 def create_booking(booking: Booking, db=Depends(get_db)):
     if USE_DATABASE() and db:
         db_booking = BookingDB(
@@ -916,7 +916,7 @@ def create_booking(booking: Booking, db=Depends(get_db)):
     get_fallback_bookings().append(booking)
     return booking
 
-@app.post("/api/bookings/bulk", response_model=List[Booking])
+@app.post("/api/bookings/bulk")
 def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
     if USE_DATABASE() and db:
         try:
@@ -975,7 +975,7 @@ def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
         get_fallback_bookings().append(b)
     return bookings
 
-@app.put("/api/bookings/{booking_id}", response_model=Booking)
+@app.put("/api/bookings/{booking_id}")
 def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
     if USE_DATABASE() and db:
         db_booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
@@ -1128,7 +1128,7 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
             return booking
     raise HTTPException(status_code=404, detail="Booking not found")
 
-@app.post("/api/bookings/{booking_id}/transfer", response_model=Booking)
+@app.post("/api/bookings/{booking_id}/transfer")
 def transfer_booking(booking_id: str, transfer: RoomTransferRequest, db=Depends(get_db)):
     if USE_DATABASE() and db:
         db_booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
