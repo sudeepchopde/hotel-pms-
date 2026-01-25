@@ -156,12 +156,26 @@ const App: React.FC = () => {
 
   // Drag handlers for navigation reordering
   const handleDragStart = (e: React.DragEvent, itemId: string) => {
-    setDraggedItem(itemId);
+    // Find the entire row container to use as the drag image
+    const dragImage = (e.currentTarget as HTMLElement).closest('.nav-item-row');
+    if (dragImage && e.dataTransfer.setDragImage) {
+      // Set the whole row as the ghost image so the user sees what they are moving
+      // We offset it slightly so the mouse remains near the handle
+      const rect = dragImage.getBoundingClientRect();
+      const handleRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const offsetX = handleRect.left - rect.left + handleRect.width / 2;
+      const offsetY = handleRect.top - rect.top + handleRect.height / 2;
+      e.dataTransfer.setDragImage(dragImage, offsetX, offsetY);
+    }
+
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', itemId);
-    // Add a slight delay to show the drag effect
+
+    // Use timeout to delay the state update that fades the placeholder
+    // This ensures the browser captures the solid row before we fade it
     setTimeout(() => {
-      (e.target as HTMLElement).style.opacity = '0.5';
+      setDraggedItem(itemId);
+      document.body.classList.add('is-dragging');
     }, 0);
   };
 
@@ -169,6 +183,7 @@ const App: React.FC = () => {
     (e.target as HTMLElement).style.opacity = '1';
     setDraggedItem(null);
     setDragOverItem(null);
+    document.body.classList.remove('is-dragging');
   };
 
   const handleDragOver = (e: React.DragEvent, itemId: string) => {
@@ -568,35 +583,43 @@ const App: React.FC = () => {
           {navItems.map(item => (
             <div
               key={item.id}
-              draggable
-              onDragStart={(e) => handleDragStart(e, item.id)}
-              onDragEnd={handleDragEnd}
               onDragOver={(e) => handleDragOver(e, item.id)}
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, item.id)}
-              className={`relative transition-all duration-200 ${dragOverItem === item.id ? 'transform translate-y-1' : ''
-                } ${draggedItem === item.id ? 'opacity-50' : ''}`}
+              className={`relative transition-all duration-300 ${dragOverItem === item.id ? 'translate-x-1' : ''
+                } ${draggedItem === item.id ? 'opacity-60 scale-95 ring-1 ring-white/10 rounded-xl bg-slate-700/50 shadow-inner' : ''}`}
             >
               {/* Drop indicator line */}
               {dragOverItem === item.id && draggedItem !== item.id && (
-                <div className="absolute -top-1 left-2 right-2 h-0.5 bg-indigo-400 rounded-full shadow-lg shadow-indigo-400/50" />
+                <div className="absolute -top-1 left-2 right-2 h-0.5 bg-indigo-400 rounded-full shadow-lg shadow-indigo-400/50 z-10" />
               )}
-              <button
-                onClick={() => setActiveTab(item.id as any)}
-                className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all cursor-grab active:cursor-grabbing group ${activeTab === item.id
+              <div
+                className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all group relative nav-item-row ${activeTab === item.id
                   ? 'bg-indigo-600 text-white shadow-lg'
                   : 'hover:bg-slate-700/50 text-slate-400'
                   } ${isSidebarCollapsed ? 'justify-center' : ''}`}
-                title={isSidebarCollapsed ? item.label : undefined}
               >
-                {/* Drag handle - visible on hover */}
+                <button
+                  onClick={() => setActiveTab(item.id as any)}
+                  className="flex flex-1 items-center gap-3 min-w-0"
+                  title={isSidebarCollapsed ? item.label : undefined}
+                >
+                  <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? item.color : ''}`} />
+                  {!isSidebarCollapsed && <span className="font-semibold text-sm whitespace-nowrap truncate flex-1 text-left">{item.label}</span>}
+                </button>
+
+                {/* Drag handle - visible on hover, restricted to this element */}
                 {!isSidebarCollapsed && (
-                  <GripVertical className={`w-4 h-4 shrink-0 opacity-0 group-hover:opacity-50 transition-opacity ${activeTab === item.id ? 'text-white/60' : 'text-slate-500'
-                    }`} />
+                  <div
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, item.id)}
+                    onDragEnd={handleDragEnd}
+                    className="cursor-grab active:cursor-grabbing p-1 -mr-1 hover:bg-white/10 rounded-md transition-all opacity-0 group-hover:opacity-100"
+                  >
+                    <GripVertical className={`w-4 h-4 shrink-0 ${activeTab === item.id ? 'text-white/60' : 'text-slate-500'}`} />
+                  </div>
                 )}
-                <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? item.color : ''}`} />
-                {!isSidebarCollapsed && <span className="font-medium whitespace-nowrap flex-1 text-left">{item.label}</span>}
-              </button>
+              </div>
             </div>
           ))}
         </div>

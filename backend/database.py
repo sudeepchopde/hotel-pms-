@@ -4,11 +4,25 @@ from sqlalchemy.orm import sessionmaker
 import os
 from dotenv import load_dotenv
 
-load_dotenv('.env.local')
+# Load environment variables from .env files
+# Priority: .env.local (for local dev) > .env (for production)
+load_dotenv('.env')  # Load base .env first
+load_dotenv('.env.local', override=True)  # Override with .env.local if exists
 
+# Get DATABASE_URL from environment variable (Vercel sets this automatically)
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/hotel_pms")
 
-engine = create_engine(DATABASE_URL)
+# Neon PostgreSQL requires SSL and works best with specific pool settings for serverless
+engine_args = {
+    "pool_pre_ping": True,  # Verify connections before use (important for serverless)
+    "pool_recycle": 300,    # Recycle connections every 5 minutes
+}
+
+# Add SSL arguments if connecting to Neon (cloud database)
+if "neon.tech" in DATABASE_URL:
+    engine_args["connect_args"] = {"sslmode": "require"}
+
+engine = create_engine(DATABASE_URL, **engine_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

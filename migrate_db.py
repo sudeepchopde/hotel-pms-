@@ -111,7 +111,9 @@ def migrate():
                 'razorpay_key_secret': 'VARCHAR',
                 'last_invoice_number': 'INTEGER DEFAULT 0',
                 'public_base_url': 'VARCHAR',
-                'gemini_api_key': 'VARCHAR'
+                'gemini_api_key': 'VARCHAR',
+                'check_in_time': 'VARCHAR DEFAULT \'12:00\'',
+                'check_out_time': 'VARCHAR DEFAULT \'11:00\''
             }
             for col, col_type in ps_cols.items():
                 res = conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name='property_settings' AND column_name='{col}'"))
