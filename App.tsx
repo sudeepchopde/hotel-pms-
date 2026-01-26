@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import BlueprintView from './components/BlueprintView';
+
 import InventoryDashboard from './components/InventoryDashboard';
 import SettingsPage from './components/SettingsPage';
 import IntelligenceView from './components/IntelligenceView';
@@ -47,7 +47,6 @@ const INITIAL_RULES: RateRulesConfig = {
 
 // Default navigation items configuration
 const DEFAULT_NAV_ITEMS = [
-  { id: 'flow', icon: Presentation, label: 'Flow', color: 'text-amber-300' },
   { id: 'frontdesk', icon: ConciergeBell, label: 'Front Desk', color: 'text-rose-300' },
   { id: 'compliance', icon: FileBadge, label: 'Police Compliance', color: 'text-amber-400' },
   { id: 'guests', icon: Users, label: 'Guests', color: 'text-sky-300' },
@@ -59,7 +58,7 @@ const DEFAULT_NAV_ITEMS = [
   { id: 'rules', icon: TrendingUp, label: 'Revenue Rules', color: 'text-emerald-300' },
   { id: 'intelligence', icon: BrainCircuit, label: 'AI Intelligence', color: 'text-fuchsia-300' },
   { id: 'settings', icon: Settings, label: 'Channel Settings', color: 'text-slate-400' },
-  { id: 'blueprint', icon: FileText, label: 'Tech Blueprint', color: 'text-slate-400' }
+  { id: 'flow', icon: Presentation, label: 'Flow', color: 'text-slate-500' },
 ];
 
 const INITIAL_ROOM_TYPES: RoomType[] = [
@@ -114,7 +113,7 @@ const INITIAL_ROOM_TYPES: RoomType[] = [
 ];
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'blueprint' | 'dashboard' | 'settings' | 'intelligence' | 'flow' | 'rules' | 'analysis' | 'reports' | 'setup' | 'frontdesk' | 'guests' | 'compliance' | 'security'>('flow');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'settings' | 'intelligence' | 'flow' | 'rules' | 'analysis' | 'reports' | 'setup' | 'frontdesk' | 'guests' | 'compliance' | 'security'>('frontdesk');
   const [selectedHotel, setSelectedHotel] = useState<Hotel | null>(null);
   const [hotels, setHotels] = useState<Hotel[]>([]);
   const [isHotelMenuOpen, setIsHotelMenuOpen] = useState(false);
@@ -600,11 +599,12 @@ const App: React.FC = () => {
                   } ${isSidebarCollapsed ? 'justify-center' : ''}`}
               >
                 <button
-                  onClick={() => setActiveTab(item.id as any)}
-                  className="flex flex-1 items-center gap-3 min-w-0"
-                  title={isSidebarCollapsed ? item.label : undefined}
+                  onClick={() => item.id !== 'flow' && setActiveTab(item.id as any)}
+                  className={`flex flex-1 items-center gap-3 min-w-0 ${item.id === 'flow' ? 'cursor-not-allowed opacity-50' : ''}`}
+                  title={isSidebarCollapsed ? item.label : (item.id === 'flow' ? 'Temporarily Deactivated' : undefined)}
+                  disabled={item.id === 'flow'}
                 >
-                  <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? item.color : ''}`} />
+                  <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? item.color : (item.id === 'flow' ? 'text-slate-500' : '')}`} />
                   {!isSidebarCollapsed && <span className="font-semibold text-sm whitespace-nowrap truncate flex-1 text-left">{item.label}</span>}
                 </button>
 
@@ -643,7 +643,7 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'flow' && <PitchView />}
-        {activeTab === 'blueprint' && <BlueprintView />}
+
         {activeTab === 'dashboard' && <InventoryDashboard hotelId={selectedHotel.id} connections={connections} rules={rules} roomTypes={roomTypes} syncEvents={syncEvents} setSyncEvents={setSyncEvents} />}
         {activeTab === 'rules' && <RateRulesPage rules={rules} setRules={setRules} />}
         {activeTab === 'analysis' && <AnalysisView />}
