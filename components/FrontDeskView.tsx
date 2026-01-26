@@ -18,7 +18,6 @@ import {
   PointerSensor,
   KeyboardSensor
 } from '@dnd-kit/core';
-import { GoogleGenAI, Type } from "@google/genai";
 import { RoomType, SyncEvent, Booking, GuestDetails, RoomSecurityStatus, ChannelStatus, OTAConnection, FolioItem, Payment, PropertySettings } from '../types';
 import GuestProfilePage from './GuestProfilePage';
 import NewBookingModal from './NewBookingModal';
@@ -678,7 +677,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
       // Try to parse the error detail from the response
       let errorMsg = "Could not save bookings. Please try again.";
       if (error.message) {
-        errorMsg = error.message;
+        errorMsg = typeof error.message === 'string' ? error.message : JSON.stringify(error.message);
       }
       setToastMessage(`Error: ${errorMsg}`);
       setTimeout(() => setToastMessage(null), 5000);

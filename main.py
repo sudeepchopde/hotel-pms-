@@ -12,7 +12,7 @@ import json
 _db_imports_loaded = False
 _USE_DATABASE = None
 
-# Declare these at module level so they can be used throughout
+# Declare these at module level for DB models (still lazy)
 HotelDB = None
 RoomTypeDB = None
 BookingDB = None
@@ -20,14 +20,22 @@ OTAConnectionDB = None
 RateRulesDB = None
 GuestProfileDB = None
 PropertySettingsDB = None
-Hotel = None
-RoomType = None
-Booking = None
-OTAConnection = None
-RateRulesConfig = None
-RoomTransferRequest = None
-GuestProfile = None
-PropertySettings = None
+
+# Import Pydantic models at top level for FastAPI type validation
+from backend.models import (
+    Hotel, 
+    RoomType, 
+    Booking, 
+    OTAConnection, 
+    RateRulesConfig, 
+    RoomTransferRequest, 
+    GuestProfile, 
+    PropertySettings,
+    OCRRequest,
+    RazorpayOrderRequest,
+    RazorpayVerifyRequest
+)
+
 get_db_real = None
 engine = None
 
@@ -53,16 +61,6 @@ def _load_db_imports():
             GuestProfileDB as _GuestProfileDB, 
             PropertySettingsDB as _PropertySettingsDB
         )
-        from backend.models import (
-            Hotel as _Hotel, 
-            RoomType as _RoomType, 
-            Booking as _Booking, 
-            OTAConnection as _OTAConnection, 
-            RateRulesConfig as _RateRulesConfig, 
-            RoomTransferRequest as _RoomTransferRequest, 
-            GuestProfile as _GuestProfile, 
-            PropertySettings as _PropertySettings
-        )
         
         # Assign to globals
         get_db_real = _get_db_real
@@ -74,14 +72,7 @@ def _load_db_imports():
         RateRulesDB = _RateRulesDB
         GuestProfileDB = _GuestProfileDB
         PropertySettingsDB = _PropertySettingsDB
-        Hotel = _Hotel
-        RoomType = _RoomType
-        Booking = _Booking
-        OTAConnection = _OTAConnection
-        RateRulesConfig = _RateRulesConfig
-        RoomTransferRequest = _RoomTransferRequest
-        GuestProfile = _GuestProfile
-        PropertySettings = _PropertySettings
+        PropertySettingsDB = _PropertySettingsDB
         
         # Test connection
         with engine.connect() as conn:
@@ -129,9 +120,9 @@ import base64
 import re
 from pydantic import BaseModel
 
-class OCRRequest(BaseModel):
-    image: str # Base64 string
-    type: str # 'id' or 'form'
+# class OCRRequest(BaseModel):
+#     image: str # Base64 string
+#     type: str # 'id' or 'form'
 
 @app.post("/api/ocr")
 def process_ocr(request: OCRRequest, db=Depends(get_db)):
@@ -225,17 +216,17 @@ import hashlib
 import hmac
 import time
 
-class RazorpayOrderRequest(PydanticBaseModel):
-    amount: float  # In INR
-    bookingId: str
-    description: Optional[str] = "Payment for Hotel Stay"
+# class RazorpayOrderRequest(PydanticBaseModel):
+#     amount: float  # In INR
+#     bookingId: str
+#     description: Optional[str] = "Payment for Hotel Stay"
 
-class RazorpayVerifyRequest(PydanticBaseModel):
-    razorpay_order_id: str
-    razorpay_payment_id: str
-    razorpay_signature: str
-    bookingId: str
-    amount: float
+# class RazorpayVerifyRequest(PydanticBaseModel):
+#     razorpay_order_id: str
+#     razorpay_payment_id: str
+#     razorpay_signature: str
+#     bookingId: str
+#     amount: float
 
 @app.post("/api/razorpay/create-order")
 def create_razorpay_order(request: RazorpayOrderRequest, db=Depends(get_db)):
@@ -1340,7 +1331,7 @@ def checkout_booking(booking_id: str, db=Depends(get_db)):
         # 3. Update guest profile with latest move if it exists
         if db_booking.guest_details:
             gd = db_booking.guest_details
-            # Handle if gd is a dict or a Pydantic model (depending on how it was loaded)
+            # Handle if gd is a dict or a Pydantic model 
             name = gd.get('name') if isinstance(gd, dict) else getattr(gd, 'name', None)
             phone = gd.get('phoneNumber') if isinstance(gd, dict) else getattr(gd, 'phoneNumber', None)
             

@@ -179,3 +179,19 @@ class GuestProfile(BaseModel):
     visaPage: Optional[str] = None
     additionalDocs: Optional[List[str]] = None
     formPages: Optional[List[str]] = None
+
+class OCRRequest(BaseModel):
+    image: str # Base64 string
+    type: str # 'id' or 'form'
+
+class RazorpayOrderRequest(BaseModel):
+    amount: float  # In INR
+    bookingId: str
+    description: Optional[str] = "Payment for Hotel Stay"
+
+class RazorpayVerifyRequest(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+    bookingId: str
+    amount: float

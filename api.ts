@@ -53,7 +53,13 @@ export const deleteRoomType = async (rtId: string): Promise<void> => {
     });
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to delete room type');
+        let message = 'Failed to delete room type';
+        if (errorData.detail) {
+            message = typeof errorData.detail === 'string'
+                ? errorData.detail
+                : JSON.stringify(errorData.detail);
+        }
+        throw new Error(message);
     }
 };
 
@@ -82,7 +88,13 @@ export const createBulkBookings = async (bookings: Booking[]): Promise<Booking[]
     });
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to create bulk bookings');
+        let message = 'Failed to create bulk bookings';
+        if (errorData.detail) {
+            message = typeof errorData.detail === 'string'
+                ? errorData.detail
+                : JSON.stringify(errorData.detail);
+        }
+        throw new Error(message);
     }
     return response.json();
 };
