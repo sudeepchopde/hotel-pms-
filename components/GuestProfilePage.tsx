@@ -137,8 +137,19 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const isCameraActiveRef = useRef<boolean>(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Stop camera on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
 
   // Synchronize image state when side changes
   useEffect(() => {
@@ -223,6 +234,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
       });
+      streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
@@ -231,13 +243,16 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       setToastMessage("Could not access camera. Please upload manually.");
       setIsCameraActive(false);
       isCameraActiveRef.current = false;
+      streamRef.current = null;
     }
   };
 
   const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
     setIsCameraActive(false);
