@@ -645,7 +645,36 @@ const App: React.FC = () => {
         {activeTab === 'flow' && <PitchView />}
 
         {activeTab === 'dashboard' && <InventoryDashboard hotelId={selectedHotel.id} connections={connections} rules={rules} roomTypes={roomTypes} syncEvents={syncEvents} setSyncEvents={setSyncEvents} />}
-        {activeTab === 'rules' && <RateRulesPage rules={rules} setRules={setRules} />}
+        {activeTab === 'rules' && (
+          <RateRulesPage
+            rules={rules}
+            setRules={setRules}
+            onStrategySync={(label) => {
+              const eventId = `rule-${Date.now()}`;
+              const activeChannels = connections.filter(c => c.status === 'connected');
+
+              setSyncEvents(prev => [...prev, {
+                id: eventId,
+                type: 'rate_update',
+                roomTypeId: roomTypes[0]?.id || 'global',
+                newPrice: 0,
+                timestamp: Date.now(),
+                channelSync: {},
+                ruleApplied: label
+              }]);
+
+              activeChannels.forEach(async (channel) => {
+                if (channel.isStopped) {
+                  setSyncEvents(prev => prev.map(e => e.id === eventId ? { ...e, channelSync: { ...(e.channelSync || {}), [channel.name]: 'stopped' } } : e));
+                  return;
+                }
+                setSyncEvents(prev => prev.map(e => e.id === eventId ? { ...e, channelSync: { ...(e.channelSync || {}), [channel.name]: 'pending' } } : e));
+                await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
+                setSyncEvents(prev => prev.map(e => e.id === eventId ? { ...e, channelSync: { ...(e.channelSync || {}), [channel.name]: 'success' } } : e));
+              });
+            }}
+          />
+        )}
         {activeTab === 'analysis' && <AnalysisView />}
         {activeTab === 'reports' && <ReportsView />}
         {activeTab === 'settings' && <SettingsPage connections={connections} setConnections={setConnections} />}

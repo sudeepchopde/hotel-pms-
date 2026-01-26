@@ -416,7 +416,19 @@ const InventoryDashboard: React.FC<DashboardProps> = ({ hotelId, connections, ru
 
     addLog('SUCCESS', `RESTORED: Inventory restored.`);
     const eventId = `c-${Date.now()}`;
-    simulateFanOut(eventId, 'PMS', `Inv Update (Cancel #${shortId})`);
+    const label = `Inv Update (Cancel #${shortId})`;
+
+    setSyncEvents(prev => [...prev, {
+      id: eventId,
+      type: 'rate_update', // Using rate_update as a generic sync tracking type here
+      roomTypeId: booking.roomTypeId,
+      newPrice: booking.amount,
+      timestamp: Date.now(),
+      channelSync: {},
+      ruleApplied: 'Inventory Release'
+    }]);
+
+    simulateFanOut(eventId, 'PMS', label);
     setIsSyncing(false);
   };
 

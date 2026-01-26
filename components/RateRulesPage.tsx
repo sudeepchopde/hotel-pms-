@@ -5,13 +5,14 @@ import {
   ShieldCheck, Zap, Info, IndianRupee,
   Sparkles, ShieldAlert, CalendarClock,
   ArrowRight, AlertCircle, CalendarDays,
-  CheckCircle2, ChevronDown, Edit
+  CheckCircle2, ChevronDown, Edit, Share2
 } from 'lucide-react';
 import { RateRulesConfig, SpecialEvent } from '../types';
 
 interface RateRulesPageProps {
   rules: RateRulesConfig;
   setRules: React.Dispatch<React.SetStateAction<RateRulesConfig>>;
+  onStrategySync?: (label: string) => void;
 }
 
 /**
@@ -100,7 +101,7 @@ const FormDatePicker = ({
   );
 };
 
-const RateRulesPage: React.FC<RateRulesPageProps> = ({ rules, setRules }) => {
+const RateRulesPage: React.FC<RateRulesPageProps> = ({ rules, setRules, onStrategySync }) => {
   // --- Form State Management ---
   // modifierValue here represents the user-friendly value (e.g. 20 for 20% or 500 for ₹500)
   const [formState, setFormState] = useState<Partial<SpecialEvent>>({
@@ -111,6 +112,13 @@ const RateRulesPage: React.FC<RateRulesPageProps> = ({ rules, setRules }) => {
     modifierValue: 10
   });
   const [formErrors, setFormErrors] = useState<Record<string, boolean>>({});
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleGlobalSync = () => {
+    setIsSyncing(true);
+    onStrategySync?.('Strategic Yield Update');
+    setTimeout(() => setIsSyncing(false), 3000);
+  };
 
   // --- Logic Handlers ---
   const toggleWeeklyDay = (dayValue: number) => {
@@ -181,13 +189,35 @@ const RateRulesPage: React.FC<RateRulesPageProps> = ({ rules, setRules }) => {
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-12 animate-in fade-in duration-700 pb-32">
       {/* Strategic Header */}
-      <header className="space-y-1">
-        <div className="flex items-center gap-2 mb-1">
-          <TrendingUp className="w-5 h-5 text-indigo-600" />
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600/70">Yield Management</span>
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 mb-1">
+            <TrendingUp className="w-5 h-5 text-indigo-600" />
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600/70">Yield Management</span>
+          </div>
+          <h2 className="text-4xl font-black text-slate-900 tracking-tight">Strategy Center</h2>
+          <h3 className="text-slate-500 font-medium max-w-xl">Coordinate automated price movements across your global distribution network.</h3>
         </div>
-        <h2 className="text-4xl font-black text-slate-900 tracking-tight">Strategy Center</h2>
-        <h3 className="text-slate-500 font-medium">Coordinate automated price movements across your global distribution network.</h3>
+        <button
+          onClick={handleGlobalSync}
+          disabled={isSyncing}
+          className={`
+            px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all flex items-center gap-3 shadow-xl
+            ${isSyncing ? 'bg-slate-100 text-slate-400' : 'bg-slate-900 text-white hover:bg-black hover:-translate-y-1 active:scale-95 shadow-indigo-500/10'}
+          `}
+        >
+          {isSyncing ? (
+            <>
+              <Zap className="w-4 h-4 animate-pulse fill-amber-400 text-amber-400" />
+              Syncing Signals...
+            </>
+          ) : (
+            <>
+              <Share2 className="w-4 h-4" />
+              Sync to All Channels
+            </>
+          )}
+        </button>
       </header>
 
       {/* 1. Recurring Weekly Strategy */}
