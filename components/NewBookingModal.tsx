@@ -72,6 +72,7 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, room
         setPhoneNumber(guest.phone_number || phoneNumber);
         setEmail(guest.email || '');
         setGuestDetails({
+            profileId: guest.id,
             name: guest.name,
             phoneNumber: guest.phone_number || phoneNumber,
             email: guest.email,

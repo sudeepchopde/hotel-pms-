@@ -74,9 +74,11 @@ def _load_db_imports():
         PropertySettingsDB = _PropertySettingsDB
         PropertySettingsDB = _PropertySettingsDB
         
-        # Test connection
+        # Test connection and create tables if they don't exist
+        from backend.database import Base
         with engine.connect() as conn:
             pass
+        Base.metadata.create_all(bind=engine)
         
         _USE_DATABASE = True
         print("✓ Connected to PostgreSQL database")
@@ -542,6 +544,115 @@ def db_property_to_pydantic(db_prop):
         checkOutTime=db_prop.check_out_time if hasattr(db_prop, 'check_out_time') else "11:00"
     )
 
+def _sync_guest_profile(gd, check_in_date, db):
+    """Helper to sync GuestDetails with GuestProfileDB"""
+    if not gd or not gd.name or not gd.phoneNumber:
+        return None
+        
+    existing_profile = None
+    if gd.profileId:
+        existing_profile = db.query(GuestProfileDB).filter(GuestProfileDB.id == gd.profileId).first()
+    
+    if not existing_profile:
+        # Try exact name + phone match first
+        existing_profile = db.query(GuestProfileDB).filter(
+            GuestProfileDB.name == gd.name,
+            GuestProfileDB.phone_number == gd.phoneNumber
+        ).first()
+        
+    if not existing_profile:
+        # Fallback to phone number only (useful for slight name variations)
+        existing_profile = db.query(GuestProfileDB).filter(
+            GuestProfileDB.phone_number == gd.phoneNumber
+        ).order_by(GuestProfileDB.last_check_in.desc()).first()
+        
+    if existing_profile:
+        # Update...
+        if gd.idType: existing_profile.id_type = gd.idType
+        if gd.idNumber: existing_profile.id_number = gd.idNumber
+        if gd.address: existing_profile.address = gd.address
+        if gd.dob: existing_profile.dob = gd.dob
+        if gd.nationality: existing_profile.nationality = gd.nationality
+        if gd.gender: existing_profile.gender = gd.gender
+        if gd.email: existing_profile.email = gd.email
+        if gd.passportNumber: existing_profile.passport_number = gd.passportNumber
+        if gd.passportPlaceIssue: existing_profile.passport_place_issue = gd.passportPlaceIssue
+        if gd.passportIssueDate: existing_profile.passport_issue_date = gd.passportIssueDate
+        if gd.passportExpiry: existing_profile.passport_expiry = gd.passportExpiry
+        if gd.visaNumber: existing_profile.visa_number = gd.visaNumber
+        if gd.visaType: existing_profile.visa_type = gd.visaType
+        if gd.visaPlaceIssue: existing_profile.visa_place_issue = gd.visaPlaceIssue
+        if gd.visaIssueDate: existing_profile.visa_issue_date = gd.visaIssueDate
+        if gd.visaExpiry: existing_profile.visa_expiry = gd.visaExpiry
+        if gd.arrivedFrom: existing_profile.arrived_from = gd.arrivedFrom
+        if gd.arrivalDateIndia: existing_profile.arrival_date_india = gd.arrivalDateIndia
+        if gd.arrivalPort: existing_profile.arrival_port = gd.arrivalPort
+        if gd.nextDestination: existing_profile.next_destination = gd.nextDestination
+        if gd.purposeOfVisit: existing_profile.purpose_of_visit = gd.purposeOfVisit
+        if gd.idImage: existing_profile.id_image = gd.idImage
+        if gd.idImageBack: existing_profile.id_image_back = gd.idImageBack
+        if gd.visaPage: existing_profile.visa_page = gd.visaPage
+        if gd.additionalDocs: existing_profile.additional_docs = gd.additionalDocs
+        if gd.formPages: existing_profile.form_pages = gd.formPages
+        if gd.serialNumber: existing_profile.serial_number = gd.serialNumber
+        if gd.fatherOrHusbandName: existing_profile.father_or_husband_name = gd.fatherOrHusbandName
+        if gd.city: existing_profile.city = gd.city
+        if gd.state: existing_profile.state = gd.state
+        if gd.pinCode: existing_profile.pin_code = gd.pinCode
+        if gd.country: existing_profile.country = gd.country
+        if gd.arrivalTime: existing_profile.arrival_time = gd.arrivalTime
+        if gd.departureTime: existing_profile.departure_time = gd.departureTime
+        if gd.signature: existing_profile.signature = gd.signature
+        
+        existing_profile.last_check_in = check_in_date
+        db.flush()
+        return existing_profile.id
+    else:
+        # Create...
+        new_profile = GuestProfileDB(
+            name=gd.name,
+            phone_number=gd.phoneNumber or "",
+            id_type=gd.idType,
+            id_number=gd.idNumber,
+            address=gd.address,
+            dob=gd.dob,
+            nationality=gd.nationality,
+            gender=gd.gender,
+            email=gd.email,
+            passport_number=gd.passportNumber,
+            passport_place_issue=gd.passportPlaceIssue,
+            passport_issue_date=gd.passportIssueDate,
+            passport_expiry=gd.passportExpiry,
+            visa_number=gd.visaNumber,
+            visa_type=gd.visaType,
+            visa_place_issue=gd.visaPlaceIssue,
+            visa_issue_date=gd.visaIssueDate,
+            visa_expiry=gd.visaExpiry,
+            arrived_from=gd.arrivedFrom,
+            arrival_date_india=gd.arrivalDateIndia,
+            arrival_port=gd.arrivalPort,
+            next_destination=gd.nextDestination,
+            purpose_of_visit=gd.purposeOfVisit,
+            id_image=gd.idImage,
+            id_image_back=gd.idImageBack,
+            visa_page=gd.visaPage,
+            additional_docs=gd.additionalDocs or [],
+            form_pages=gd.formPages or [],
+            serial_number=gd.serialNumber,
+            father_or_husband_name=gd.fatherOrHusbandName,
+            city=gd.city,
+            state=gd.state,
+            pin_code=gd.pinCode,
+            country=gd.country,
+            arrival_time=gd.arrivalTime,
+            departure_time=gd.departureTime,
+            signature=gd.signature,
+            last_check_in=check_in_date
+        )
+        db.add(new_profile)
+        db.flush()
+        return new_profile.id
+
 @app.get("/")
 def read_root():
     return {"message": "SyncGuard PMS API", "database": "connected" if USE_DATABASE() else "fallback"}
@@ -881,6 +992,13 @@ def get_statistics(db=Depends(get_db)):
 @app.post("/api/bookings")
 def create_booking(booking: Booking, db=Depends(get_db)):
     if USE_DATABASE() and db:
+        if booking.guestDetails:
+            profile_id = _sync_guest_profile(booking.guestDetails, booking.checkIn, db)
+            if profile_id:
+                # Update the Pydantic model's guestDetails before converting to DB model
+                if booking.guestDetails: # Check again to be safe
+                    booking.guestDetails.profileId = profile_id
+
         db_booking = BookingDB(
             id=booking.id,
             room_type_id=booking.roomTypeId,
@@ -894,6 +1012,7 @@ def create_booking(booking: Booking, db=Depends(get_db)):
             amount=booking.amount,
             reservation_id=booking.reservationId,
             channel_sync=booking.channelSync or {},
+            guest_details=booking.guestDetails.dict() if booking.guestDetails else None,
             number_of_rooms=booking.numberOfRooms or 1,
             pax=booking.pax or 1,
             folio=[f.dict() for f in booking.folio] if booking.folio else []
@@ -925,6 +1044,13 @@ def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
                     
                     if conflict:
                         raise HTTPException(status_code=409, detail=f"Room {booking.roomNumber} is already occupied for these dates.")
+
+                if booking.guestDetails:
+                    profile_id = _sync_guest_profile(booking.guestDetails, booking.checkIn, db)
+                    if profile_id:
+                        # Update the Pydantic model's guestDetails before converting to DB model
+                        if booking.guestDetails: # Check again to be safe
+                            booking.guestDetails.profileId = profile_id
 
                 db_booking = BookingDB(
                     id=booking.id,
@@ -973,6 +1099,17 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
         if not db_booking:
             raise HTTPException(status_code=404, detail="Booking not found")
         
+        # Save or update guest profile whenever guest details are present
+        if booking.guestDetails and booking.guestDetails.name and booking.guestDetails.phoneNumber:
+            profile_id = _sync_guest_profile(booking.guestDetails, booking.checkIn, db)
+            if profile_id:
+                # Update the guest_details dictionary in the DB model
+                updated_gd = booking.guestDetails.dict() if booking.guestDetails else {}
+                updated_gd['profileId'] = profile_id
+                db_booking.guest_details = updated_gd
+        else:
+            db_booking.guest_details = None # Clear if no guest details provided
+
         # Update fields
         db_booking.room_type_id = booking.roomTypeId
         db_booking.room_number = booking.roomNumber
@@ -983,7 +1120,7 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
         db_booking.amount = booking.amount
         db_booking.reservation_id = booking.reservationId
         db_booking.channel_sync = booking.channelSync or {}
-        db_booking.guest_details = booking.guestDetails.dict() if booking.guestDetails else None
+        # guest_details already handled above
         db_booking.number_of_rooms = booking.numberOfRooms
         db_booking.pax = booking.pax
         db_booking.accessory_guests = [g.dict() for g in booking.accessoryGuests] if booking.accessoryGuests else []
@@ -995,115 +1132,6 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
         db_booking.folio = [f.dict() for f in booking.folio] if booking.folio else []
         db_booking.payments = [p.dict() for p in booking.payments] if booking.payments else []
         
-        # Save or update guest profile whenever guest details are present
-        if booking.guestDetails and booking.guestDetails.name and booking.guestDetails.phoneNumber:
-            gd = booking.guestDetails
-            existing_profile = None
-            
-            if gd.profileId:
-                existing_profile = db.query(GuestProfileDB).filter(GuestProfileDB.id == gd.profileId).first()
-            
-            if not existing_profile:
-                # Fallback to name/phone if profileId not provided or not found
-                existing_profile = db.query(GuestProfileDB).filter(
-                    GuestProfileDB.name == gd.name,
-                    GuestProfileDB.phone_number == gd.phoneNumber
-                ).first()
-            
-            if existing_profile:
-                # Update existing profile with latest info
-                existing_profile.id_type = gd.idType
-                existing_profile.id_number = gd.idNumber
-                existing_profile.address = gd.address
-                existing_profile.dob = gd.dob
-                existing_profile.nationality = gd.nationality
-                existing_profile.gender = gd.gender
-                existing_profile.email = gd.email
-                existing_profile.passport_number = gd.passportNumber
-                existing_profile.passport_place_issue = gd.passportPlaceIssue
-                existing_profile.passport_issue_date = gd.passportIssueDate
-                existing_profile.passport_expiry = gd.passportExpiry
-                existing_profile.visa_number = gd.visaNumber
-                existing_profile.visa_type = gd.visaType
-                existing_profile.visa_place_issue = gd.visaPlaceIssue
-                existing_profile.visa_issue_date = gd.visaIssueDate
-                existing_profile.visa_expiry = gd.visaExpiry
-                existing_profile.arrived_from = gd.arrivedFrom
-                existing_profile.arrival_date_india = gd.arrivalDateIndia
-                existing_profile.arrival_port = gd.arrivalPort
-                existing_profile.next_destination = gd.nextDestination
-                existing_profile.purpose_of_visit = gd.purposeOfVisit
-                existing_profile.id_image = gd.idImage
-                existing_profile.id_image_back = gd.idImageBack
-                existing_profile.visa_page = gd.visaPage
-                existing_profile.additional_docs = gd.additionalDocs or []
-                existing_profile.form_pages = gd.formPages or []
-                existing_profile.serial_number = gd.serialNumber
-                existing_profile.father_or_husband_name = gd.fatherOrHusbandName
-                existing_profile.city = gd.city
-                existing_profile.state = gd.state
-                existing_profile.pin_code = gd.pinCode
-                existing_profile.country = gd.country
-                existing_profile.arrival_time = gd.arrivalTime
-                existing_profile.departure_time = gd.departureTime
-                existing_profile.signature = gd.signature
-                existing_profile.last_check_in = booking.checkIn
-                
-                db.flush() # Get the profile and update it
-                # Ensure the booking's guest_details now reflects this profileId
-                updated_gd = db_booking.guest_details
-                updated_gd['profileId'] = existing_profile.id
-                db_booking.guest_details = updated_gd
-            else:
-                # Create new profile
-                new_profile = GuestProfileDB(
-                    name=gd.name,
-                    phone_number=gd.phoneNumber or "",
-                    id_type=gd.idType,
-                    id_number=gd.idNumber,
-                    address=gd.address,
-                    dob=gd.dob,
-                    nationality=gd.nationality,
-                    gender=gd.gender,
-                    email=gd.email,
-                    passport_number = gd.passportNumber,
-                    passport_place_issue = gd.passportPlaceIssue,
-                    passport_issue_date = gd.passportIssueDate,
-                    passport_expiry = gd.passportExpiry,
-                    visa_number = gd.visaNumber,
-                    visa_type = gd.visaType,
-                    visa_place_issue = gd.visaPlaceIssue,
-                    visa_issue_date = gd.visaIssueDate,
-                    visa_expiry = gd.visaExpiry,
-                    arrived_from = gd.arrivedFrom,
-                    arrival_date_india = gd.arrivalDateIndia,
-                    arrival_port = gd.arrivalPort,
-                    next_destination = gd.nextDestination,
-                    purpose_of_visit = gd.purposeOfVisit,
-                    id_image = gd.idImage,
-                    id_image_back = gd.idImageBack,
-                    visa_page=gd.visaPage,
-                    additional_docs=gd.additionalDocs or [],
-                    form_pages=gd.formPages or [],
-                    serial_number=gd.serialNumber,
-                    father_or_husband_name=gd.father_or_husband_name if hasattr(gd, 'father_or_husband_name') else gd.fatherOrHusbandName,
-                    city=gd.city,
-                    state=gd.state,
-                    pin_code=gd.pinCode,
-                    country=gd.country,
-                    arrival_time=gd.arrivalTime,
-                    departure_time=gd.departureTime,
-                    signature=gd.signature,
-                    last_check_in=booking.checkIn
-                )
-                db.add(new_profile)
-                db.flush() # Get the new ID
-                
-                # Update booking with the new profile ID
-                updated_gd = db_booking.guest_details
-                updated_gd['profileId'] = new_profile.id
-                db_booking.guest_details = updated_gd
-
         # Since we are using BigInteger for timestamp, ensure it's an int
         import time
         db_booking.timestamp = int(time.time() * 1000)
@@ -1327,26 +1355,6 @@ def checkout_booking(booking_id: str, db=Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Checkout failed: {str(e)}")
-        
-        # 3. Update guest profile with latest move if it exists
-        if db_booking.guest_details:
-            gd = db_booking.guest_details
-            # Handle if gd is a dict or a Pydantic model 
-            name = gd.get('name') if isinstance(gd, dict) else getattr(gd, 'name', None)
-            phone = gd.get('phoneNumber') if isinstance(gd, dict) else getattr(gd, 'phoneNumber', None)
-            
-            if name and phone:
-                profile = db.query(GuestProfileDB).filter(
-                    GuestProfileDB.name == name,
-                    GuestProfileDB.phone_number == phone
-                ).first()
-                if profile:
-                    profile.last_check_in = transfer.effectiveDate
-
-        db.commit()
-        db.refresh(new_booking)
-        
-        return db_booking_to_pydantic(new_booking)
 
 if __name__ == "__main__":
     import uvicorn
