@@ -700,6 +700,23 @@ def update_room_type(rt_id: str, room_type: RoomType, db=Depends(get_db)):
         if not db_room:
             raise HTTPException(status_code=404, detail="Room Type not found")
         
+        # Check if any room numbers are being removed that have active or future bookings
+        new_room_numbers = room_type.roomNumbers or []
+        old_room_numbers = db_room.room_numbers or []
+        removed_rooms = [r for r in old_room_numbers if r not in new_room_numbers]
+        
+        if removed_rooms:
+            today = datetime.now().strftime("%Y-%m-%d")
+            active_conflicts = db.query(BookingDB).filter(
+                BookingDB.room_number.in_(removed_rooms),
+                BookingDB.status.in_(['Confirmed', 'CheckedIn']),
+                BookingDB.check_out >= today
+            ).all()
+            
+            if active_conflicts:
+                conflict_rooms = ", ".join(list(set([b.room_number for b in active_conflicts])))
+                raise HTTPException(status_code=400, detail=f"Cannot remove room(s) {conflict_rooms} as they have active or future bookings. Please relocate them first.")
+
         db_room.name = room_type.name
         db_room.total_capacity = room_type.totalCapacity
         db_room.base_price = room_type.basePrice
@@ -727,10 +744,15 @@ def delete_room_type(rt_id: str, db=Depends(get_db)):
         if not db_room:
             raise HTTPException(status_code=404, detail="Room Type not found")
         
-        # Check if there are bookings for this room type
-        bookings_count = db.query(BookingDB).filter(BookingDB.room_type_id == rt_id).count()
-        if bookings_count > 0:
-            raise HTTPException(status_code=400, detail="Cannot delete room type with existing bookings")
+        # Check if there are active or future bookings for this room type
+        today = datetime.now().strftime("%Y-%m-%d")
+        active_bookings = db.query(BookingDB).filter(
+            BookingDB.room_type_id == rt_id,
+            BookingDB.status.in_(['Confirmed', 'CheckedIn']),
+            BookingDB.check_out >= today
+        ).count()
+        if active_bookings > 0:
+            raise HTTPException(status_code=400, detail="Cannot delete room type with active or future bookings. Please cancel or relocate them first.")
             
         db.delete(db_room)
         db.commit()

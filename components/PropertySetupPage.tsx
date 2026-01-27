@@ -7,7 +7,7 @@ import {
   QrCode, Printer, Download, Terminal, ExternalLink, Globe,
   Settings2, Smartphone, Building2, RotateCcw, Link as LinkIcon, ArrowRight
 } from 'lucide-react';
-import { RoomType, SyncEvent, PropertySettings } from '../types';
+import { RoomType, SyncEvent, PropertySettings, Booking } from '../types';
 import { updatePropertySettings, createRoomType, updateRoomType, deleteRoomType } from '../api';
 
 interface PropertySetupPageProps {
@@ -121,6 +121,30 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
 
   const handleSave = async () => {
     if (!formData.name) return;
+    // Check for active/future bookings in rooms being removed
+    if (editingId && formData.roomNumbers) {
+      const originalRT = roomTypes.find(rt => rt.id === editingId);
+      if (originalRT && originalRT.roomNumbers) {
+        const removed = originalRT.roomNumbers.filter(num => !formData.roomNumbers!.includes(num));
+        if (removed.length > 0) {
+          const todayStr = new Date().toISOString().split('T')[0];
+          const affectedBookings = syncEvents.filter(e =>
+            e.type === 'booking' &&
+            ['Confirmed', 'CheckedIn'].includes(e.status) &&
+            removed.includes(e.roomNumber || '') &&
+            e.checkOut >= todayStr
+          ) as Booking[];
+
+          if (affectedBookings.length > 0) {
+            const affectedRooms = Array.from(new Set(affectedBookings.map(b => b.roomNumber))).join(', ');
+            setValidationError(`Cannot modify/remove room(s) ${affectedRooms} because they have active or future bookings. Please cancel or relocate these bookings first.`);
+            setIsSavingRoom(false);
+            return;
+          }
+        }
+      }
+    }
+
     if (formData.roomNumbers) {
       const normalizedNumbers = formData.roomNumbers.map(n => n.trim());
       const uniqueNumbers = new Set(normalizedNumbers);
@@ -197,7 +221,10 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
   const handleDelete = async (id: string, name: string) => {
     const today = new Date().toISOString().split('T')[0];
     const futureBookings = syncEvents.filter(event =>
-      event.type === 'booking' && event.roomTypeId === id && event.status === 'Confirmed' && event.checkOut >= today
+      event.type === 'booking' &&
+      event.roomTypeId === id &&
+      ['Confirmed', 'CheckedIn'].includes(event.status) &&
+      event.checkOut >= today
     );
     if (futureBookings.length > 0) {
       setDeleteWarning({ name, count: futureBookings.length });
