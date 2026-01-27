@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { X, Plus, Minus, Calendar, Bed, User, ArrowRight, CheckCircle2, AlertTriangle, Search, Smartphone, Mail, Sparkles, RotateCcw, Globe } from 'lucide-react';
 import { RoomType, Booking, SyncEvent, GuestDetails } from '../types';
 import { lookupGuest } from '../api';
@@ -20,7 +19,7 @@ interface NewBookingModalProps {
     prefill?: { checkIn: string; roomTypeId: string } | null;
 }
 
-const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, roomTypes, syncEvents, onCreateBookings, prefill }) => {
+export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents, onCreateBookings, prefill }: NewBookingModalProps) {
     const [step, setStep] = useState(1);
     const [guestName, setGuestName] = useState('');
     const [phoneNumber, setPhoneNumber] = useState('');
@@ -31,6 +30,7 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, room
     const [isSearching, setIsSearching] = useState(false);
     const [guestDetails, setGuestDetails] = useState<Partial<GuestDetails> | null>(null);
     const [source, setSource] = useState<'Direct' | 'MMT' | 'Booking.com' | 'Expedia'>('Direct');
+    const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const today = new Date().toISOString().split('T')[0];
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
@@ -48,23 +48,40 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, room
         }
     }, [isOpen]);
 
-    const handlePhoneLookup = async () => {
-        if (phoneNumber.length < 4) return; // Allow shorter phone numbers
-        setIsSearching(true);
-        try {
-            const data = await lookupGuest(undefined, phoneNumber);
-            // API now returns an array
-            if (Array.isArray(data) && data.length > 0) {
-                setFoundGuest(data);
-            } else {
-                setFoundGuest(null);
-            }
-        } catch (err) {
-            console.error("Lookup failed", err);
-        } finally {
-            setIsSearching(false);
+    // Auto-lookup when phone number changes (debounced)
+    useEffect(() => {
+        if (debounceTimeoutRef.current) {
+            clearTimeout(debounceTimeoutRef.current);
         }
-    };
+
+        if (phoneNumber.length >= 6) {
+            setIsSearching(true);
+            debounceTimeoutRef.current = setTimeout(async () => {
+                try {
+                    const data = await lookupGuest(undefined, phoneNumber);
+                    if (Array.isArray(data) && data.length > 0) {
+                        setFoundGuest(data);
+                    } else {
+                        setFoundGuest(null);
+                    }
+                } catch (err) {
+                    console.error("Lookup failed", err);
+                    setFoundGuest(null);
+                } finally {
+                    setIsSearching(false);
+                }
+            }, 500); // 500ms debounce
+        } else {
+            setIsSearching(false);
+            setFoundGuest(null);
+        }
+
+        return () => {
+            if (debounceTimeoutRef.current) {
+                clearTimeout(debounceTimeoutRef.current);
+            }
+        };
+    }, [phoneNumber]);
 
     const applyGuestDetails = (guest: any) => {
         if (!guest) return;
@@ -232,7 +249,7 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, room
                                             placeholder="Mobile number..."
                                             value={phoneNumber}
                                             onChange={e => setPhoneNumber(e.target.value)}
-                                            onBlur={handlePhoneLookup}
+
                                             className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-lg font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-indigo-50/10 transition-all placeholder:text-slate-300"
                                         />
                                         {isSearching && (
@@ -461,6 +478,4 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, room
             </div>
         </div>
     );
-};
-
-export default NewBookingModal;
+}
