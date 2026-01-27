@@ -75,6 +75,8 @@ class BookingDB(Base):
     invoice_number = Column(String, nullable=True)
     invoice_path = Column(String, nullable=True)
     receipt_path = Column(String, nullable=True)
+    is_auto_generated = Column(Boolean, default=False)
+    external_reference_id = Column(String, nullable=True, index=True)
 
 class OTAConnectionDB(Base):
     __tablename__ = "ota_connections"

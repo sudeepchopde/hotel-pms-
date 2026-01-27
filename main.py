@@ -33,7 +33,8 @@ from backend.models import (
     PropertySettings,
     OCRRequest,
     RazorpayOrderRequest,
-    RazorpayVerifyRequest
+    RazorpayVerifyRequest,
+    InboundEmail
 )
 
 get_db_real = None
@@ -210,6 +211,153 @@ def process_ocr(request: OCRRequest, db=Depends(get_db)):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+# ========== EMAIL RESERVATION PARSER ==========
+@app.post("/api/webhooks/inbound-email")
+def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
+    """
+    Receives forwarded OTA confirmation emails and uses Gemini to extract 
+    booking data into a structured format.
+    """
+    _load_db_imports()
+    import uuid
+    import time
+    
+    # 1. Deduplication check using MessageID or Subject+From hash
+    # We use a stable hash for cases where MessageID isn't provided or changes
+    import hashlib
+    content_hash = hashlib.md5(f"{email.Subject}{email.From}{email.TextBody[:100] if email.TextBody else ''}".encode()).hexdigest()
+    external_ref = email.MessageID or f"hash-{content_hash}"
+    
+    if USE_DATABASE() and db:
+        existing = db.query(BookingDB).filter(BookingDB.external_reference_id == external_ref).first()
+        if existing:
+            return {"status": "skipped", "message": "Duplicate email detected", "booking_id": existing.id}
+
+    # 2. Get GEMINI API Key
+    api_key = None
+    if USE_DATABASE() and db:
+        prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
+        if prop and prop.gemini_api_key:
+            api_key = prop.gemini_api_key
+    if not api_key:
+        api_key = os.getenv("GEMINI_API_KEY")
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Gemini API Key for email parsing not configured. Please set it in Property Setup.")
+
+    # 3. Call Gemini to parse
+    try:
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=api_key)
+        
+        # We prefer TextBody but can use HTML as fallback
+        content_to_parse = email.TextBody or email.HtmlBody or ""
+        if not content_to_parse:
+             raise HTTPException(status_code=400, detail="Email body is empty")
+             
+        prompt = """
+        Extract reservation details from this hotel booking confirmation email. 
+        Return as a clean JSON with these keys:
+        - guestName: string
+        - checkIn: string (YYYY-MM-DD)
+        - checkOut: string (YYYY-MM-DD)
+        - amount: number (total price)
+        - source: string ('Booking.com', 'MMT', 'Expedia', or 'Direct')
+        - roomTypeRaw: string (e.g., 'Deluxe AC Room')
+        - numberOfRooms: number
+        - pax: number
+        
+        Only return the JSON.
+        """
+
+        # List of models to try
+        models_to_try = [
+            'gemini-1.5-flash',
+            'gemini-flash-latest',
+            'gemini-1.5-flash-8b',
+            'gemini-2.0-flash'
+        ]
+        
+        response = None
+        last_err = None
+        
+        for model_name in models_to_try:
+            try:
+                print(f"Attempting Email Parsing with model: {model_name}")
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[prompt, content_to_parse]
+                )
+                if response and response.text:
+                    break
+            except Exception as e:
+                print(f"Model {model_name} failed for email parsing: {e}")
+                last_err = e
+        
+        if not response or not response.text:
+             raise last_err or HTTPException(status_code=500, detail="All AI models failed to parse email content")
+                   
+        # Clean JSON from markdown wrap
+        json_text = response.text
+        if "```json" in json_text:
+            json_text = json_text.split("```json")[1].split("```")[0]
+        elif "```" in json_text:
+            json_text = json_text.split("```")[1].split("```")[0]
+        
+        parsed_data = json.loads(json_text.strip())
+        
+        # 4. Map Room Type
+        room_type_id = None
+        if USE_DATABASE() and db:
+            all_rts = db.query(RoomTypeDB).all()
+            raw_room = parsed_data.get('roomTypeRaw', '').lower()
+            
+            # 1st pass: Exact or containing match
+            for rt in all_rts:
+                if rt.name.lower() in raw_room or raw_room in rt.name.lower():
+                    room_type_id = rt.id
+                    break
+            
+            # 2nd pass: Default to first one if none found
+            if not room_type_id and all_rts:
+                room_type_id = all_rts[0].id
+
+        # 5. Create Booking
+        new_id = f"RES-{str(uuid.uuid4())[:8].upper()}"
+        
+        new_booking = BookingDB(
+            id=new_id,
+            room_type_id=room_type_id or "rt-1", 
+            room_number="Unassigned", # Needs manual assignment on Front Desk
+            guest_name=parsed_data.get('guestName', 'Parsed Guest'),
+            source=parsed_data.get('source', 'Direct'),
+            status="Confirmed",
+            timestamp=int(time.time() * 1000),
+            check_in=parsed_data.get('checkIn'),
+            check_out=parsed_data.get('checkOut'),
+            amount=parsed_data.get('amount'),
+            number_of_rooms=parsed_data.get('numberOfRooms', 1),
+            pax=parsed_data.get('pax', 2),
+            is_auto_generated=True,
+            external_reference_id=external_ref
+        )
+        
+        if USE_DATABASE() and db:
+            db.add(new_booking)
+            db.commit()
+            db.refresh(new_booking)
+            return {"status": "success", "booking": db_booking_to_pydantic(new_booking)}
+        
+        return {"status": "success", "parsed": parsed_data}
+
+    except Exception as e:
+        print(f"Email parsing failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"AI Parsing failed: {str(e)}")
+
 
 # ========== RAZORPAY INTEGRATION ==========
 from pydantic import BaseModel as PydanticBaseModel
@@ -502,6 +650,8 @@ def db_booking_to_pydantic(db_booking):
         invoiceNumber=db_booking.invoice_number,
         invoicePath=db_booking.invoice_path,
         receiptPath=db_booking.receipt_path,
+        isAutoGenerated=getattr(db_booking, 'is_auto_generated', False),
+        externalReferenceId=getattr(db_booking, 'external_reference_id', None),
         folio=safe_json_list(db_booking.folio),
         payments=safe_json_list(db_booking.payments)
     )

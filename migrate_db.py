@@ -25,8 +25,19 @@ def migrate(env_file):
             cur.execute("ALTER TABLE property_settings ADD COLUMN loyalty_tiers JSONB DEFAULT '[]'::jsonb;")
             print("Done.")
         else:
-            print("Column already exists.")
+            print("Column loyalty_tiers already exists.")
             
+        print("Checking for auto-parsing columns in bookings...")
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='bookings' AND column_name='is_auto_generated';")
+        if not cur.fetchone():
+            print("Adding auto-parsing columns to bookings...")
+            cur.execute("ALTER TABLE bookings ADD COLUMN is_auto_generated BOOLEAN DEFAULT FALSE;")
+            cur.execute("ALTER TABLE bookings ADD COLUMN external_reference_id VARCHAR;")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_bookings_external_ref ON bookings(external_reference_id);")
+            print("Done.")
+        else:
+            print("Auto-parsing columns already exist.")
+
         cur.close()
         conn.close()
     except Exception as e:
