@@ -2181,7 +2181,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     </div>
                     <div className="space-y-1">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Stays</p>
-                      <p className="text-2xl font-black text-indigo-600 tabular-nums">{history.length}</p>
+                      <p className="text-2xl font-black text-indigo-600 tabular-nums">{history.filter(h => h.status === 'CheckedIn' || h.status === 'CheckedOut').length}</p>
                       <div className="flex items-center gap-1 text-[8px] font-black text-indigo-400 uppercase tracking-tighter">
                         <User className="w-2.5 h-2.5" /> Loyalty Count
                       </div>
@@ -2189,7 +2189,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     <div className="space-y-1">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Nights</p>
                       <p className="text-2xl font-black text-slate-800 tabular-nums">
-                        {history.reduce((sum, h) => sum + Math.ceil((new Date(h.checkOut).getTime() - new Date(h.checkIn).getTime()) / (1000 * 3600 * 24)), 0)}
+                        {history
+                          .filter(h => h.status === 'CheckedIn' || h.status === 'CheckedOut')
+                          .reduce((sum, h) => sum + Math.ceil((new Date(h.checkOut).getTime() - new Date(h.checkIn).getTime()) / (1000 * 3600 * 24)), 0)}
                       </p>
                       <div className="flex items-center gap-1 text-[8px] font-black text-slate-400 uppercase tracking-tighter">
                         <Bed className="w-2.5 h-2.5" /> Inventory Units
@@ -2199,7 +2201,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Guest Category</p>
                       <div className="flex items-center gap-2 pt-1">
                         {(() => {
-                          const totalNights = history.reduce((sum, h) => sum + Math.ceil((new Date(h.checkOut).getTime() - new Date(h.checkIn).getTime()) / (1000 * 3600 * 24)), 0);
+                          const totalNights = history
+                            .filter(h => h.status === 'CheckedIn' || h.status === 'CheckedOut')
+                            .reduce((sum, h) => sum + Math.ceil((new Date(h.checkOut).getTime() - new Date(h.checkIn).getTime()) / (1000 * 3600 * 24)), 0);
 
                           const tiers = propertySettings?.loyaltyTiers || [];
                           if (tiers.length > 0) {
