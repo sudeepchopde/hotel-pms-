@@ -899,7 +899,8 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                     const isHeader = row.type === 'header';
                     if (isHeader) {
                       const occupiedCount = assignedBookings.filter(b => b.roomTypeId === row.id && b.status !== 'Cancelled' && b.status !== 'Rejected' && b.checkIn <= todayStrLocal && b.checkOut > todayStrLocal).length;
-                      const gradientStyle = CATEGORY_GRADIENTS[index % CATEGORY_GRADIENTS.length];
+                      const categoryIndex = roomTypes.findIndex(rt => rt.id === row.id);
+                      const gradientStyle = CATEGORY_GRADIENTS[categoryIndex >= 0 ? categoryIndex % CATEGORY_GRADIENTS.length : 0];
                       return (
                         <div key={row.id} className="sticky top-[72px] z-30 flex flex-col md:flex-row gap-3 pt-3">
                           <div onClick={() => toggleExpand(row.id)} className="h-[48px] w-full md:w-44 shrink-0 rounded-xl shadow-xl px-3 py-1 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] border border-white/20 backdrop-blur-lg relative overflow-hidden group sticky left-0 z-40" style={gradientStyle}>
