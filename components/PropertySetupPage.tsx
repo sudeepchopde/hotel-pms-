@@ -5,7 +5,7 @@ import {
   IndianRupee, Users, Bed, Info, X, Save,
   Lock, Check, AlertTriangle, History, Hash, Sofa,
   QrCode, Printer, Download, Terminal, ExternalLink, Globe,
-  Settings2, Smartphone, Building2, RotateCcw, Link as LinkIcon, ArrowRight
+  Settings2, Smartphone, Building2, RotateCcw, Link as LinkIcon, ArrowRight, Star
 } from 'lucide-react';
 import { RoomType, SyncEvent, PropertySettings, Booking } from '../types';
 import { updatePropertySettings, createRoomType, updateRoomType, deleteRoomType } from '../api';
@@ -82,7 +82,8 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
     gstRate: 12.0,
     foodGstRate: 5.0,
     otherGstRate: 18.0,
-    geminiApiKey: ''
+    geminiApiKey: '',
+    loyaltyTiers: []
   });
 
   useEffect(() => {
@@ -431,6 +432,71 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                     <span className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 font-black">%</span>
                   </div>
                 </div>
+              </div>
+            </section>
+
+            <section className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm space-y-8">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600">
+                  <Star className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Loyalty Program</h3>
+                  <p className="text-xs text-slate-500 font-medium">Configure membership tiers based on nights stayed.</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {(profileFormData.loyaltyTiers || []).map((tier, idx) => (
+                  <div key={idx} className="flex flex-wrap items-end gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 relative group transition-all hover:bg-white hover:shadow-md">
+                    <div className="flex-1 min-w-[200px] space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Tier Name</label>
+                      <input
+                        type="text"
+                        value={tier.name}
+                        onChange={e => {
+                          const newTiers = [...(profileFormData.loyaltyTiers || [])];
+                          newTiers[idx] = { ...newTiers[idx], name: e.target.value.toUpperCase() };
+                          setProfileFormData({ ...profileFormData, loyaltyTiers: newTiers });
+                        }}
+                        className="w-full px-4 py-3 bg-white border-2 border-slate-100 rounded-xl text-sm font-bold text-slate-900 outline-none focus:border-indigo-500"
+                        placeholder="e.g. PLATINUM"
+                      />
+                    </div>
+                    <div className="w-40 space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Min. Nights</label>
+                      <input
+                        type="number"
+                        value={tier.minNights}
+                        onChange={e => {
+                          const newTiers = [...(profileFormData.loyaltyTiers || [])];
+                          newTiers[idx] = { ...newTiers[idx], minNights: Number(e.target.value) };
+                          setProfileFormData({ ...profileFormData, loyaltyTiers: newTiers });
+                        }}
+                        className="w-full px-4 py-3 bg-white border-2 border-slate-100 rounded-xl text-sm font-black text-indigo-600 outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newTiers = (profileFormData.loyaltyTiers || []).filter((_, i) => i !== idx);
+                        setProfileFormData({ ...profileFormData, loyaltyTiers: newTiers });
+                      }}
+                      className="p-3 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors mb-0.5"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                ))}
+
+                <button
+                  onClick={() => {
+                    const newTiers = [...(profileFormData.loyaltyTiers || []), { name: 'NEW TIER', minNights: 1 }];
+                    setProfileFormData({ ...profileFormData, loyaltyTiers: newTiers });
+                  }}
+                  className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] hover:border-indigo-300 hover:text-indigo-500 hover:bg-indigo-50/30 transition-all flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" /> Add New Tier
+                </button>
               </div>
             </section>
 

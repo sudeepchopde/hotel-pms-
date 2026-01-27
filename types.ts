@@ -1,3 +1,8 @@
+export interface LoyaltyTier {
+  name: string;
+  minNights: number;
+}
+
 export interface PropertySettings {
   name: string;
   address: string;
@@ -14,6 +19,7 @@ export interface PropertySettings {
   publicBaseUrl?: string;
   checkInTime?: string; // e.g. "12:00"
   checkOutTime?: string; // e.g. "11:00"
+  loyaltyTiers?: LoyaltyTier[];
 }
 
 export interface Hotel {

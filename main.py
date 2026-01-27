@@ -423,7 +423,12 @@ def get_fallback_property():
             foodGstRate=5.0,
             otherGstRate=18.0,
             publicBaseUrl='http://localhost:3000',
-            geminiApiKey=''
+            geminiApiKey='',
+            loyaltyTiers=[
+                {'name': 'SILVER', 'minNights': 2},
+                {'name': 'GOLD ELITE', 'minNights': 5},
+                {'name': 'PLATINUM', 'minNights': 10}
+            ]
         ) if PropertySettings else None
     return _fallback_cache['property']
 
@@ -541,7 +546,8 @@ def db_property_to_pydantic(db_prop):
         geminiApiKey=db_prop.gemini_api_key if hasattr(db_prop, 'gemini_api_key') else None,
         lastInvoiceNumber=db_prop.last_invoice_number if hasattr(db_prop, 'last_invoice_number') else 0,
         checkInTime=db_prop.check_in_time if hasattr(db_prop, 'check_in_time') else "12:00",
-        checkOutTime=db_prop.check_out_time if hasattr(db_prop, 'check_out_time') else "11:00"
+        checkOutTime=db_prop.check_out_time if hasattr(db_prop, 'check_out_time') else "11:00",
+        loyaltyTiers=db_prop.loyalty_tiers if hasattr(db_prop, 'loyalty_tiers') else []
     )
 
 def _sync_guest_profile(gd, check_in_date, db):

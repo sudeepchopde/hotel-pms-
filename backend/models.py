@@ -1,6 +1,10 @@
 from typing import List, Optional, Dict, Union, Literal
 from pydantic import BaseModel
 
+class LoyaltyTier(BaseModel):
+    name: str
+    minNights: int
+
 class PropertySettings(BaseModel):
     name: str
     address: str
@@ -17,6 +21,7 @@ class PropertySettings(BaseModel):
     geminiApiKey: Optional[str] = None
     checkInTime: Optional[str] = "12:00"
     checkOutTime: Optional[str] = "11:00"
+    loyaltyTiers: Optional[List[LoyaltyTier]] = []
 
 class WeeklyRule(BaseModel):
     isActive: bool

@@ -21,6 +21,7 @@ class PropertySettingsDB(Base):
     check_in_time = Column(String, default="12:00")
     check_out_time = Column(String, default="11:00")
     gemini_api_key = Column(String, nullable=True)
+    loyalty_tiers = Column(JSON, default=[])
 
 class HotelDB(Base):
     __tablename__ = "hotels"

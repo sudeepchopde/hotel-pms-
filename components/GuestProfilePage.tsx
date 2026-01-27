@@ -2200,6 +2200,23 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       <div className="flex items-center gap-2 pt-1">
                         {(() => {
                           const totalNights = history.reduce((sum, h) => sum + Math.ceil((new Date(h.checkOut).getTime() - new Date(h.checkIn).getTime()) / (1000 * 3600 * 24)), 0);
+
+                          const tiers = propertySettings?.loyaltyTiers || [];
+                          if (tiers.length > 0) {
+                            const sortedTiers = [...tiers].sort((a, b) => b.minNights - a.minNights);
+                            const matchedTier = sortedTiers.find(t => totalNights >= t.minNights);
+                            if (matchedTier) {
+                              const colors: Record<string, string> = {
+                                PLATINUM: 'bg-indigo-600 shadow-indigo-200',
+                                'GOLD ELITE': 'bg-amber-500 shadow-amber-200',
+                                SILVER: 'bg-slate-400 shadow-slate-200',
+                                GOLD: 'bg-amber-500 shadow-amber-200'
+                              };
+                              const colorClass = colors[matchedTier.name] || 'bg-slate-500 shadow-slate-200';
+                              return <span className={`px-2 py-1 ${colorClass} text-white text-[8px] font-black rounded-lg shadow-sm`}>{matchedTier.name}</span>;
+                            }
+                          }
+
                           if (totalNights >= 10) return <span className="px-2 py-1 bg-indigo-600 text-white text-[8px] font-black rounded-lg shadow-sm shadow-indigo-200">PLATINUM</span>;
                           if (totalNights >= 5) return <span className="px-2 py-1 bg-amber-500 text-white text-[8px] font-black rounded-lg shadow-sm shadow-amber-200">GOLD ELITE</span>;
                           if (totalNights >= 2) return <span className="px-2 py-1 bg-slate-400 text-white text-[8px] font-black rounded-lg shadow-sm shadow-slate-200">SILVER</span>;
