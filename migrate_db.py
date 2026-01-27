@@ -1,130 +1,39 @@
-import sys
+
 import os
-from sqlalchemy import text
+import psycopg2
+from dotenv import load_dotenv
+import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+def migrate(env_file):
+    print(f"Migrating with {env_file}...")
+    load_dotenv(env_file, override=True)
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        print(f"DATABASE_URL not found in {env_file}")
+        return
 
-from backend.database import engine
-
-def migrate():
-    print("Migrating database schema...")
     try:
-        with engine.connect() as conn:
-            # Check if reservation_id exists
-            result = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='bookings' AND column_name='reservation_id'"))
-            if not result.fetchone():
-                print("Adding reservation_id column to bookings table...")
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN reservation_id VARCHAR"))
+        conn = psycopg2.connect(url)
+        conn.autocommit = True
+        cur = conn.cursor()
+        
+        print(f"Connecting to DB: {url.split('@')[-1]}")
+        print("Checking for loyalty_tiers column in property_settings...")
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='property_settings' AND column_name='loyalty_tiers';")
+        if not cur.fetchone():
+            print("Adding loyalty_tiers column...")
+            cur.execute("ALTER TABLE property_settings ADD COLUMN loyalty_tiers JSONB DEFAULT '[]'::jsonb;")
+            print("Done.")
+        else:
+            print("Column already exists.")
             
-            # Check for other missing columns
-            missing_cols = {
-                'accessory_guests': 'JSON',
-                'channel_sync': 'JSON',
-                'rejection_reason': 'VARCHAR',
-                'is_settled': 'BOOLEAN DEFAULT FALSE',
-                'payments': 'JSON DEFAULT \'[]\'',
-                'invoice_number': 'VARCHAR',
-                'invoice_path': 'VARCHAR',
-                'receipt_path': 'VARCHAR'
-            }
-            for col, col_type in missing_cols.items():
-                res = conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name='bookings' AND column_name='{col}'"))
-                if not res.fetchone():
-                    print(f"Adding {col} column...")
-                    conn.execute(text(f"ALTER TABLE bookings ADD COLUMN {col} {col_type}"))
-            
-            # Create guest_profiles table if it doesn't exist
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS guest_profiles (
-                    id SERIAL PRIMARY KEY,
-                    name VARCHAR,
-                    phone_number VARCHAR,
-                    id_type VARCHAR,
-                    id_number VARCHAR,
-                    address VARCHAR,
-                    dob VARCHAR,
-                    nationality VARCHAR,
-                    preferences VARCHAR,
-                    last_check_in VARCHAR
-                )
-            """))
-            # Check for missing guest_profiles columns
-            gp_cols = {
-                'gender': 'VARCHAR', 
-                'email': 'VARCHAR',
-                'passport_number': 'VARCHAR',
-                'passport_place_issue': 'VARCHAR',
-                'passport_issue_date': 'VARCHAR',
-                'passport_expiry': 'VARCHAR',
-                'visa_number': 'VARCHAR',
-                'visa_type': 'VARCHAR',
-                'visa_place_issue': 'VARCHAR',
-                'visa_issue_date': 'VARCHAR',
-                'visa_expiry': 'VARCHAR',
-                'arrived_from': 'VARCHAR',
-                'arrival_date_india': 'VARCHAR',
-                'arrival_port': 'VARCHAR',
-                'next_destination': 'VARCHAR',
-                'purpose_of_visit': 'VARCHAR',
-                'id_image': 'VARCHAR',
-                'id_image_back': 'VARCHAR',
-                'visa_page': 'VARCHAR',
-                'serial_number': 'INTEGER',
-                'father_or_husband_name': 'VARCHAR',
-                'city': 'VARCHAR',
-                'state': 'VARCHAR',
-                'pin_code': 'VARCHAR',
-                'country': 'VARCHAR',
-                'arrival_time': 'VARCHAR',
-                'departure_time': 'VARCHAR',
-                'signature': 'VARCHAR',
-                'additional_docs': 'JSON DEFAULT \'[]\'',
-                'form_pages': 'JSON DEFAULT \'[]\''
-            }
-            for col, col_type in gp_cols.items():
-                res = conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name='guest_profiles' AND column_name='{col}'"))
-                if not res.fetchone():
-                    print(f"Adding {col} column to guest_profiles...")
-                    conn.execute(text(f"ALTER TABLE guest_profiles ADD COLUMN {col} {col_type}"))
-
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_guest_profiles_name ON guest_profiles (name)"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_guest_profiles_phone_number ON guest_profiles (phone_number)"))
-            
-            # Create property_settings table if it doesn't exist
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS property_settings (
-                    id VARCHAR PRIMARY KEY,
-                    name VARCHAR NOT NULL,
-                    address VARCHAR NOT NULL,
-                    phone VARCHAR,
-                    email VARCHAR,
-                    gst_number VARCHAR,
-                    gst_rate FLOAT DEFAULT 12.0
-                )
-            """))
-
-            # Check for property_settings missing columns
-            ps_cols = {
-                'food_gst_rate': 'FLOAT DEFAULT 5.0',
-                'other_gst_rate': 'FLOAT DEFAULT 18.0',
-                'razorpay_key_id': 'VARCHAR',
-                'razorpay_key_secret': 'VARCHAR',
-                'last_invoice_number': 'INTEGER DEFAULT 0',
-                'public_base_url': 'VARCHAR',
-                'gemini_api_key': 'VARCHAR',
-                'check_in_time': 'VARCHAR DEFAULT \'12:00\'',
-                'check_out_time': 'VARCHAR DEFAULT \'11:00\''
-            }
-            for col, col_type in ps_cols.items():
-                res = conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name='property_settings' AND column_name='{col}'"))
-                if not res.fetchone():
-                    print(f"Adding {col} column to property_settings...")
-                    conn.execute(text(f"ALTER TABLE property_settings ADD COLUMN {col} {col_type}"))
-
-            conn.commit()
-            print("Schema updated successfully!")
+        cur.close()
+        conn.close()
     except Exception as e:
-        print(f"Migration failed: {e}")
+        print(f"Migration failed for {env_file}: {e}")
 
 if __name__ == "__main__":
-    migrate()
+    if os.path.exists(".env.local"):
+        migrate(".env.local")
+    if os.path.exists(".env"):
+        migrate(".env")

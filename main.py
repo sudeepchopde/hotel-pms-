@@ -72,7 +72,6 @@ def _load_db_imports():
         RateRulesDB = _RateRulesDB
         GuestProfileDB = _GuestProfileDB
         PropertySettingsDB = _PropertySettingsDB
-        PropertySettingsDB = _PropertySettingsDB
         
         # Test connection and create tables if they don't exist
         from backend.database import Base
@@ -815,6 +814,8 @@ def update_property_settings(settings: PropertySettings, db=Depends(get_db)):
         prop.gemini_api_key = settings.geminiApiKey
         prop.check_in_time = settings.checkInTime
         prop.check_out_time = settings.checkOutTime
+        if settings.loyaltyTiers is not None:
+            prop.loyalty_tiers = [t.dict() for t in settings.loyaltyTiers]
         
         db.commit()
         db.refresh(prop)
