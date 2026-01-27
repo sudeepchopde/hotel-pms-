@@ -136,6 +136,11 @@ export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents
 
         // Initialize room details based on count
         const initialDetails = Array.from({ length: roomCount }, (_, i) => {
+            // Preserve the first room if it was already initialized (potentially via prefill)
+            if (i === 0 && roomDetails.length > 0) {
+                return { ...roomDetails[0], tempId: i };
+            }
+
             const checkInDate = prefill?.checkIn || today;
             const nextDay = new Date(checkInDate);
             nextDay.setDate(nextDay.getDate() + 1);
@@ -155,14 +160,60 @@ export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents
         setRoomDetails(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
     };
 
+    const getAvailableRoomNumbers = useCallback((roomTypeId: string, checkIn: string, checkOut: string, excludeIdx: number = -1) => {
+        const rt = roomTypes.find(t => t.id === roomTypeId);
+        if (!rt) return [];
+
+        const allRooms = rt.roomNumbers || [];
+        if (allRooms.length === 0) return [];
+
+        const occupiedRooms = new Set<string>();
+        const parseDate = (s: string) => {
+            const [y, m, d] = s.split('-').map(Number);
+            return new Date(y, m - 1, d);
+        };
+
+        let curr = parseDate(checkIn);
+        const end = parseDate(checkOut);
+        if (isNaN(curr.getTime()) || isNaN(end.getTime()) || curr >= end) return [];
+
+        while (curr < end) {
+            const year = curr.getFullYear();
+            const month = String(curr.getMonth() + 1).padStart(2, '0');
+            const day = String(curr.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${day}`;
+
+            syncEvents.forEach(e => {
+                if (e.type === 'booking' &&
+                    e.roomTypeId === roomTypeId &&
+                    e.roomNumber &&
+                    e.status !== 'Cancelled' &&
+                    e.status !== 'Rejected' &&
+                    e.status !== 'CheckedOut' &&
+                    e.checkIn <= dateStr && e.checkOut > dateStr) {
+                    occupiedRooms.add(e.roomNumber);
+                }
+            });
+
+            roomDetails.forEach((r, idx) => {
+                if (idx !== excludeIdx &&
+                    r.roomTypeId === roomTypeId &&
+                    r.roomNumber &&
+                    r.checkIn <= dateStr && r.checkOut > dateStr) {
+                    occupiedRooms.add(r.roomNumber);
+                }
+            });
+            curr.setDate(curr.getDate() + 1);
+        }
+        return allRooms.filter(num => !occupiedRooms.has(num));
+    }, [roomTypes, syncEvents, roomDetails]);
+
     const getRoomAvailability = useMemo(() => {
         return (roomTypeId: string, checkIn: string, checkOut: string, excludeIdx: number = -1) => {
             const rt = roomTypes.find(t => t.id === roomTypeId);
             if (!rt) return 0;
 
             let minAvailable = rt.totalCapacity;
-
-            // Timezone-safe date processing
             const parseDate = (s: string) => {
                 const [y, m, d] = s.split('-').map(Number);
                 return new Date(y, m - 1, d);
@@ -170,7 +221,6 @@ export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents
 
             let curr = parseDate(checkIn);
             const end = parseDate(checkOut);
-
             if (isNaN(curr.getTime()) || isNaN(end.getTime()) || curr >= end) return 0;
 
             while (curr < end) {
@@ -188,7 +238,6 @@ export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents
                     e.checkIn <= dateStr && e.checkOut > dateStr
                 ).length;
 
-                // Count others of same type in same modal
                 const sameModalOccupied = roomDetails.filter((r, idx) =>
                     idx !== excludeIdx &&
                     r.roomTypeId === roomTypeId &&
@@ -448,6 +497,25 @@ export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents
                                             </div>
                                         </div>
                                     </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assign Specific Room (Optional)</label>
+                                            <select
+                                                value={room.roomNumber || ''}
+                                                onChange={e => handleUpdateRoom(idx, 'roomNumber', e.target.value)}
+                                                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800 outline-none focus:border-indigo-500"
+                                            >
+                                                <option value="">Auto-Assign (Random Available)</option>
+                                                {getAvailableRoomNumbers(room.roomTypeId, room.checkIn, room.checkOut, idx).map(num => (
+                                                    <option key={num} value={num}>Room {num}</option>
+                                                ))}
+                                                {room.roomNumber && !getAvailableRoomNumbers(room.roomTypeId, room.checkIn, room.checkOut, idx).includes(room.roomNumber) && (
+                                                    <option value={room.roomNumber} disabled>Room {room.roomNumber} (Occupied)</option>
+                                                )}
+                                            </select>
+                                        </div>
+                                    </div>
+
                                     {getRoomAvailability(room.roomTypeId, room.checkIn, room.checkOut, idx) <= 0 && (
                                         <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-100 rounded-xl text-rose-600">
                                             <AlertTriangle className="w-4 h-4 shrink-0" />
