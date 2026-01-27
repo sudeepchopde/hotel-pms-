@@ -201,6 +201,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - 1); // Default to start from yesterday
     return d;
   });
   const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({});
