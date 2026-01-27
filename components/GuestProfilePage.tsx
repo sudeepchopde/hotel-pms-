@@ -2198,11 +2198,13 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     <div className="space-y-1">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Guest Category</p>
                       <div className="flex items-center gap-2 pt-1">
-                        {history.length >= 3 ? (
-                          <span className="px-2 py-1 bg-amber-500 text-white text-[8px] font-black rounded-lg shadow-sm shadow-amber-200">GOLD ELITE</span>
-                        ) : (
-                          <span className="px-2 py-1 bg-slate-200 text-slate-600 text-[8px] font-black rounded-lg">REGULAR</span>
-                        )}
+                        {(() => {
+                          const totalNights = history.reduce((sum, h) => sum + Math.ceil((new Date(h.checkOut).getTime() - new Date(h.checkIn).getTime()) / (1000 * 3600 * 24)), 0);
+                          if (totalNights >= 10) return <span className="px-2 py-1 bg-indigo-600 text-white text-[8px] font-black rounded-lg shadow-sm shadow-indigo-200">PLATINUM</span>;
+                          if (totalNights >= 5) return <span className="px-2 py-1 bg-amber-500 text-white text-[8px] font-black rounded-lg shadow-sm shadow-amber-200">GOLD ELITE</span>;
+                          if (totalNights >= 2) return <span className="px-2 py-1 bg-slate-400 text-white text-[8px] font-black rounded-lg shadow-sm shadow-slate-200">SILVER</span>;
+                          return <span className="px-2 py-1 bg-slate-200 text-slate-600 text-[8px] font-black rounded-lg">REGULAR</span>;
+                        })()}
                       </div>
                       <p className="text-[8px] font-bold text-slate-400 uppercase mt-2">Personalized Member</p>
                     </div>
