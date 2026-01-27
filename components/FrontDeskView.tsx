@@ -230,7 +230,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
-  const [bookingPrefill, setBookingPrefill] = useState<{ checkIn: string; roomTypeId: string } | null>(null);
+  const [bookingPrefill, setBookingPrefill] = useState<{ checkIn: string; roomTypeId: string; roomId?: string } | null>(null);
 
   const jumpDateRef = useRef<HTMLInputElement>(null);
 
@@ -591,7 +591,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
     phoneNumber?: string,
     email?: string,
     guestDetails?: Partial<GuestDetails>,
-    rooms: Array<{ roomTypeId: string, checkIn: string, checkOut: string }>,
+    rooms: Array<{ roomTypeId: string, checkIn: string, checkOut: string, roomNumber?: string }>,
     source?: 'Direct' | 'MMT' | 'Booking.com' | 'Expedia'
   }) => {
     const reservationId = `res-${Date.now()}`;
@@ -601,7 +601,26 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
     const newBookings: Booking[] = data.rooms.map((room, idx) => {
       const roomType = roomTypes.find(rt => rt.id === room.roomTypeId);
       let assignedRoom = 'Unassigned';
-      if (roomType && roomType.roomNumbers) {
+
+      // If a specific room number was requested/pre-filled, try to use it first
+      if (room.roomNumber) {
+        const isOccupied = syncEvents.some(e =>
+          e.type === 'booking' &&
+          e.roomNumber === room.roomNumber &&
+          e.status !== 'Cancelled' &&
+          e.status !== 'Rejected' &&
+          e.status !== 'CheckedOut' &&
+          !(new Date(room.checkOut) <= new Date(e.checkIn) || new Date(room.checkIn) >= new Date(e.checkOut))
+        ) || assignedInThisSession.includes(room.roomNumber);
+
+        if (!isOccupied) {
+          assignedRoom = room.roomNumber;
+          assignedInThisSession.push(room.roomNumber);
+        }
+      }
+
+      // If no room assigned yet, find first available
+      if (assignedRoom === 'Unassigned' && roomType && roomType.roomNumbers) {
         for (const roomNum of roomType.roomNumbers) {
           // Check if room is already assigned in this session
           if (assignedInThisSession.includes(roomNum)) {
@@ -961,7 +980,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                                 isToday={new Date().toDateString() === d.toDateString()}
                                 onClick={() => {
                                   if (!booking) {
-                                    setBookingPrefill({ checkIn: date, roomTypeId: row.parentId || '' });
+                                    setBookingPrefill({ checkIn: date, roomTypeId: row.parentId || '', roomId: row.id });
                                     setIsNewBookingModalOpen(true);
                                   }
                                 }}

@@ -16,7 +16,7 @@ interface NewBookingModalProps {
         rooms: Array<{ roomTypeId: string, checkIn: string, checkOut: string }>,
         source?: 'Direct' | 'MMT' | 'Booking.com' | 'Expedia'
     }) => void;
-    prefill?: { checkIn: string; roomTypeId: string } | null;
+    prefill?: { checkIn: string; roomTypeId: string; roomId?: string } | null;
 }
 
 export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents, onCreateBookings, prefill }: NewBookingModalProps) {
@@ -25,7 +25,7 @@ export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents
     const [phoneNumber, setPhoneNumber] = useState('');
     const [email, setEmail] = useState('');
     const [roomCount, setRoomCount] = useState(1);
-    const [roomDetails, setRoomDetails] = useState<Array<{ tempId: number, roomTypeId: string, checkIn: string, checkOut: string }>>([]);
+    const [roomDetails, setRoomDetails] = useState<Array<{ tempId: number, roomTypeId: string, checkIn: string, checkOut: string, roomNumber?: string }>>([]);
     const [foundGuest, setFoundGuest] = useState<any>(null);
     const [isSearching, setIsSearching] = useState(false);
     const [guestDetails, setGuestDetails] = useState<Partial<GuestDetails> | null>(null);
@@ -45,8 +45,19 @@ export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents
             setFoundGuest(null);
             setGuestDetails(null);
             setSource('Direct');
+
+            // Set initial room detail from prefill
+            const initialRoomDetails = [{
+                tempId: Date.now(),
+                roomTypeId: prefill?.roomTypeId || roomTypes[0]?.id || '',
+                checkIn: prefill?.checkIn || today,
+                checkOut: tomorrow,
+                roomNumber: prefill?.roomId
+            }];
+            setRoomDetails(initialRoomDetails);
+            setRoomCount(1);
         }
-    }, [isOpen]);
+    }, [isOpen, prefill, roomTypes, today, tomorrow]);
 
     // Auto-lookup when phone number changes (debounced)
     useEffect(() => {
@@ -207,7 +218,7 @@ export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents
             phoneNumber,
             email,
             guestDetails: guestDetails || undefined,
-            rooms: roomDetails.map(({ roomTypeId, checkIn, checkOut }) => ({ roomTypeId, checkIn, checkOut })),
+            rooms: roomDetails.map(({ roomTypeId, checkIn, checkOut, roomNumber }) => ({ roomTypeId, checkIn, checkOut, roomNumber })),
             source
         });
         onClose();
