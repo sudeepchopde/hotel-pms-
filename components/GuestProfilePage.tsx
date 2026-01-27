@@ -1480,6 +1480,20 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           </span>
                         )}
                       </div>
+
+                      {/* Stay Dates Display */}
+                      <div className="flex items-center gap-4 text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50/50 px-3 py-1.5 rounded-xl border border-indigo-100/50 w-fit">
+                        <div className="flex items-center gap-1.5">
+                          <Clock className="w-3 h-3" />
+                          <span>In: {new Date(booking.checkIn).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                        </div>
+                        <div className="w-1 h-1 rounded-full bg-indigo-200" />
+                        <div className="flex items-center gap-1.5">
+                          <LogOut className="w-3 h-3" />
+                          <span>Out: {new Date(booking.checkOut).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                        </div>
+                      </div>
+
                       <div className="flex items-center gap-4 mt-1">
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Primary Resident
@@ -1489,28 +1503,6 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                             Profile ID: #{editableDetails.profileId}
                           </span>
                         )}
-                        <select
-                          value={editableDetails.nationality || 'Indian'}
-                          onChange={(e) => handleInputChange('nationality', e.target.value)}
-                          className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100 uppercase tracking-widest cursor-pointer focus:ring-0 appearance-none"
-                        >
-                          <option value="Indian">Indian</option>
-                          <option value="American">American</option>
-                          <option value="British">British</option>
-                          <option value="Canadian">Canadian</option>
-                          <option value="Australian">Australian</option>
-                          <option value="German">German</option>
-                          <option value="French">French</option>
-                          <option value="Japanese">Japanese</option>
-                          <option value="Chinese">Chinese</option>
-                          <option value="Russian">Russian</option>
-                          <option value="UAE">UAE</option>
-                          <option value="Saudi">Saudi</option>
-                          <option value="Nepalese">Nepalese</option>
-                          <option value="Bangladeshi">Bangladeshi</option>
-                          <option value="Sri Lankan">Sri Lankan</option>
-                          <option value="Other">Other</option>
-                        </select>
                         {/* VIP Toggle - next to nationality */}
                         {!isAddingAccessory && (
                           <button
