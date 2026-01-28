@@ -142,3 +142,21 @@ class GuestProfileDB(Base):
     signature = Column(String)
     preferences = Column(String)
     last_check_in = Column(String)
+
+class NotificationDB(Base):
+    __tablename__ = "notifications"
+    
+    id = Column(String, primary_key=True, index=True)
+    type = Column(String, nullable=False)  # 'reservation', 'checkin', 'checkout', 'payment', 'housekeeping', 'guest_request', 'system'
+    category = Column(String, nullable=False)  # Subcategory like 'new_booking', 'cancellation', etc.
+    title = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    priority = Column(String, default="normal")  # 'low', 'normal', 'high', 'urgent'
+    is_read = Column(Boolean, default=False)
+    is_dismissed = Column(Boolean, default=False)
+    created_at = Column(String, nullable=False)  # ISO timestamp
+    read_at = Column(String, nullable=True)
+    booking_id = Column(String, ForeignKey("bookings.id"), nullable=True)
+    room_number = Column(String, nullable=True)
+    metadata = Column(JSON, default={})  # Additional context data
+

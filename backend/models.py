@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Union, Literal
+from typing import List, Optional, Dict, Union, Literal, Any
 from pydantic import BaseModel
 
 class LoyaltyTier(BaseModel):
@@ -211,3 +211,29 @@ class InboundEmail(BaseModel):
     HtmlBody: Optional[str] = None
     Headers: Optional[List[Dict[str, str]]] = None
     MessageID: Optional[str] = None
+
+class Notification(BaseModel):
+    id: str
+    type: Literal['reservation', 'checkin', 'checkout', 'payment', 'housekeeping', 'guest_request', 'system']
+    category: str
+    title: str
+    message: str
+    priority: Literal['low', 'normal', 'high', 'urgent'] = 'normal'
+    isRead: bool = False
+    isDismissed: bool = False
+    createdAt: str
+    readAt: Optional[str] = None
+    bookingId: Optional[str] = None
+    roomNumber: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+class NotificationCreate(BaseModel):
+    type: Literal['reservation', 'checkin', 'checkout', 'payment', 'housekeeping', 'guest_request', 'system']
+    category: str
+    title: str
+    message: str
+    priority: Literal['low', 'normal', 'high', 'urgent'] = 'normal'
+    bookingId: Optional[str] = None
+    roomNumber: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+

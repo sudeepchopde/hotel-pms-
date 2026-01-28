@@ -20,6 +20,7 @@ OTAConnectionDB = None
 RateRulesDB = None
 GuestProfileDB = None
 PropertySettingsDB = None
+NotificationDB = None
 
 # Import Pydantic models at top level for FastAPI type validation
 from backend.models import (
@@ -34,7 +35,9 @@ from backend.models import (
     OCRRequest,
     RazorpayOrderRequest,
     RazorpayVerifyRequest,
-    InboundEmail
+    InboundEmail,
+    Notification,
+    NotificationCreate
 )
 
 get_db_real = None
@@ -43,7 +46,7 @@ engine = None
 def _load_db_imports():
     """Lazy load database imports to avoid import-time failures on Vercel."""
     global _db_imports_loaded, _USE_DATABASE
-    global HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, RateRulesDB, GuestProfileDB, PropertySettingsDB
+    global HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, RateRulesDB, GuestProfileDB, PropertySettingsDB, NotificationDB
     global Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest, GuestProfile, PropertySettings
     global get_db_real, engine
     
@@ -60,7 +63,8 @@ def _load_db_imports():
             OTAConnectionDB as _OTAConnectionDB, 
             RateRulesDB as _RateRulesDB, 
             GuestProfileDB as _GuestProfileDB, 
-            PropertySettingsDB as _PropertySettingsDB
+            PropertySettingsDB as _PropertySettingsDB,
+            NotificationDB as _NotificationDB
         )
         
         # Assign to globals
@@ -73,6 +77,7 @@ def _load_db_imports():
         RateRulesDB = _RateRulesDB
         GuestProfileDB = _GuestProfileDB
         PropertySettingsDB = _PropertySettingsDB
+        NotificationDB = _NotificationDB
         
         # Test connection and create tables if they don't exist
         from backend.database import Base
@@ -1199,6 +1204,20 @@ def create_booking(booking: Booking, db=Depends(get_db)):
         db.add(db_booking)
         db.commit()
         db.refresh(db_booking)
+        
+        # Create notification for new booking
+        create_notification_internal(
+            db,
+            notif_type="reservation",
+            category="new_booking",
+            title="New Reservation",
+            message=f"{booking.guestName or 'Guest'} arriving {booking.checkIn} - Room {booking.roomNumber or 'Unassigned'}",
+            priority="normal",
+            booking_id=booking.id,
+            room_number=booking.roomNumber
+        )
+        db.commit()
+        
         return db_booking_to_pydantic(db_booking)
     
     # Fallback
@@ -1278,6 +1297,10 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
         if not db_booking:
             raise HTTPException(status_code=404, detail="Booking not found")
         
+        # Track old status for notification triggers
+        old_status = db_booking.status
+        new_status = booking.status
+        
         # Save or update guest profile whenever guest details are present
         if booking.guestDetails and booking.guestDetails.name and booking.guestDetails.phoneNumber:
             profile_id = _sync_guest_profile(booking.guestDetails, booking.checkIn, db)
@@ -1317,6 +1340,47 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
 
         db.commit()
         db.refresh(db_booking)
+        
+        # Create notifications for status changes
+        if old_status != new_status:
+            guest_name = booking.guestName or 'Guest'
+            room_info = f"Room {booking.roomNumber}" if booking.roomNumber else ""
+            
+            if new_status == 'CheckedIn':
+                create_notification_internal(
+                    db,
+                    notif_type="checkin",
+                    category="guest_arrival",
+                    title="Guest Checked In",
+                    message=f"{guest_name} has checked in to {room_info}",
+                    priority="high",
+                    booking_id=booking_id,
+                    room_number=booking.roomNumber
+                )
+            elif new_status == 'CheckedOut':
+                create_notification_internal(
+                    db,
+                    notif_type="checkout",
+                    category="guest_departure",
+                    title="Guest Checked Out",
+                    message=f"{guest_name} has checked out from {room_info}",
+                    priority="normal",
+                    booking_id=booking_id,
+                    room_number=booking.roomNumber
+                )
+            elif new_status == 'Cancelled':
+                create_notification_internal(
+                    db,
+                    notif_type="reservation",
+                    category="cancellation",
+                    title="Booking Cancelled",
+                    message=f"Reservation for {guest_name} ({booking.checkIn}) has been cancelled",
+                    priority="high",
+                    booking_id=booking_id,
+                    room_number=booking.roomNumber
+                )
+            db.commit()
+        
         return db_booking_to_pydantic(db_booking)
     
     # Fallback
@@ -1538,3 +1602,156 @@ def checkout_booking(booking_id: str, db=Depends(get_db)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+# ========== NOTIFICATIONS API ==========
+import uuid
+
+def db_notification_to_pydantic(db_notif):
+    """Convert NotificationDB to Pydantic Notification model"""
+    return Notification(
+        id=db_notif.id,
+        type=db_notif.type,
+        category=db_notif.category,
+        title=db_notif.title,
+        message=db_notif.message,
+        priority=db_notif.priority,
+        isRead=db_notif.is_read,
+        isDismissed=db_notif.is_dismissed,
+        createdAt=db_notif.created_at,
+        readAt=db_notif.read_at,
+        bookingId=db_notif.booking_id,
+        roomNumber=db_notif.room_number,
+        metadata=db_notif.metadata or {}
+    )
+
+def create_notification_internal(db, notif_type: str, category: str, title: str, message: str, 
+                                 priority: str = "normal", booking_id: str = None, 
+                                 room_number: str = None, metadata: dict = None):
+    """Helper function to create a notification from within other endpoints"""
+    if not USE_DATABASE() or not db:
+        return None
+    
+    notif_id = f"notif-{str(uuid.uuid4())[:8]}"
+    new_notif = NotificationDB(
+        id=notif_id,
+        type=notif_type,
+        category=category,
+        title=title,
+        message=message,
+        priority=priority,
+        is_read=False,
+        is_dismissed=False,
+        created_at=datetime.now().isoformat(),
+        booking_id=booking_id,
+        room_number=room_number,
+        metadata=metadata or {}
+    )
+    db.add(new_notif)
+    db.flush()
+    return notif_id
+
+@app.get("/api/notifications")
+def get_notifications(unread_only: bool = False, type_filter: str = None, limit: int = 50, db=Depends(get_db)):
+    """Get notifications with optional filters"""
+    if not USE_DATABASE() or not db:
+        return []
+    
+    query = db.query(NotificationDB).filter(NotificationDB.is_dismissed == False)
+    
+    if unread_only:
+        query = query.filter(NotificationDB.is_read == False)
+    
+    if type_filter:
+        query = query.filter(NotificationDB.type == type_filter)
+    
+    notifications = query.order_by(NotificationDB.created_at.desc()).limit(limit).all()
+    return [db_notification_to_pydantic(n) for n in notifications]
+
+@app.get("/api/notifications/unread-count")
+def get_unread_notification_count(db=Depends(get_db)):
+    """Get count of unread notifications"""
+    if not USE_DATABASE() or not db:
+        return {"count": 0}
+    
+    count = db.query(NotificationDB).filter(
+        NotificationDB.is_read == False,
+        NotificationDB.is_dismissed == False
+    ).count()
+    
+    return {"count": count}
+
+@app.post("/api/notifications")
+def create_notification(notification: NotificationCreate, db=Depends(get_db)):
+    """Create a new notification"""
+    if not USE_DATABASE() or not db:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    notif_id = f"notif-{str(uuid.uuid4())[:8]}"
+    
+    new_notif = NotificationDB(
+        id=notif_id,
+        type=notification.type,
+        category=notification.category,
+        title=notification.title,
+        message=notification.message,
+        priority=notification.priority,
+        is_read=False,
+        is_dismissed=False,
+        created_at=datetime.now().isoformat(),
+        booking_id=notification.bookingId,
+        room_number=notification.roomNumber,
+        metadata=notification.metadata or {}
+    )
+    
+    db.add(new_notif)
+    db.commit()
+    db.refresh(new_notif)
+    
+    return db_notification_to_pydantic(new_notif)
+
+@app.put("/api/notifications/{notification_id}/read")
+def mark_notification_read(notification_id: str, db=Depends(get_db)):
+    """Mark a single notification as read"""
+    if not USE_DATABASE() or not db:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    notif = db.query(NotificationDB).filter(NotificationDB.id == notification_id).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    
+    notif.is_read = True
+    notif.read_at = datetime.now().isoformat()
+    db.commit()
+    
+    return {"status": "success"}
+
+@app.put("/api/notifications/read-all")
+def mark_all_notifications_read(db=Depends(get_db)):
+    """Mark all notifications as read"""
+    if not USE_DATABASE() or not db:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    db.query(NotificationDB).filter(
+        NotificationDB.is_read == False
+    ).update({
+        "is_read": True,
+        "read_at": datetime.now().isoformat()
+    })
+    db.commit()
+    
+    return {"status": "success"}
+
+@app.delete("/api/notifications/{notification_id}")
+def dismiss_notification(notification_id: str, db=Depends(get_db)):
+    """Dismiss/delete a notification"""
+    if not USE_DATABASE() or not db:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    notif = db.query(NotificationDB).filter(NotificationDB.id == notification_id).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    
+    notif.is_dismissed = True
+    db.commit()
+    
+    return {"status": "success"}

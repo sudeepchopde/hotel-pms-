@@ -14,11 +14,12 @@ import GuestsView from './components/GuestsView';
 import ComplianceView from './components/ComplianceView';
 import GuestMenu from './components/GuestMenu';
 import SecurityView from './components/SecurityView';
+import NotificationsPanel from './components/NotificationsPanel';
 import {
   LayoutDashboard, FileText, Database, Settings, ShieldCheck,
   BrainCircuit, Building2, ChevronDown, Presentation, TrendingUp,
   BarChart2, FileSpreadsheet, Home, ConciergeBell, Users, FileBadge,
-  PanelLeftClose, PanelLeftOpen, ShieldAlert, AlertCircle, GripVertical
+  PanelLeftClose, PanelLeftOpen, ShieldAlert, AlertCircle, GripVertical, Bell
 } from 'lucide-react';
 import { Hotel, OTAConnection, RateRulesConfig, RoomType, SyncEvent, Booking, FolioItem, VerificationAttempt, RoomSecurityStatus, PropertySettings } from './types';
 
@@ -124,6 +125,8 @@ const App: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [propertySettings, setPropertySettings] = useState<PropertySettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isNotificationsPanelOpen, setIsNotificationsPanelOpen] = useState(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   // Navigation items order state
   const [navItems, setNavItems] = useState(DEFAULT_NAV_ITEMS);
@@ -247,6 +250,23 @@ const App: React.FC = () => {
       }
     };
     loadData();
+  }, []);
+
+  // Poll for notification count
+  useEffect(() => {
+    const loadNotificationCount = async () => {
+      try {
+        const { fetchUnreadNotificationCount } = await import('./api');
+        const count = await fetchUnreadNotificationCount();
+        setUnreadNotificationCount(count);
+      } catch (e) {
+        console.error('Failed to fetch notification count:', e);
+      }
+    };
+
+    loadNotificationCount();
+    const interval = setInterval(loadNotificationCount, 30000); // Poll every 30 seconds
+    return () => clearInterval(interval);
   }, []);
 
   // Security State
@@ -531,12 +551,26 @@ const App: React.FC = () => {
             </div>
             {!isSidebarCollapsed && <h1 className="text-lg font-bold tracking-tight whitespace-nowrap truncate">SyncGuard <span className="text-indigo-300">PMS</span></h1>}
           </div>
-          <button
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors shrink-0 ml-1"
-          >
-            {isSidebarCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setIsNotificationsPanelOpen(true)}
+              className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors shrink-0 relative"
+              title="Notifications"
+            >
+              <Bell className="w-5 h-5" />
+              {unreadNotificationCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
+                  {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors shrink-0"
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
+            </button>
+          </div>
         </div>
 
         <div className="relative pt-2 w-full">
@@ -702,6 +736,16 @@ const App: React.FC = () => {
           />
         )}
       </main>
+
+      {/* Notifications Panel */}
+      <NotificationsPanel
+        isOpen={isNotificationsPanelOpen}
+        onClose={() => {
+          setIsNotificationsPanelOpen(false);
+          // Refresh count after closing
+          import('./api').then(m => m.fetchUnreadNotificationCount()).then(count => setUnreadNotificationCount(count)).catch(() => { });
+        }}
+      />
     </div>
   );
 };

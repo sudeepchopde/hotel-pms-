@@ -269,3 +269,23 @@ export interface RoomSecurityStatus {
   isQRDisabled: boolean;
   failCount: number;
 }
+
+export type NotificationType = 'reservation' | 'checkin' | 'checkout' | 'payment' | 'housekeeping' | 'guest_request' | 'system';
+export type NotificationPriority = 'low' | 'normal' | 'high' | 'urgent';
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  category: string;
+  title: string;
+  message: string;
+  priority: NotificationPriority;
+  isRead: boolean;
+  isDismissed: boolean;
+  createdAt: string;
+  readAt?: string;
+  bookingId?: string;
+  roomNumber?: string;
+  metadata?: Record<string, any>;
+}
+

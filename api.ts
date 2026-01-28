@@ -1,4 +1,4 @@
-import { Hotel, RoomType, OTAConnection, RateRulesConfig, Booking, PropertySettings } from './types';
+import { Hotel, RoomType, OTAConnection, RateRulesConfig, Booking, PropertySettings, Notification } from './types';
 
 const API_BASE = '/api';
 
@@ -152,4 +152,40 @@ export const fetchGuestHistory = async (name: string, phone?: string, excludeBoo
     const response = await fetch(`${API_BASE}/guest/history?${params.toString()}`);
     if (!response.ok) return [];
     return response.json();
+};
+
+// ========== NOTIFICATIONS API ==========
+
+export const fetchNotifications = async (unreadOnly: boolean = false, typeFilter?: string): Promise<Notification[]> => {
+    const params = new URLSearchParams();
+    if (unreadOnly) params.append('unread_only', 'true');
+    if (typeFilter) params.append('type_filter', typeFilter);
+    const response = await fetch(`${API_BASE}/notifications?${params.toString()}`);
+    if (!response.ok) return [];
+    return response.json();
+};
+
+export const fetchUnreadNotificationCount = async (): Promise<number> => {
+    const response = await fetch(`${API_BASE}/notifications/unread-count`);
+    if (!response.ok) return 0;
+    const data = await response.json();
+    return data.count || 0;
+};
+
+export const markNotificationRead = async (notificationId: string): Promise<void> => {
+    await fetch(`${API_BASE}/notifications/${notificationId}/read`, {
+        method: 'PUT'
+    });
+};
+
+export const markAllNotificationsRead = async (): Promise<void> => {
+    await fetch(`${API_BASE}/notifications/read-all`, {
+        method: 'PUT'
+    });
+};
+
+export const dismissNotification = async (notificationId: string): Promise<void> => {
+    await fetch(`${API_BASE}/notifications/${notificationId}`, {
+        method: 'DELETE'
+    });
 };

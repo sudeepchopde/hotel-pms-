@@ -67,6 +67,7 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteWarning, setDeleteWarning] = useState<{ name: string, count: number } | null>(null);
+  const [roomChangeWarning, setRoomChangeWarning] = useState<{ affectedBookings: Booking[], removedRooms: string[] } | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [showQRPreview, setShowQRPreview] = useState(false);
   const [showCodeSnippet, setShowCodeSnippet] = useState(false);
@@ -136,15 +137,17 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
             e.checkOut >= todayStr
           ) as Booking[];
 
-          if (affectedBookings.length > 0) {
-            const affectedRooms = Array.from(new Set(affectedBookings.map(b => b.roomNumber))).join(', ');
-            setValidationError(`Cannot modify/remove room(s) ${affectedRooms} because they have active or future bookings. Please cancel or relocate these bookings first.`);
+          if (affectedBookings.length > 0 && !roomChangeWarning) {
+            // Show warning modal instead of blocking
+            setRoomChangeWarning({ affectedBookings, removedRooms: removed });
             setIsSavingRoom(false);
             return;
           }
         }
       }
     }
+    // Clear the warning if user confirmed
+    setRoomChangeWarning(null);
 
     if (formData.roomNumbers) {
       const normalizedNumbers = formData.roomNumbers.map(n => n.trim());
@@ -996,6 +999,62 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
           </div>
         )
       }
+      {/* Room Change Warning Modal */}
+      {roomChangeWarning && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-8 animate-in zoom-in-95 duration-300">
+            <div className="flex items-start gap-4 mb-6">
+              <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">Bookings Will Be Reassigned</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Removing room(s) <span className="font-bold text-amber-600">{roomChangeWarning.removedRooms.join(', ')}</span> will affect {roomChangeWarning.affectedBookings.length} active or future booking(s).
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 max-h-48 overflow-y-auto">
+              <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-3">Affected Bookings</p>
+              <div className="space-y-2">
+                {roomChangeWarning.affectedBookings.map(booking => (
+                  <div key={booking.id} className="flex items-center justify-between bg-white rounded-xl p-3 border border-amber-100">
+                    <div>
+                      <p className="font-bold text-sm text-slate-900">{booking.guestName}</p>
+                      <p className="text-[10px] text-slate-500">Room {booking.roomNumber} • {new Date(booking.checkIn).toLocaleDateString()} - {new Date(booking.checkOut).toLocaleDateString()}</p>
+                    </div>
+                    <span className={`text-[9px] font-black px-2 py-1 rounded-lg ${booking.status === 'CheckedIn' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                      {booking.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-6">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                <strong className="text-slate-900">What happens next:</strong> These bookings will automatically be reassigned to other available rooms within the same category. The guests won't be affected.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRoomChangeWarning(null)}
+                className="flex-1 py-3 px-6 bg-slate-100 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-200 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSave()}
+                className="flex-1 py-3 px-6 bg-amber-500 text-white rounded-xl font-bold text-sm hover:bg-amber-600 transition-all shadow-lg shadow-amber-200"
+              >
+                Proceed & Reassign
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div >
   );
 };

@@ -307,11 +307,17 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
   const assignedBookings = useMemo(() => {
     const bookings = syncEvents.filter(e => e.type === 'booking' && (e.status === 'Confirmed' || e.status === 'CheckedIn' || e.status === 'CheckedOut' || e.status === 'Rejected')) as Booking[];
     return bookings.map(b => {
-      if (b.roomNumber) return b;
       const rt = roomTypes.find(t => t.id === b.roomTypeId);
       if (!rt) return b;
 
       const availableRooms = rt.roomNumbers && rt.roomNumbers.length > 0 ? rt.roomNumbers : [];
+
+      // Check if booking has a room number AND if it's still valid for this room type
+      const hasValidRoom = b.roomNumber && b.roomNumber !== 'Unassigned' && availableRooms.includes(b.roomNumber);
+
+      if (hasValidRoom) return b;
+
+      // Room number is missing or no longer valid for this room type - reassign
       if (availableRooms.length === 0) return { ...b, roomNumber: 'Unassigned' };
 
       const hash = b.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -320,6 +326,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
       return { ...b, roomNumber: assignedNum };
     });
   }, [syncEvents, roomTypes]);
+
 
   // Get all bookings related to the selected booking by reservationId
   const relatedBookings = useMemo(() => {
