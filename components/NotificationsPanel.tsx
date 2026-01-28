@@ -124,12 +124,12 @@ const NotificationsPanel: React.FC<NotificationsPanelProps> = ({ isOpen, onClose
         <>
             {/* Backdrop */}
             <div
-                className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100]"
                 onClick={onClose}
             />
 
             {/* Panel */}
-            <div className="fixed right-0 top-0 h-full w-full max-w-md bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border-l border-slate-700/50 shadow-2xl z-50 flex flex-col animate-slide-in-right">
+            <div className="fixed right-0 top-0 h-full w-full max-w-md bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border-l border-slate-700/50 shadow-2xl z-[101] flex flex-col animate-slide-in-right">
                 {/* Header */}
                 <div className="p-4 border-b border-slate-700/50 bg-slate-800/50">
                     <div className="flex items-center justify-between mb-3">
@@ -170,8 +170,8 @@ const NotificationsPanel: React.FC<NotificationsPanelProps> = ({ isOpen, onClose
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
                                 className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap transition-all ${activeTab === tab.id
-                                        ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                                        : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
+                                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                                    : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
                                     }`}
                             >
                                 {tab.label}
@@ -197,8 +197,8 @@ const NotificationsPanel: React.FC<NotificationsPanelProps> = ({ isOpen, onClose
                             <div
                                 key={notification.id}
                                 className={`group relative p-3 rounded-xl border transition-all cursor-pointer ${notification.isRead
-                                        ? 'bg-slate-800/30 border-slate-700/30'
-                                        : `${PRIORITY_COLORS[notification.priority]} border`
+                                    ? 'bg-slate-800/30 border-slate-700/30'
+                                    : `${PRIORITY_COLORS[notification.priority]} border`
                                     }`}
                                 onClick={() => !notification.isRead && handleMarkRead(notification.id)}
                             >
