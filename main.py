@@ -121,6 +121,20 @@ except Exception:
 def ping():
     return {"status": "ok", "version": "1.1", "database": "lazy"}
 
+@app.get("/api/init-db")
+def init_db():
+    """Manually trigger database table creation."""
+    try:
+        success = _load_db_imports()
+        if not success:
+            return {"status": "error", "message": "Database not available"}
+        
+        from backend.database import Base
+        Base.metadata.create_all(bind=engine)
+        return {"status": "success", "message": "Database tables ensured"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 # ========== OCR INTEGRATION ==========
 # google-genai is imported lazily inside the OCR function to avoid import-time failures
 import base64
