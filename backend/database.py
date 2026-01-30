@@ -9,8 +9,15 @@ from dotenv import load_dotenv
 load_dotenv('.env')  # Load base .env first
 load_dotenv('.env.local', override=True)  # Override with .env.local if exists
 
-# Get DATABASE_URL from environment variable (Vercel sets this automatically)
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/hotel_pms")
+# Get DATABASE_URL from environment variable
+# Vercel's Neon integration may use different variable names
+DATABASE_URL = (
+    os.getenv("POSTGRES_URL") or 
+    os.getenv("POSTGRES_PRISMA_URL") or 
+    os.getenv("POSTGRES_URL_NON_POOLING") or
+    os.getenv("DATABASE_URL") or 
+    "postgresql://postgres:postgres@localhost:5432/hotel_pms"
+)
 
 # Neon PostgreSQL requires SSL and works best with specific pool settings for serverless
 engine_args = {
