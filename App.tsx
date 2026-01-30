@@ -295,36 +295,7 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Separate effect to create dummy booking after data is loaded (non-blocking)
-  useEffect(() => {
-    if (!isGuestMode || !guestRoomNumber || isLoading) return;
-
-    // Check if a booking exists for the guest room
-    const roomNumber = guestRoomNumber;
-    const exists = syncEvents.some(e => e.type === 'booking' && e.roomNumber === roomNumber && e.status === 'CheckedIn');
-    if (exists) return;
-
-    // Create a dummy booking for demo purposes
-    const dummyBooking: Booking = {
-      id: `mock-bk-${roomNumber}`,
-      roomTypeId: 'rt-1',
-      roomNumber: roomNumber,
-      guestName: 'Vikram Malhotra',
-      source: 'Direct',
-      status: 'CheckedIn',
-      timestamp: Date.now(),
-      checkIn: new Date().toISOString().split('T')[0],
-      checkOut: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-      amount: 4500,
-      folio: [],
-      payments: []
-    };
-
-    setSyncEvents(prev => [...prev, { ...dummyBooking, type: 'booking' } as SyncEvent]);
-
-    // Persist dummy to backend for demo consistency (fire and forget)
-    import('./api').then(m => m.createBooking(dummyBooking)).catch(() => { });
-  }, [isGuestMode, guestRoomNumber, isLoading, syncEvents.length]);
+  // Note: Removed automatic dummy booking creation - guest mode now requires actual checked-in booking
 
   // Secure Verification Logic (Simulating POST /verify-guest with Throttling)
   const handleValidateGuest = async (roomNumber: string, lastNameInput: string): Promise<string | null> => {
@@ -517,18 +488,94 @@ const App: React.FC = () => {
     }
   };
 
-  // Check for Guest Mode first to ensure the menu renders even if the dashboard is still loading
+  // Check for Guest Mode - verify there's an actual checked-in booking for this room
   if (isGuestMode) {
-    return (
-      <div style={{ backgroundColor: '#ffffff', minHeight: '100vh', width: '100%' }}>
-        <GuestMenu
-          roomNumber={guestRoomNumber}
-          onValidateGuest={handleValidateGuest}
-          onPlaceOrder={(_room, items) => handlePlaceOrder(guestRoomNumber, items)}
-          onSecurityAlert={handleSecurityAlert}
-        />
-      </div>
+    // Check if booking data is still loading
+    if (isLoading) {
+      return (
+        <div style={{ backgroundColor: '#ffffff', minHeight: '100vh', width: '100%' }} className="flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+            <p className="font-bold text-sm text-slate-600">Loading room service...</p>
+          </div>
+        </div>
+      );
+    }
+
+    // Check if there's a checked-in booking for this room
+    const hasCheckedInGuest = syncEvents.some(
+      e => e.type === 'booking' && e.roomNumber === guestRoomNumber && e.status === 'CheckedIn'
     );
+
+    if (hasCheckedInGuest) {
+      // Show the guest menu
+      return (
+        <div style={{ backgroundColor: '#ffffff', minHeight: '100vh', width: '100%' }}>
+          <GuestMenu
+            roomNumber={guestRoomNumber}
+            onValidateGuest={handleValidateGuest}
+            onPlaceOrder={(_room, items) => handlePlaceOrder(guestRoomNumber, items)}
+            onSecurityAlert={handleSecurityAlert}
+          />
+        </div>
+      );
+    } else {
+      // No checked-in guest for this room - show error message
+      return (
+        <div style={{ backgroundColor: '#f8fafc', minHeight: '100vh', width: '100%' }} className="flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-8 text-center">
+              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h1 className="text-2xl font-black text-white tracking-tight">Room Not Active</h1>
+              <p className="text-slate-400 text-sm mt-2 font-medium">Room {guestRoomNumber}</p>
+            </div>
+
+            {/* Content */}
+            <div className="p-8 space-y-6">
+              <div className="text-center">
+                <p className="text-slate-600 leading-relaxed">
+                  There is currently <strong className="text-slate-800">no guest checked in</strong> for this room.
+                </p>
+                <p className="text-slate-500 text-sm mt-3">
+                  Room service is only available for guests with an active check-in.
+                </p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                <div className="flex items-start gap-3">
+                  <svg className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="text-sm text-amber-800">
+                    <p className="font-bold">Need assistance?</p>
+                    <p className="mt-1 text-amber-700">Please contact the front desk to complete your check-in process.</p>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => window.location.href = window.location.origin}
+                className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-bold text-sm transition-all"
+              >
+                Return to Homepage
+              </button>
+            </div>
+
+            {/* Footer */}
+            <div className="px-8 py-4 bg-slate-50 border-t border-slate-100 text-center">
+              <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">
+                Powered by SyncGuard PMS
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
   }
 
   if (isLoading || !selectedHotel) {
