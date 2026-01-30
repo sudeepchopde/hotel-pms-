@@ -123,17 +123,61 @@ def ping():
 
 @app.get("/api/init-db")
 def init_db():
-    """Manually trigger database table creation."""
+    """Manual trigger to ensure all tables exist - with debug info"""
+    import os
+    
+    # Check which database variables are available
+    db_vars = {
+        "POSTGRES_URL": "YES" if os.getenv("POSTGRES_URL") else "NO",
+        "POSTGRES_PRISMA_URL": "YES" if os.getenv("POSTGRES_PRISMA_URL") else "NO",
+        "POSTGRES_URL_NON_POOLING": "YES" if os.getenv("POSTGRES_URL_NON_POOLING") else "NO",
+        "DATABASE_URL": "YES" if os.getenv("DATABASE_URL") else "NO",
+        "POSTGRES_HOST": "YES" if os.getenv("POSTGRES_HOST") else "NO",
+    }
+    
+    # Try to get any database URL
+    db_url = (
+        os.getenv("POSTGRES_URL") or 
+        os.getenv("POSTGRES_PRISMA_URL") or 
+        os.getenv("POSTGRES_URL_NON_POOLING") or
+        os.getenv("DATABASE_URL")
+    )
+    
+    if not db_url:
+        return {
+            "status": "error", 
+            "message": "No database URL found",
+            "env_vars": db_vars,
+            "hint": "Add DATABASE_URL to Vercel Environment Variables"
+        }
+    
     try:
-        success = _load_db_imports()
-        if not success:
-            return {"status": "error", "message": "Database not available"}
+        from sqlalchemy import create_engine
+        from sqlalchemy.ext.declarative import declarative_base
         
+        # Fix postgres:// -> postgresql://
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        
+        engine = create_engine(db_url, pool_pre_ping=True)
+        
+        # Import and create tables
         from backend.database import Base
+        import backend.db_models
         Base.metadata.create_all(bind=engine)
-        return {"status": "success", "message": "Database tables ensured"}
+        
+        return {
+            "status": "success", 
+            "message": "Database tables initialized",
+            "env_vars": db_vars
+        }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {
+            "status": "error", 
+            "message": str(e),
+            "env_vars": db_vars
+        }
+
 
 # ========== OCR INTEGRATION ==========
 # google-genai is imported lazily inside the OCR function to avoid import-time failures
