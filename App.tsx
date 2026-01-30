@@ -265,7 +265,7 @@ const App: React.FC = () => {
     };
 
     loadNotificationCount();
-    const interval = setInterval(loadNotificationCount, 30000); // Poll every 30 seconds
+    const interval = setInterval(loadNotificationCount, 10000); // Poll every 10 seconds
     return () => clearInterval(interval);
   }, []);
 

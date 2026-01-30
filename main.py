@@ -1293,6 +1293,35 @@ def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
                 db.add(db_b)
             
             db.commit()
+            
+            # Create notifications for each booking in the bulk request
+            for db_b in db_bookings:
+                create_notification_internal(
+                    db,
+                    notif_type="reservation",
+                    category="new_booking",
+                    title="New Reservation",
+                    message=f"{db_b.guest_name or 'Guest'} arriving {db_b.check_in} - Room {db_b.room_number or 'Unassigned'}",
+                    priority="normal",
+                    booking_id=db_b.id,
+                    room_number=db_b.room_number
+                )
+            
+            # If it's a multi-room booking, add a summary notification
+            if len(db_bookings) > 1:
+                first_b = db_bookings[0]
+                create_notification_internal(
+                    db,
+                    notif_type="reservation",
+                    category="bulk_booking",
+                    title="Bulk Booking Created",
+                    message=f"Group booking for {first_b.guest_name} ({len(db_bookings)} rooms) created",
+                    priority="high",
+                    booking_id=first_b.id
+                )
+            
+            db.commit()
+            
             return [db_booking_to_pydantic(db_b) for db_b in db_bookings]
         except Exception as e:
             db.rollback()
@@ -1326,6 +1355,10 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
         else:
             db_booking.guest_details = None # Clear if no guest details provided
 
+        # Track folio count for service order notifications
+        old_folio_count = len(db_booking.folio or [])
+        new_folio_count = len(booking.folio or [])
+
         # Update fields
         db_booking.room_type_id = booking.roomTypeId
         db_booking.room_number = booking.roomNumber
@@ -1354,6 +1387,21 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
 
         db.commit()
         db.refresh(db_booking)
+
+        # Notification for new folio items (Service Orders)
+        if new_folio_count > old_folio_count:
+            last_item = booking.folio[-1]
+            create_notification_internal(
+                db,
+                notif_type="housekeeping" if last_item.category == 'Laundry' else "guest_request",
+                category="service_order",
+                title=f"New {last_item.category} Order",
+                message=f"Order for {last_item.description} (₹{last_item.amount}) received from Room {booking.roomNumber}",
+                priority="normal",
+                booking_id=booking_id,
+                room_number=booking.roomNumber
+            )
+            db.commit()
         
         # Create notifications for status changes
         if old_status != new_status:
