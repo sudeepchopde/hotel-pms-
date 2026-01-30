@@ -1882,28 +1882,51 @@ def db_notification_to_pydantic(db_notif):
 def create_notification_internal(db, notif_type: str, category: str, title: str, message: str, 
                                  priority: str = "normal", booking_id: str = None, 
                                  room_number: str = None, metadata: dict = None):
-    """Helper function to create a notification from within other endpoints"""
-    if not USE_DATABASE() or not db:
+    """Helper function to create a notification from within other endpoints - uses direct SQL"""
+    import os
+    import json
+    
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
         return None
     
-    notif_id = f"notif-{str(uuid.uuid4())[:8]}"
-    new_notif = NotificationDB(
-        id=notif_id,
-        type=notif_type,
-        category=category,
-        title=title,
-        message=message,
-        priority=priority,
-        is_read=False,
-        is_dismissed=False,
-        created_at=datetime.now().isoformat(),
-        booking_id=booking_id,
-        room_number=room_number,
-        metadata=metadata or {}
-    )
-    db.add(new_notif)
-    db.flush()
-    return notif_id
+    try:
+        from sqlalchemy import create_engine, text
+        
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        
+        engine = create_engine(db_url, pool_pre_ping=True)
+        
+        notif_id = f"notif-{str(uuid.uuid4())[:8]}"
+        now = datetime.now().isoformat()
+        
+        insert_sql = text("""
+            INSERT INTO notifications (id, type, category, title, message, priority, is_read, is_dismissed, created_at, booking_id, room_number, metadata)
+            VALUES (:id, :type, :category, :title, :message, :priority, :is_read, :is_dismissed, :created_at, :booking_id, :room_number, :metadata)
+        """)
+        
+        with engine.connect() as conn:
+            conn.execute(insert_sql, {
+                "id": notif_id,
+                "type": notif_type,
+                "category": category,
+                "title": title,
+                "message": message,
+                "priority": priority,
+                "is_read": False,
+                "is_dismissed": False,
+                "created_at": now,
+                "booking_id": booking_id,
+                "room_number": room_number,
+                "metadata": json.dumps(metadata or {})
+            })
+            conn.commit()
+        
+        return notif_id
+    except Exception as e:
+        print(f"Error creating notification: {e}")
+        return None
 
 @app.get("/api/notifications")
 def get_notifications(unread_only: bool = False, type_filter: str = None, limit: int = 50):
