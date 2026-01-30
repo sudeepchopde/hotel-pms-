@@ -1294,33 +1294,37 @@ def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
             
             db.commit()
             
-            # Create notifications for each booking in the bulk request
-            for db_b in db_bookings:
-                create_notification_internal(
-                    db,
-                    notif_type="reservation",
-                    category="new_booking",
-                    title="New Reservation",
-                    message=f"{db_b.guest_name or 'Guest'} arriving {db_b.check_in} - Room {db_b.room_number or 'Unassigned'}",
-                    priority="normal",
-                    booking_id=db_b.id,
-                    room_number=db_b.room_number
-                )
-            
-            # If it's a multi-room booking, add a summary notification
-            if len(db_bookings) > 1:
-                first_b = db_bookings[0]
-                create_notification_internal(
-                    db,
-                    notif_type="reservation",
-                    category="bulk_booking",
-                    title="Bulk Booking Created",
-                    message=f"Group booking for {first_b.guest_name} ({len(db_bookings)} rooms) created",
-                    priority="high",
-                    booking_id=first_b.id
-                )
-            
-            db.commit()
+            try:
+                # Create notifications for each booking in the bulk request
+                for db_b in db_bookings:
+                    create_notification_internal(
+                        db,
+                        notif_type="reservation",
+                        category="new_booking",
+                        title="New Reservation",
+                        message=f"{db_b.guest_name or 'Guest'} arriving {db_b.check_in} - Room {db_b.room_number or 'Unassigned'}",
+                        priority="normal",
+                        booking_id=db_b.id,
+                        room_number=db_b.room_number
+                    )
+                
+                # If it's a multi-room booking, add a summary notification
+                if len(db_bookings) > 1:
+                    first_b = db_bookings[0]
+                    create_notification_internal(
+                        db,
+                        notif_type="reservation",
+                        category="bulk_booking",
+                        title="Bulk Booking Created",
+                        message=f"Group booking for {first_b.guest_name} ({len(db_bookings)} rooms) created",
+                        priority="high",
+                        booking_id=first_b.id
+                    )
+                
+                db.commit()
+            except Exception as e:
+                print(f"Error creating bulk notifications: {e}")
+                db.rollback()
             
             return [db_booking_to_pydantic(db_b) for db_b in db_bookings]
         except Exception as e:
@@ -1390,60 +1394,79 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
 
         # Notification for new folio items (Service Orders)
         if new_folio_count > old_folio_count:
-            last_item = booking.folio[-1]
-            create_notification_internal(
-                db,
-                notif_type="housekeeping" if last_item.category == 'Laundry' else "guest_request",
-                category="service_order",
-                title=f"New {last_item.category} Order",
-                message=f"Order for {last_item.description} (₹{last_item.amount}) received from Room {booking.roomNumber}",
-                priority="normal",
-                booking_id=booking_id,
-                room_number=booking.roomNumber
-            )
-            db.commit()
-        
-        # Create notifications for status changes
-        if old_status != new_status:
-            guest_name = booking.guestName or 'Guest'
-            room_info = f"Room {booking.roomNumber}" if booking.roomNumber else ""
-            
-            if new_status == 'CheckedIn':
+            try:
+                last_item = booking.folio[-1]
                 create_notification_internal(
                     db,
-                    notif_type="checkin",
-                    category="guest_arrival",
-                    title="Guest Checked In",
-                    message=f"{guest_name} has checked in to {room_info}",
-                    priority="high",
-                    booking_id=booking_id,
-                    room_number=booking.roomNumber
-                )
-            elif new_status == 'CheckedOut':
-                create_notification_internal(
-                    db,
-                    notif_type="checkout",
-                    category="guest_departure",
-                    title="Guest Checked Out",
-                    message=f"{guest_name} has checked out from {room_info}",
+                    notif_type="housekeeping" if last_item.category == 'Laundry' else "guest_request",
+                    category="service_order",
+                    title=f"New {last_item.category} Order",
+                    message=f"Order for {last_item.description} (₹{last_item.amount}) received from Room {booking.roomNumber}",
                     priority="normal",
                     booking_id=booking_id,
                     room_number=booking.roomNumber
                 )
-            elif new_status == 'Cancelled':
-                create_notification_internal(
-                    db,
-                    notif_type="reservation",
-                    category="cancellation",
-                    title="Booking Cancelled",
-                    message=f"Reservation for {guest_name} ({booking.checkIn}) has been cancelled",
-                    priority="high",
-                    booking_id=booking_id,
-                    room_number=booking.roomNumber
-                )
-            db.commit()
+                db.commit()
+            except Exception as e:
+                print(f"Error creating folio notification: {e}")
+                db.rollback()
+        
+        # Create notifications for status changes
+        if old_status != new_status:
+            try:
+                guest_name = booking.guestName or 'Guest'
+                room_info = f"Room {booking.roomNumber}" if booking.roomNumber else ""
+                
+                if new_status == 'CheckedIn':
+                    create_notification_internal(
+                        db,
+                        notif_type="checkin",
+                        category="guest_arrival",
+                        title="Guest Checked In",
+                        message=f"{guest_name} has checked in to {room_info}",
+                        priority="high",
+                        booking_id=booking_id,
+                        room_number=booking.roomNumber
+                    )
+                elif new_status == 'CheckedOut':
+                    create_notification_internal(
+                        db,
+                        notif_type="checkout",
+                        category="guest_departure",
+                        title="Guest Checked Out",
+                        message=f"{guest_name} has checked out from {room_info}",
+                        priority="normal",
+                        booking_id=booking_id,
+                        room_number=booking.roomNumber
+                    )
+                elif new_status == 'Cancelled':
+                    create_notification_internal(
+                        db,
+                        notif_type="reservation",
+                        category="cancellation",
+                        title="Booking Cancelled",
+                        message=f"Reservation for {guest_name} ({booking.checkIn}) has been cancelled",
+                        priority="high",
+                        booking_id=booking_id,
+                        room_number=booking.roomNumber
+                    )
+                db.commit()
+            except Exception as e:
+                print(f"Error creating status notification: {e}")
+                db.rollback() # Rollback the notification part but booking update was already committed
         
         return db_booking_to_pydantic(db_booking)
+
+@app.get("/api/init-db")
+def init_db():
+    """Manual trigger to ensure all tables exist"""
+    try:
+        from backend.database import engine, Base
+        import backend.db_models # Ensure models are registered
+        Base.metadata.create_all(bind=engine)
+        return {"status": "success", "message": "Database tables initialized"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     
     # Fallback
     for i, b in enumerate(get_fallback_bookings()):
