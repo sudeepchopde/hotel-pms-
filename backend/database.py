@@ -2,12 +2,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
-from dotenv import load_dotenv
 
-# Load environment variables from .env files
-# Priority: .env.local (for local dev) > .env (for production)
-load_dotenv('.env')  # Load base .env first
-load_dotenv('.env.local', override=True)  # Override with .env.local if exists
+# Try to load dotenv but don't fail if files don't exist (e.g., on Vercel)
+try:
+    from dotenv import load_dotenv
+    load_dotenv('.env')
+    load_dotenv('.env.local', override=True)
+except:
+    pass
 
 # Get DATABASE_URL from environment variable
 # Vercel's Neon integration may use different variable names
@@ -18,6 +20,10 @@ DATABASE_URL = (
     os.getenv("DATABASE_URL") or 
     "postgresql://postgres:postgres@localhost:5432/hotel_pms"
 )
+
+# Fix Neon's postgres:// URL format to postgresql:// for SQLAlchemy
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # Neon PostgreSQL requires SSL and works best with specific pool settings for serverless
 engine_args = {
