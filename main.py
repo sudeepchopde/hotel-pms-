@@ -1906,34 +1906,85 @@ def create_notification_internal(db, notif_type: str, category: str, title: str,
     return notif_id
 
 @app.get("/api/notifications")
-def get_notifications(unread_only: bool = False, type_filter: str = None, limit: int = 50, db=Depends(get_db)):
+def get_notifications(unread_only: bool = False, type_filter: str = None, limit: int = 50):
     """Get notifications with optional filters"""
-    if not USE_DATABASE() or not db:
+    import os
+    
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
         return []
     
-    query = db.query(NotificationDB).filter(NotificationDB.is_dismissed == False)
-    
-    if unread_only:
-        query = query.filter(NotificationDB.is_read == False)
-    
-    if type_filter:
-        query = query.filter(NotificationDB.type == type_filter)
-    
-    notifications = query.order_by(NotificationDB.created_at.desc()).limit(limit).all()
-    return [db_notification_to_pydantic(n) for n in notifications]
+    try:
+        from sqlalchemy import create_engine, text
+        
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        
+        engine = create_engine(db_url, pool_pre_ping=True)
+        
+        # Build query
+        sql = "SELECT id, type, category, title, message, priority, is_read, is_dismissed, created_at, read_at, booking_id, room_number, metadata FROM notifications WHERE is_dismissed = FALSE"
+        
+        if unread_only:
+            sql += " AND is_read = FALSE"
+        if type_filter:
+            sql += f" AND type = '{type_filter}'"
+        
+        sql += " ORDER BY created_at DESC LIMIT :limit"
+        
+        with engine.connect() as conn:
+            result = conn.execute(text(sql), {"limit": limit})
+            rows = result.fetchall()
+        
+        # Convert to dict format
+        notifications = []
+        for row in rows:
+            notifications.append({
+                "id": row[0],
+                "type": row[1],
+                "category": row[2],
+                "title": row[3],
+                "message": row[4],
+                "priority": row[5],
+                "isRead": row[6],
+                "isDismissed": row[7],
+                "createdAt": row[8],
+                "readAt": row[9],
+                "bookingId": row[10],
+                "roomNumber": row[11],
+                "metadata": row[12] or {}
+            })
+        
+        return notifications
+    except Exception as e:
+        print(f"Error fetching notifications: {e}")
+        return []
 
 @app.get("/api/notifications/unread-count")
-def get_unread_notification_count(db=Depends(get_db)):
+def get_unread_notification_count():
     """Get count of unread notifications"""
-    if not USE_DATABASE() or not db:
+    import os
+    
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
         return {"count": 0}
     
-    count = db.query(NotificationDB).filter(
-        NotificationDB.is_read == False,
-        NotificationDB.is_dismissed == False
-    ).count()
-    
-    return {"count": count}
+    try:
+        from sqlalchemy import create_engine, text
+        
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        
+        engine = create_engine(db_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT COUNT(*) FROM notifications WHERE is_read = FALSE AND is_dismissed = FALSE"))
+            count = result.scalar()
+        
+        return {"count": count or 0}
+    except Exception as e:
+        print(f"Error counting notifications: {e}")
+        return {"count": 0}
 
 @app.post("/api/notifications")
 def create_notification(notification: NotificationCreate, db=Depends(get_db)):
