@@ -90,10 +90,14 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
   useEffect(() => {
     if (propertySettings) {
       setProfileFormData(propertySettings);
+      // Initialize testBaseUrl from saved publicBaseUrl if available
+      if (propertySettings.publicBaseUrl) {
+        setTestBaseUrl(propertySettings.publicBaseUrl);
+      }
     }
   }, [propertySettings]);
 
-  // Local testing IP/Domain override
+  // Local testing IP/Domain override - initialized from saved publicBaseUrl or window.location.origin
   const [testBaseUrl, setTestBaseUrl] = useState(window.location.origin);
 
   const [formData, setFormData] = useState<Partial<RoomType>>({
@@ -899,38 +903,57 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                               </div>
                             </div>
 
-                            <div className="flex-1 max-w-sm">
+                            <div className="flex-1 max-w-md">
                               <div className="space-y-1.5">
-                                <label className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.2em] ml-1">Override Base URL</label>
-                                <div className="relative flex items-center">
-                                  <div className="absolute left-3 p-1.5 bg-indigo-50 rounded-lg text-indigo-600">
-                                    <Settings2 className="w-3 h-3" />
+                                <label className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.2em] ml-1">QR Code Base URL</label>
+                                <div className="flex items-center gap-2">
+                                  <div className="relative flex-1">
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 p-1.5 bg-indigo-50 rounded-lg text-indigo-600">
+                                      <Globe className="w-3 h-3" />
+                                    </div>
+                                    <input
+                                      type="text"
+                                      value={testBaseUrl}
+                                      onChange={(e) => setTestBaseUrl(e.target.value)}
+                                      placeholder="https://your-app.vercel.app"
+                                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border-2 border-indigo-100 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-sm"
+                                    />
                                   </div>
-                                  <input
-                                    type="text"
-                                    value={testBaseUrl}
-                                    onChange={(e) => setTestBaseUrl(e.target.value)}
-                                    placeholder="http://192.168.1.XX:5173"
-                                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border-2 border-indigo-100 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-sm"
-                                  />
-                                  {testBaseUrl !== window.location.origin && (
-                                    <button
-                                      onClick={() => setTestBaseUrl(window.location.origin)}
-                                      className="absolute right-3 p-1 text-slate-400 hover:text-indigo-600 transition-colors"
-                                      title="Reset to default"
-                                    >
-                                      <RotateCcw className="w-3 h-3" />
-                                    </button>
-                                  )}
+                                  <button
+                                    onClick={async () => {
+                                      const newSettings = { ...profileFormData, publicBaseUrl: testBaseUrl };
+                                      setProfileFormData(newSettings);
+                                      try {
+                                        const updated = await updatePropertySettings(newSettings);
+                                        setPropertySettings(updated);
+                                        alert('✅ URL saved! All QR codes will now use: ' + testBaseUrl);
+                                      } catch (err) {
+                                        console.error('Failed to save URL:', err);
+                                        alert('❌ Failed to save URL. Please try again.');
+                                      }
+                                    }}
+                                    className="px-4 py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-200 flex items-center gap-2 whitespace-nowrap"
+                                  >
+                                    <Save className="w-3.5 h-3.5" />
+                                    Save URL
+                                  </button>
                                 </div>
+                                {profileFormData.publicBaseUrl && (
+                                  <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span className="text-[10px] font-bold text-emerald-700">
+                                      Saved: <span className="font-mono">{profileFormData.publicBaseUrl}</span>
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
-                            <Info className="w-4 h-4 text-amber-500 shrink-0" />
-                            <p className="text-[10px] font-bold text-amber-700 leading-tight">
-                              Ensure your phone is on the <strong>same Wi-Fi network</strong> as your computer.
+                          <div className="flex items-center gap-3 p-3 bg-indigo-50 rounded-xl border border-indigo-100">
+                            <Info className="w-4 h-4 text-indigo-500 shrink-0" />
+                            <p className="text-[10px] font-bold text-indigo-700 leading-tight">
+                              <strong>For Vercel:</strong> Enter your Vercel URL (e.g., https://hotel-pms-rust.vercel.app) and click <strong>Save URL</strong>. All QR codes will then work for anyone on the internet.
                             </p>
                           </div>
                         </div>
