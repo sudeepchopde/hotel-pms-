@@ -2039,48 +2039,99 @@ def create_notification(notification: NotificationCreate, db=Depends(get_db)):
     return db_notification_to_pydantic(new_notif)
 
 @app.put("/api/notifications/{notification_id}/read")
-def mark_notification_read(notification_id: str, db=Depends(get_db)):
+def mark_notification_read(notification_id: str):
     """Mark a single notification as read"""
-    if not USE_DATABASE() or not db:
+    import os
+    from datetime import datetime
+    
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
         raise HTTPException(status_code=503, detail="Database not available")
     
-    notif = db.query(NotificationDB).filter(NotificationDB.id == notification_id).first()
-    if not notif:
-        raise HTTPException(status_code=404, detail="Notification not found")
-    
-    notif.is_read = True
-    notif.read_at = datetime.now().isoformat()
-    db.commit()
-    
-    return {"status": "success"}
+    try:
+        from sqlalchemy import create_engine, text
+        
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        
+        engine = create_engine(db_url, pool_pre_ping=True)
+        now = datetime.now().isoformat()
+        
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("UPDATE notifications SET is_read = TRUE, read_at = :read_at WHERE id = :id"),
+                {"id": notification_id, "read_at": now}
+            )
+            conn.commit()
+            
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Notification not found")
+        
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/notifications/read-all")
-def mark_all_notifications_read(db=Depends(get_db)):
+def mark_all_notifications_read():
     """Mark all notifications as read"""
-    if not USE_DATABASE() or not db:
+    import os
+    from datetime import datetime
+    
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
         raise HTTPException(status_code=503, detail="Database not available")
     
-    db.query(NotificationDB).filter(
-        NotificationDB.is_read == False
-    ).update({
-        "is_read": True,
-        "read_at": datetime.now().isoformat()
-    })
-    db.commit()
-    
-    return {"status": "success"}
+    try:
+        from sqlalchemy import create_engine, text
+        
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        
+        engine = create_engine(db_url, pool_pre_ping=True)
+        now = datetime.now().isoformat()
+        
+        with engine.connect() as conn:
+            conn.execute(
+                text("UPDATE notifications SET is_read = TRUE, read_at = :read_at WHERE is_read = FALSE"),
+                {"read_at": now}
+            )
+            conn.commit()
+        
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/notifications/{notification_id}")
-def dismiss_notification(notification_id: str, db=Depends(get_db)):
+def dismiss_notification(notification_id: str):
     """Dismiss/delete a notification"""
-    if not USE_DATABASE() or not db:
+    import os
+    
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
         raise HTTPException(status_code=503, detail="Database not available")
     
-    notif = db.query(NotificationDB).filter(NotificationDB.id == notification_id).first()
-    if not notif:
-        raise HTTPException(status_code=404, detail="Notification not found")
-    
-    notif.is_dismissed = True
-    db.commit()
-    
-    return {"status": "success"}
+    try:
+        from sqlalchemy import create_engine, text
+        
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        
+        engine = create_engine(db_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("UPDATE notifications SET is_dismissed = TRUE WHERE id = :id"),
+                {"id": notification_id}
+            )
+            conn.commit()
+            
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Notification not found")
+        
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
