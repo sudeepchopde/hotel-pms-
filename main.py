@@ -195,6 +195,60 @@ def init_db():
             "env_vars": db_vars
         }
 
+@app.get("/api/test-notification")
+def test_notification():
+    """Create a test notification to verify the system works"""
+    import os
+    from datetime import datetime
+    import uuid
+    
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        return {"status": "error", "message": "No DATABASE_URL"}
+    
+    try:
+        from sqlalchemy import create_engine, text
+        
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        
+        engine = create_engine(db_url, pool_pre_ping=True)
+        
+        # Create a test notification
+        notif_id = f"test-{str(uuid.uuid4())[:8]}"
+        now = datetime.now().isoformat()
+        
+        insert_sql = text("""
+            INSERT INTO notifications (id, type, category, title, message, priority, is_read, is_dismissed, created_at)
+            VALUES (:id, :type, :category, :title, :message, :priority, :is_read, :is_dismissed, :created_at)
+        """)
+        
+        with engine.connect() as conn:
+            conn.execute(insert_sql, {
+                "id": notif_id,
+                "type": "system",
+                "category": "test",
+                "title": "Test Notification",
+                "message": f"This is a test notification created at {now}",
+                "priority": "normal",
+                "is_read": False,
+                "is_dismissed": False,
+                "created_at": now
+            })
+            conn.commit()
+        
+        # Count notifications
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT COUNT(*) FROM notifications"))
+            count = result.scalar()
+        
+        return {
+            "status": "success",
+            "message": f"Test notification created with ID: {notif_id}",
+            "total_notifications": count
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # ========== OCR INTEGRATION ==========
 # google-genai is imported lazily inside the OCR function to avoid import-time failures
