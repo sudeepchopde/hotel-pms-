@@ -557,13 +557,6 @@ const App: React.FC = () => {
                   </div>
                 </div>
               </div>
-
-              <button
-                onClick={() => window.location.href = window.location.origin}
-                className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-bold text-sm transition-all"
-              >
-                Return to Homepage
-              </button>
             </div>
 
             {/* Footer */}
