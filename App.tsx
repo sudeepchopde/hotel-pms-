@@ -280,17 +280,18 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    let room = params.get('room');
+    const room = params.get('room');
 
-    // If not in URL, check persisted guest session
-    if (!room) {
-      room = localStorage.getItem('guest_room_identity');
-    }
-
+    // Only enter guest mode if ?room= parameter is present in URL
+    // This ensures visiting the main URL shows the admin dashboard
     if (room) {
       localStorage.setItem('guest_room_identity', room);
       setIsGuestMode(true);
       setGuestRoomNumber(room);
+    } else {
+      // Clear guest mode if no room param - show admin dashboard
+      setIsGuestMode(false);
+      setGuestRoomNumber('');
     }
   }, []);
 
