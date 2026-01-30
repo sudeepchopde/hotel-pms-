@@ -1460,13 +1460,28 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
 @app.get("/api/init-db")
 def init_db():
     """Manual trigger to ensure all tables exist"""
+    import os
+    
+    # Check which database variables are available
+    db_vars = {
+        "POSTGRES_URL": bool(os.getenv("POSTGRES_URL")),
+        "POSTGRES_PRISMA_URL": bool(os.getenv("POSTGRES_PRISMA_URL")),
+        "POSTGRES_URL_NON_POOLING": bool(os.getenv("POSTGRES_URL_NON_POOLING")),
+        "DATABASE_URL": bool(os.getenv("DATABASE_URL")),
+        "POSTGRES_HOST": bool(os.getenv("POSTGRES_HOST")),
+    }
+    
+    if not USE_DATABASE():
+        return {"status": "error", "message": "Database not available", "env_vars_found": db_vars}
+    
     try:
         from backend.database import engine, Base
         import backend.db_models # Ensure models are registered
         Base.metadata.create_all(bind=engine)
-        return {"status": "success", "message": "Database tables initialized"}
+        return {"status": "success", "message": "Database tables initialized", "env_vars_found": db_vars}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "error", "message": str(e), "env_vars_found": db_vars}
+
     
     # Fallback
     for i, b in enumerate(get_fallback_bookings()):
