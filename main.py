@@ -152,8 +152,7 @@ def init_db():
         }
     
     try:
-        from sqlalchemy import create_engine
-        from sqlalchemy.ext.declarative import declarative_base
+        from sqlalchemy import create_engine, text
         
         # Fix postgres:// -> postgresql://
         if db_url.startswith("postgres://"):
@@ -161,14 +160,32 @@ def init_db():
         
         engine = create_engine(db_url, pool_pre_ping=True)
         
-        # Import and create tables
-        from backend.database import Base
-        import backend.db_models
-        Base.metadata.create_all(bind=engine)
+        # Create notifications table directly with raw SQL
+        create_table_sql = """
+        CREATE TABLE IF NOT EXISTS notifications (
+            id VARCHAR(255) PRIMARY KEY,
+            type VARCHAR(100) NOT NULL,
+            category VARCHAR(100) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
+            priority VARCHAR(20) DEFAULT 'normal',
+            is_read BOOLEAN DEFAULT FALSE,
+            is_dismissed BOOLEAN DEFAULT FALSE,
+            created_at VARCHAR(50) NOT NULL,
+            read_at VARCHAR(50),
+            booking_id VARCHAR(255),
+            room_number VARCHAR(50),
+            metadata JSON DEFAULT '{}'
+        );
+        """
+        
+        with engine.connect() as conn:
+            conn.execute(text(create_table_sql))
+            conn.commit()
         
         return {
             "status": "success", 
-            "message": "Database tables initialized",
+            "message": "Notifications table created successfully",
             "env_vars": db_vars
         }
     except Exception as e:
