@@ -6,6 +6,13 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from collections import defaultdict
 import json
+import re
+
+def normalize_phone(phone: str) -> str:
+    """Normalize phone number by removing all non-digit characters."""
+    if not phone:
+        return ""
+    return re.sub(r'\D', '', phone)
 
 # ========== LAZY IMPORTS FOR VERCEL COMPATIBILITY ==========
 # These will be populated on first use
@@ -123,75 +130,59 @@ def ping():
 
 @app.get("/api/init-db")
 def init_db():
-    """Manual trigger to ensure all tables exist - with debug info"""
+    """Manual trigger to ensure all tables exist - includes all models"""
     import os
     
     # Check which database variables are available
     db_vars = {
-        "POSTGRES_URL": "YES" if os.getenv("POSTGRES_URL") else "NO",
-        "POSTGRES_PRISMA_URL": "YES" if os.getenv("POSTGRES_PRISMA_URL") else "NO",
-        "POSTGRES_URL_NON_POOLING": "YES" if os.getenv("POSTGRES_URL_NON_POOLING") else "NO",
         "DATABASE_URL": "YES" if os.getenv("DATABASE_URL") else "NO",
-        "POSTGRES_HOST": "YES" if os.getenv("POSTGRES_HOST") else "NO",
+        "POSTGRES_URL": "YES" if os.getenv("POSTGRES_URL") else "NO",
+        "NEON_DATABASE_URL": "YES" if os.getenv("NEON_DATABASE_URL") else "NO",
     }
     
     # Try to get any database URL
     db_url = (
+        os.getenv("DATABASE_URL") or 
         os.getenv("POSTGRES_URL") or 
         os.getenv("POSTGRES_PRISMA_URL") or 
-        os.getenv("POSTGRES_URL_NON_POOLING") or
-        os.getenv("DATABASE_URL")
+        os.getenv("NEON_DATABASE_URL")
     )
     
     if not db_url:
         return {
             "status": "error", 
             "message": "No database URL found",
-            "env_vars": db_vars,
-            "hint": "Add DATABASE_URL to Vercel Environment Variables"
+            "env_vars": db_vars
         }
     
     try:
-        from sqlalchemy import create_engine, text
+        from sqlalchemy import create_engine
+        from backend.database import Base
+        
+        # Explicitly ensure all models are imported so Base knows about them
+        from backend.db_models import (
+            HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, 
+            RateRulesDB, GuestProfileDB, PropertySettingsDB, NotificationDB
+        )
         
         # Fix postgres:// -> postgresql://
         if db_url.startswith("postgres://"):
             db_url = db_url.replace("postgres://", "postgresql://", 1)
         
         engine = create_engine(db_url, pool_pre_ping=True)
-        
-        # Create notifications table directly with raw SQL
-        create_table_sql = """
-        CREATE TABLE IF NOT EXISTS notifications (
-            id VARCHAR(255) PRIMARY KEY,
-            type VARCHAR(100) NOT NULL,
-            category VARCHAR(100) NOT NULL,
-            title VARCHAR(255) NOT NULL,
-            message TEXT NOT NULL,
-            priority VARCHAR(20) DEFAULT 'normal',
-            is_read BOOLEAN DEFAULT FALSE,
-            is_dismissed BOOLEAN DEFAULT FALSE,
-            created_at VARCHAR(50) NOT NULL,
-            read_at VARCHAR(50),
-            booking_id VARCHAR(255),
-            room_number VARCHAR(50),
-            metadata JSON DEFAULT '{}'
-        );
-        """
-        
-        with engine.connect() as conn:
-            conn.execute(text(create_table_sql))
-            conn.commit()
+        Base.metadata.create_all(bind=engine)
         
         return {
             "status": "success", 
-            "message": "Notifications table created successfully",
+            "message": "All database tables initialized successfully",
             "env_vars": db_vars
         }
     except Exception as e:
+        import traceback
         return {
             "status": "error", 
             "message": str(e),
+            "traceback": traceback.format_exc(),
             "env_vars": db_vars
         }
 
@@ -838,22 +829,34 @@ def _sync_guest_profile(gd, check_in_date, db):
     if not gd or not gd.name or not gd.phoneNumber:
         return None
         
+    norm_phone = normalize_phone(gd.phoneNumber)
+    if not norm_phone:
+        return None
+        
     existing_profile = None
     if gd.profileId:
         existing_profile = db.query(GuestProfileDB).filter(GuestProfileDB.id == gd.profileId).first()
     
     if not existing_profile:
-        # Try exact name + phone match first
-        existing_profile = db.query(GuestProfileDB).filter(
-            GuestProfileDB.name == gd.name,
-            GuestProfileDB.phone_number == gd.phoneNumber
-        ).first()
+        # Try exact name + normalized phone match first
+        # We query all and filter in Python or use a more complex SQL if we want to be strict,
+        # but for simplicity and reliability with various stored formats:
+        profiles = db.query(GuestProfileDB).filter(GuestProfileDB.name == gd.name).all()
+        for p in profiles:
+            if normalize_phone(p.phone_number) == norm_phone:
+                existing_profile = p
+                break
         
     if not existing_profile:
         # Fallback to phone number only (useful for slight name variations)
-        existing_profile = db.query(GuestProfileDB).filter(
-            GuestProfileDB.phone_number == gd.phoneNumber
-        ).order_by(GuestProfileDB.last_check_in.desc()).first()
+        # Match by last 10 digits as a common heuristic for mobile numbers
+        search_phone = norm_phone[-10:] if len(norm_phone) >= 10 else norm_phone
+        profiles = db.query(GuestProfileDB).all() # This is fine for small/medium hotel databases
+        for p in profiles:
+            p_norm = normalize_phone(p.phone_number)
+            if p_norm.endswith(search_phone):
+                existing_profile = p
+                break
         
     if existing_profile:
         # Update...
@@ -1114,10 +1117,25 @@ def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, db=Dep
         query = db.query(GuestProfileDB)
         if name:
             query = query.filter(GuestProfileDB.name.ilike(f"%{name}%"))
-        if phone:
-            query = query.filter(GuestProfileDB.phone_number == phone)
         
-        profiles = query.order_by(GuestProfileDB.last_check_in.desc()).all()
+        if phone:
+            # If phone is provided, we can't easily normalize in SQL across all DB types,
+            # but we can do a broad match and then filter in Python
+            norm_search = normalize_phone(phone)
+            search_suffix = norm_search[-10:] if len(norm_search) >= 10 else norm_search
+            
+            if len(search_suffix) >= 6:
+                # Broad match in SQL to reduce result set
+                query = query.filter(GuestProfileDB.phone_number.like(f"%{search_suffix}%"))
+            
+            profiles = query.limit(100).all()
+            # Precise filter in Python
+            profiles = [p for p in profiles if normalize_phone(p.phone_number).endswith(search_suffix)]
+        else:
+            profiles = query.order_by(GuestProfileDB.last_check_in.desc()).limit(100).all()
+        
+        # Sort by check-in descending (in case it wasn't sorted by query or was re-filtered)
+        profiles.sort(key=lambda x: x.last_check_in or "", reverse=True)
         
         if profiles:
             results = []
@@ -1572,78 +1590,28 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
         
         return db_booking_to_pydantic(db_booking)
 
-@app.get("/api/init-db")
-def init_db():
-    """Manual trigger to ensure all tables exist - with debug info"""
+@app.get("/api/db-status")
+def db_status():
+    """Check database connection status and environment variables"""
     import os
-    
-    # Check which database variables are available
     db_vars = {
-        "POSTGRES_URL": "FOUND" if os.getenv("POSTGRES_URL") else "NOT_FOUND",
-        "POSTGRES_PRISMA_URL": "FOUND" if os.getenv("POSTGRES_PRISMA_URL") else "NOT_FOUND",
-        "POSTGRES_URL_NON_POOLING": "FOUND" if os.getenv("POSTGRES_URL_NON_POOLING") else "NOT_FOUND",
-        "DATABASE_URL": "FOUND" if os.getenv("DATABASE_URL") else "NOT_FOUND",
-        "POSTGRES_HOST": "FOUND" if os.getenv("POSTGRES_HOST") else "NOT_FOUND",
-        "NEON_DATABASE_URL": "FOUND" if os.getenv("NEON_DATABASE_URL") else "NOT_FOUND",
+        "DATABASE_URL": "YES" if os.getenv("DATABASE_URL") else "NO",
+        "POSTGRES_URL": "YES" if os.getenv("POSTGRES_URL") else "NO",
+        "NEON_DATABASE_URL": "YES" if os.getenv("NEON_DATABASE_URL") else "NO",
     }
     
-    # Try to get any database URL
-    db_url = (
-        os.getenv("POSTGRES_URL") or 
-        os.getenv("POSTGRES_PRISMA_URL") or 
-        os.getenv("POSTGRES_URL_NON_POOLING") or
-        os.getenv("DATABASE_URL") or
-        os.getenv("NEON_DATABASE_URL")
-    )
+    status = "disconnected"
+    message = "Not connected"
     
-    if not db_url:
-        return {
-            "status": "error", 
-            "message": "No database URL found in environment",
-            "env_vars": db_vars,
-            "hint": "Please add DATABASE_URL to Vercel Environment Variables"
-        }
-    
-    try:
-        from sqlalchemy import create_engine
-        from sqlalchemy.ext.declarative import declarative_base
+    if USE_DATABASE():
+        status = "connected"
+        message = "Connected to database"
         
-        # Fix the URL format if needed (postgres:// -> postgresql://)
-        if db_url.startswith("postgres://"):
-            db_url = db_url.replace("postgres://", "postgresql://", 1)
-        
-        engine = create_engine(db_url, pool_pre_ping=True)
-        Base = declarative_base()
-        
-        # Import models to register them
-        import backend.db_models
-        from backend.db_models import NotificationDB
-        
-        # Create tables
-        Base.metadata.create_all(bind=engine)
-        
-        # Also try with our existing Base
-        from backend.database import Base as ExistingBase
-        ExistingBase.metadata.create_all(bind=engine)
-        
-        return {
-            "status": "success", 
-            "message": "Database tables initialized",
-            "env_vars": db_vars
-        }
-    except Exception as e:
-        return {
-            "status": "error", 
-            "message": str(e),
-            "env_vars": db_vars
-        }
-    
-    # Fallback
-    for i, b in enumerate(get_fallback_bookings()):
-        if b.id == booking_id:
-            get_fallback_bookings()[i] = booking
-            return booking
-    raise HTTPException(status_code=404, detail="Booking not found")
+    return {
+        "status": status,
+        "message": message,
+        "env_vars": db_vars
+    }
 
 @app.post("/api/bookings/{booking_id}/transfer")
 def transfer_booking(booking_id: str, transfer: RoomTransferRequest, db=Depends(get_db)):
