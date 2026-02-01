@@ -838,25 +838,31 @@ def _sync_guest_profile(gd, check_in_date, db):
         existing_profile = db.query(GuestProfileDB).filter(GuestProfileDB.id == gd.profileId).first()
     
     if not existing_profile:
-        # Try exact name + normalized phone match first
-        # We query all and filter in Python or use a more complex SQL if we want to be strict,
-        # but for simplicity and reliability with various stored formats:
-        profiles = db.query(GuestProfileDB).filter(GuestProfileDB.name == gd.name).all()
+        # Try exact name (case-insensitive) + normalized phone match first
+        # Querying by phone suffix as a broad filter
+        search_suffix = norm_phone[-7:] if len(norm_phone) >= 7 else norm_phone
+        profiles = db.query(GuestProfileDB).filter(GuestProfileDB.phone_number.like(f"%{search_suffix}%")).all()
         for p in profiles:
-            if normalize_phone(p.phone_number) == norm_phone:
+            if p.name.lower() == gd.name.lower() and normalize_phone(p.phone_number) == norm_phone:
                 existing_profile = p
                 break
         
     if not existing_profile:
-        # Fallback to phone number only (useful for slight name variations)
+        # Fallback to phone number only (useful for slight name variations or missing name during lookup)
         # Match by last 10 digits as a common heuristic for mobile numbers
         search_phone = norm_phone[-10:] if len(norm_phone) >= 10 else norm_phone
-        profiles = db.query(GuestProfileDB).all() # This is fine for small/medium hotel databases
-        for p in profiles:
-            p_norm = normalize_phone(p.phone_number)
-            if p_norm.endswith(search_phone):
-                existing_profile = p
-                break
+        # Try a more direct match first for performance, then broad
+        existing_profile = db.query(GuestProfileDB).filter(GuestProfileDB.phone_number == gd.phoneNumber).first()
+        
+        if not existing_profile:
+            # Broad search in the whole table if it's small (usual for hotels)
+            # or try the suffix match again but more broadly
+            all_profiles = db.query(GuestProfileDB).limit(500).all()
+            for p in all_profiles:
+                p_norm = normalize_phone(p.phone_number)
+                if p_norm.endswith(search_phone) or search_phone.endswith(p_norm) and len(p_norm) >= 6:
+                    existing_profile = p
+                    break
         
     if existing_profile:
         # Update...
@@ -1119,18 +1125,17 @@ def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, db=Dep
             query = query.filter(GuestProfileDB.name.ilike(f"%{name}%"))
         
         if phone:
-            # If phone is provided, we can't easily normalize in SQL across all DB types,
-            # but we can do a broad match and then filter in Python
             norm_search = normalize_phone(phone)
             search_suffix = norm_search[-10:] if len(norm_search) >= 10 else norm_search
             
-            if len(search_suffix) >= 6:
-                # Broad match in SQL to reduce result set
-                query = query.filter(GuestProfileDB.phone_number.like(f"%{search_suffix}%"))
-            
-            profiles = query.limit(100).all()
-            # Precise filter in Python
-            profiles = [p for p in profiles if normalize_phone(p.phone_number).endswith(search_suffix)]
+            # Fetch all to be safe about formatting (hyphens, spaces) in DB
+            # We limit to 500 which covers most active guest sets easily
+            all_profiles = query.limit(500).all()
+            profiles = []
+            for p in all_profiles:
+                p_norm = normalize_phone(p.phone_number)
+                if p_norm and (p_norm.endswith(search_suffix) or search_suffix.endswith(p_norm)):
+                    profiles.append(p)
         else:
             profiles = query.order_by(GuestProfileDB.last_check_in.desc()).limit(100).all()
         
