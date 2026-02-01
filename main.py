@@ -53,7 +53,7 @@ engine = None
 
 def _load_db_imports():
     """Lazy load database imports to avoid import-time failures on Vercel."""
-    global _db_imports_loaded, _USE_DATABASE
+    global _db_imports_loaded, _USE_DATABASE, _db_connection_error
     global HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, RateRulesDB, GuestProfileDB, PropertySettingsDB, NotificationDB
     global Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest, GuestProfile, PropertySettings
     global get_db_real, engine
