@@ -988,7 +988,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     }
   };
 
-  const printReceipt = (item: FolioItem) => {
+  const printReceipt = (item: { description: string, amount: number, timestamp: string | number, paymentMethod?: string }) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
@@ -2492,7 +2492,23 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
                       <div className="mt-8 pt-6 border-t border-white/5 flex justify-between items-center text-center">
                         <div>
-                          <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Total Payments</p>
+                          <div className="flex items-center justify-center gap-2">
+                            <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Total Payments</p>
+                            {totalPayments > 0 && (
+                              <button
+                                onClick={() => printReceipt({
+                                  description: 'Cumulative Payment Receipt',
+                                  amount: totalPayments,
+                                  timestamp: new Date().toISOString(),
+                                  paymentMethod: 'Multiple'
+                                })}
+                                className="p-1 hover:bg-white/10 rounded transition-colors"
+                                title="Print Total Receipt"
+                              >
+                                <Printer className="w-3 h-3 text-slate-500" />
+                              </button>
+                            )}
+                          </div>
                           <p className="text-sm font-black text-emerald-400 tabular-nums mt-1">₹{totalPayments.toLocaleString()}</p>
                         </div>
                         <div className="w-px h-8 bg-white/5"></div>
@@ -2545,7 +2561,22 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                 <div className={`w-1.5 h-1.5 rounded-full ${p.status === 'Completed' ? 'bg-emerald-500' : 'bg-rose-500'} `}></div>
                                 <span className={`text-[10px] font-bold ${p.status === 'Completed' ? 'text-slate-200' : 'text-slate-500 line-through'} `}>₹{p.amount.toLocaleString()} via {p.method}</span>
                               </div>
-                              <span className="text-[8px] font-black text-slate-500 uppercase">{new Date(p.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[8px] font-black text-slate-500 uppercase">{new Date(p.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                                {p.status === 'Completed' && (
+                                  <button
+                                    onClick={() => printReceipt({
+                                      description: p.description || 'Partial Payment',
+                                      amount: p.amount,
+                                      timestamp: p.timestamp,
+                                      paymentMethod: p.method
+                                    })}
+                                    className="p-1 hover:bg-white/10 rounded opacity-0 group-hover/tx:opacity-100 transition-all"
+                                  >
+                                    <Printer className="w-2.5 h-2.5 text-slate-500" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
