@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import json
 import re
@@ -1876,7 +1876,7 @@ def create_notification_internal(db, notif_type: str, category: str, title: str,
         engine = create_engine(db_url, pool_pre_ping=True)
         
         notif_id = f"notif-{str(uuid.uuid4())[:8]}"
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         
         insert_sql = text("""
             INSERT INTO notifications (id, type, category, title, message, priority, is_read, is_dismissed, created_at, booking_id, room_number, metadata)
@@ -2003,7 +2003,7 @@ def create_notification(notification: NotificationCreate, db=Depends(get_db)):
         priority=notification.priority,
         is_read=False,
         is_dismissed=False,
-        created_at=datetime.now().isoformat(),
+        created_at=datetime.now(timezone.utc).isoformat(),
         booking_id=notification.bookingId,
         room_number=notification.roomNumber,
         extra_data=notification.metadata or {}
@@ -2019,7 +2019,7 @@ def create_notification(notification: NotificationCreate, db=Depends(get_db)):
 def mark_notification_read(notification_id: str):
     """Mark a single notification as read"""
     import os
-    from datetime import datetime
+    from datetime import datetime, timezone
     
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
@@ -2032,7 +2032,7 @@ def mark_notification_read(notification_id: str):
             db_url = db_url.replace("postgres://", "postgresql://", 1)
         
         engine = create_engine(db_url, pool_pre_ping=True)
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         
         with engine.connect() as conn:
             result = conn.execute(
@@ -2054,7 +2054,7 @@ def mark_notification_read(notification_id: str):
 def mark_all_notifications_read():
     """Mark all notifications as read"""
     import os
-    from datetime import datetime
+    from datetime import datetime, timezone
     
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
@@ -2067,7 +2067,7 @@ def mark_all_notifications_read():
             db_url = db_url.replace("postgres://", "postgresql://", 1)
         
         engine = create_engine(db_url, pool_pre_ping=True)
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         
         with engine.connect() as conn:
             conn.execute(
