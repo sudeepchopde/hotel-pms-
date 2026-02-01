@@ -807,10 +807,27 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     const updatedPayments = [...(booking.payments || []), newPayment];
     onUpdatePayments?.(booking.id, updatedPayments);
 
+    // Auto-settle folio items if full balance is paid or specific item is selected
     if (targetFolioItem) {
-      const updatedFolio = (booking.folio || []).map(item =>
-        item.id === targetFolioItem.id ? { ...item, isPaid: true, paymentMethod, paymentId: newPayment.id } : item
-      );
+      const updatedFolio = (booking.folio || []).map(item => {
+        if (item.id === targetFolioItem.id) {
+          return { ...item, isPaid: true, paymentMethod, paymentId: newPayment.id };
+        }
+        // If this payment clears the entire remaining balance, settle other items too
+        if (amount >= netOutstanding) {
+          return { ...item, isPaid: true, paymentMethod: item.paymentMethod || paymentMethod, paymentId: item.paymentId || newPayment.id };
+        }
+        return item;
+      });
+      onUpdateFolio?.(booking.id, updatedFolio);
+    } else if (amount >= netOutstanding) {
+      // General payment clears the total balance
+      const updatedFolio = (booking.folio || []).map(item => ({
+        ...item,
+        isPaid: true,
+        paymentMethod: item.paymentMethod || paymentMethod,
+        paymentId: item.paymentId || newPayment.id
+      }));
       onUpdateFolio?.(booking.id, updatedFolio);
     }
 
@@ -885,6 +902,17 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               };
               const updatedPayments = [...(booking.payments || []), newPayment];
               onUpdatePayments?.(booking.id, updatedPayments);
+
+              // Auto-settle all folio items if online payment clears the balance
+              if (amount >= netOutstanding) {
+                const updatedFolio = (booking.folio || []).map(item => ({
+                  ...item,
+                  isPaid: true,
+                  paymentMethod: item.paymentMethod || 'Card',
+                  paymentId: item.paymentId || newPayment.id
+                }));
+                onUpdateFolio?.(booking.id, updatedFolio);
+              }
 
               alert('Payment successful!');
               setShowPaymentModal(false);
