@@ -695,10 +695,20 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
       } as Booking;
     });
 
+    // Optimistic Update: Show immediately before server response
+    const optimisticEvents = newBookings.map(b => ({ ...b, type: 'booking' } as SyncEvent));
+    setSyncEvents(prev => [...prev, ...optimisticEvents]);
+    setIsNewBookingModalOpen(false);
+
     try {
       const savedBookings = await createBulkBookings(newBookings);
-      setSyncEvents(prev => [...prev, ...savedBookings.map(b => ({ ...b, type: 'booking' } as SyncEvent))]);
-      setIsNewBookingModalOpen(false);
+
+      // Confirm with server response (update optimistic entries with real data)
+      setSyncEvents(prev => prev.map(e => {
+        const saved = savedBookings.find(s => s.id === e.id);
+        return saved ? { ...saved, type: 'booking' } as SyncEvent : e;
+      }));
+
       setToastMessage(`Successfully booked ${savedBookings.length} rooms!`);
       setTimeout(() => setToastMessage(null), 3000);
 
@@ -708,6 +718,9 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
       });
     } catch (error: any) {
       console.error("Failed to create bookings", error);
+      // Rollback optimistic update on failure
+      setSyncEvents(prev => prev.filter(e => !newBookings.find(nb => nb.id === e.id)));
+      setIsNewBookingModalOpen(true);
       // Try to parse the error detail from the response
       let errorMsg = "Could not save bookings. Please try again.";
       if (error.message) {

@@ -289,7 +289,7 @@ const App: React.FC = () => {
       } catch (e) {
         console.error("Polling notifications failed", e);
       }
-    }, 30000);
+    }, 5000);
 
     return () => clearInterval(pollNotifications);
   }, []);
