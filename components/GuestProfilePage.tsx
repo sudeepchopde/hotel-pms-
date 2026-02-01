@@ -2408,9 +2408,18 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       <div className="absolute top-0 right-0 p-4 opacity-10 group-hover/card:scale-110 transition-transform"><CheckCircle2 className="w-12 h-12 text-emerald-400" /></div>
                       <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Net Outstanding</p>
                       <div className="flex items-baseline gap-4 mt-2 overflow-hidden">
-                        <p className={`text-3xl md:text-4xl font-black tabular-nums tracking-tighter truncate ${netOutstanding <= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          ₹{netOutstanding.toLocaleString()}
-                        </p>
+                        {(() => {
+                          const valStr = netOutstanding.toLocaleString();
+                          const len = valStr.length;
+                          // Dynamic scaling to prevent truncation
+                          const sizeClass = len > 12 ? 'text-lg' : len > 9 ? 'text-2xl' : 'text-3xl md:text-4xl';
+
+                          return (
+                            <p className={`${sizeClass} font-black tabular-nums tracking-tighter truncate ${netOutstanding <= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              ₹{valStr}
+                            </p>
+                          );
+                        })()}
                       </div>
 
                       <div className="flex items-center gap-3 mt-6">
