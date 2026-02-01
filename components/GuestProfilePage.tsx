@@ -805,30 +805,42 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     };
 
     const updatedPayments = [...(booking.payments || []), newPayment];
-    onUpdatePayments?.(booking.id, updatedPayments);
+    let updatedFolio = booking.folio || [];
 
     // Auto-settle folio items if full balance is paid or specific item is selected
+    let folioUpdated = false;
     if (targetFolioItem) {
-      const updatedFolio = (booking.folio || []).map(item => {
+      updatedFolio = updatedFolio.map(item => {
         if (item.id === targetFolioItem.id) {
           return { ...item, isPaid: true, paymentMethod, paymentId: newPayment.id };
         }
         // If this payment clears the entire remaining balance, settle other items too
-        if (amount >= netOutstanding) {
+        // Use tolerance to avoid floating point issues (e.g. 4355.600000000001)
+        if (amount >= netOutstanding - 0.1) {
           return { ...item, isPaid: true, paymentMethod: item.paymentMethod || paymentMethod, paymentId: item.paymentId || newPayment.id };
         }
         return item;
       });
-      onUpdateFolio?.(booking.id, updatedFolio);
-    } else if (amount >= netOutstanding) {
+      folioUpdated = true;
+    } else if (amount >= netOutstanding - 0.1) {
       // General payment clears the total balance
-      const updatedFolio = (booking.folio || []).map(item => ({
+      updatedFolio = updatedFolio.map(item => ({
         ...item,
         isPaid: true,
         paymentMethod: item.paymentMethod || paymentMethod,
         paymentId: item.paymentId || newPayment.id
       }));
-      onUpdateFolio?.(booking.id, updatedFolio);
+      folioUpdated = true;
+    }
+
+    // Use combined update if available to avoid race conditions
+    if (onUpdateBooking) {
+      onUpdateBooking({ ...booking, payments: updatedPayments, folio: updatedFolio });
+    } else {
+      onUpdatePayments?.(booking.id, updatedPayments);
+      if (folioUpdated) {
+        onUpdateFolio?.(booking.id, updatedFolio);
+      }
     }
 
     setShowPaymentModal(false);
@@ -901,17 +913,27 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 status: 'Completed'
               };
               const updatedPayments = [...(booking.payments || []), newPayment];
-              onUpdatePayments?.(booking.id, updatedPayments);
+              let updatedFolio = booking.folio || [];
+              let folioUpdated = false;
 
-              // Auto-settle all folio items if online payment clears the balance
-              if (amount >= netOutstanding) {
-                const updatedFolio = (booking.folio || []).map(item => ({
+              // Auto-settle all folio items if online payment clears the balance (with tolerance)
+              if (amount >= netOutstanding - 0.1) {
+                updatedFolio = updatedFolio.map(item => ({
                   ...item,
                   isPaid: true,
                   paymentMethod: item.paymentMethod || 'Card',
                   paymentId: item.paymentId || newPayment.id
                 }));
-                onUpdateFolio?.(booking.id, updatedFolio);
+                folioUpdated = true;
+              }
+
+              if (onUpdateBooking) {
+                onUpdateBooking({ ...booking, payments: updatedPayments, folio: updatedFolio });
+              } else {
+                onUpdatePayments?.(booking.id, updatedPayments);
+                if (folioUpdated) {
+                  onUpdateFolio?.(booking.id, updatedFolio);
+                }
               }
 
               alert('Payment successful!');
