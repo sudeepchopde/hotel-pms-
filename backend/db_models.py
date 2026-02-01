@@ -158,5 +158,5 @@ class NotificationDB(Base):
     read_at = Column(String, nullable=True)
     booking_id = Column(String, ForeignKey("bookings.id"), nullable=True)
     room_number = Column(String, nullable=True)
-    metadata = Column(JSON, default={})  # Additional context data
+    extra_data = Column("metadata", JSON, default={})  # 'metadata' is reserved in SQLAlchemy, so we map it
 

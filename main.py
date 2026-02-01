@@ -1853,7 +1853,7 @@ def db_notification_to_pydantic(db_notif):
         readAt=db_notif.read_at,
         bookingId=db_notif.booking_id,
         roomNumber=db_notif.room_number,
-        metadata=db_notif.metadata or {}
+        metadata=db_notif.extra_data or {}
     )
 
 def create_notification_internal(db, notif_type: str, category: str, title: str, message: str, 
@@ -1880,7 +1880,7 @@ def create_notification_internal(db, notif_type: str, category: str, title: str,
         
         insert_sql = text("""
             INSERT INTO notifications (id, type, category, title, message, priority, is_read, is_dismissed, created_at, booking_id, room_number, metadata)
-            VALUES (:id, :type, :category, :title, :message, :priority, :is_read, :is_dismissed, :created_at, :booking_id, :room_number, :metadata)
+            VALUES (:id, :type, :category, :title, :message, :priority, :is_read, :is_dismissed, :created_at, :booking_id, :room_number, :extra_data)
         """)
         
         with engine.connect() as conn:
@@ -1896,7 +1896,7 @@ def create_notification_internal(db, notif_type: str, category: str, title: str,
                 "created_at": now,
                 "booking_id": booking_id,
                 "room_number": room_number,
-                "metadata": json.dumps(metadata or {})
+                "extra_data": json.dumps(metadata or {})
             })
             conn.commit()
         
@@ -2006,7 +2006,7 @@ def create_notification(notification: NotificationCreate, db=Depends(get_db)):
         created_at=datetime.now().isoformat(),
         booking_id=notification.bookingId,
         room_number=notification.roomNumber,
-        metadata=notification.metadata or {}
+        extra_data=notification.metadata or {}
     )
     
     db.add(new_notif)
