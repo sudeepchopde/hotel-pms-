@@ -117,7 +117,7 @@ def get_db():
     else:
         yield None
 
-app = FastAPI(title="SyncGuard PMS API")
+app = FastAPI(title="Hotel Sathi API")
 
 # Mount Billing folder for PDF access (only if directory can be created)
 try:

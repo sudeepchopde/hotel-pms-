@@ -1,8 +1,8 @@
 
 import React from 'react';
-import { 
-  Zap, ShieldCheck, Globe, Database, BrainCircuit, 
-  ArrowRight, CheckCircle2, CloudLightning, RefreshCw, 
+import {
+  Zap, ShieldCheck, Globe, Database, BrainCircuit,
+  ArrowRight, CheckCircle2, CloudLightning, RefreshCw,
   Lock, BarChart3, Users, Smartphone, BellRing, Share2,
   ChevronDown, ArrowDown
 } from 'lucide-react';
@@ -21,7 +21,7 @@ const PitchView: React.FC = () => {
           <span className="text-indigo-600">Automate Operations.</span>
         </h1>
         <p className="text-xl text-slate-500 max-w-3xl mx-auto leading-relaxed">
-          SyncGuard is a high-performance Property Management System designed for the modern hotelier. We replace manual updates with atomic distribution.
+          Hotel Sathi is a high-performance Property Management System designed for the modern hotelier. We replace manual updates with atomic distribution.
         </p>
       </section>
 
@@ -37,12 +37,12 @@ const PitchView: React.FC = () => {
           <div className="absolute top-0 bottom-0 left-1/2 w-4 bg-slate-100 -translate-x-1/2 rounded-full border border-slate-200"></div>
 
           <div className="flex flex-col gap-0 relative z-10">
-            
+
             {/* Step 1: Booking Arrives */}
             <div className="group relative w-full transform transition-all duration-500 hover:scale-[1.02]">
               <div className="bg-white border-4 border-slate-100 group-hover:border-indigo-500 shadow-2xl rounded-[3rem] p-10 flex flex-col md:flex-row items-center gap-8 relative z-20 transition-colors">
                 <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center font-black text-xl border-4 border-slate-50 shadow-lg z-30 hidden md:flex">1</div>
-                
+
                 <div className="w-32 h-32 bg-indigo-600 rounded-[2rem] flex items-center justify-center shadow-xl shadow-indigo-200 group-hover:rotate-6 transition-transform shrink-0">
                   <Smartphone className="w-16 h-16 text-white" />
                 </div>
@@ -56,10 +56,10 @@ const PitchView: React.FC = () => {
 
             {/* Connector 1 */}
             <div className="h-24 flex justify-center items-center relative">
-               <div className="w-1 h-full bg-gradient-to-b from-indigo-500 to-emerald-500 animate-pulse"></div>
-               <div className="absolute top-1/2 -translate-y-1/2 bg-white border-2 border-indigo-100 p-2 rounded-full shadow-sm z-20">
-                 <ArrowDown className="w-6 h-6 text-indigo-400 animate-bounce" />
-               </div>
+              <div className="w-1 h-full bg-gradient-to-b from-indigo-500 to-emerald-500 animate-pulse"></div>
+              <div className="absolute top-1/2 -translate-y-1/2 bg-white border-2 border-indigo-100 p-2 rounded-full shadow-sm z-20">
+                <ArrowDown className="w-6 h-6 text-indigo-400 animate-bounce" />
+              </div>
             </div>
 
             {/* Step 2: Atomic Mutex Lock */}
@@ -80,10 +80,10 @@ const PitchView: React.FC = () => {
 
             {/* Connector 2 */}
             <div className="h-24 flex justify-center items-center relative">
-               <div className="w-1 h-full bg-gradient-to-b from-emerald-500 to-amber-500 animate-pulse"></div>
-               <div className="absolute top-1/2 -translate-y-1/2 bg-white border-2 border-emerald-100 p-2 rounded-full shadow-sm z-20">
-                 <ArrowDown className="w-6 h-6 text-emerald-400 animate-bounce" />
-               </div>
+              <div className="w-1 h-full bg-gradient-to-b from-emerald-500 to-amber-500 animate-pulse"></div>
+              <div className="absolute top-1/2 -translate-y-1/2 bg-white border-2 border-emerald-100 p-2 rounded-full shadow-sm z-20">
+                <ArrowDown className="w-6 h-6 text-emerald-400 animate-bounce" />
+              </div>
             </div>
 
             {/* Step 3: PMS Update */}
@@ -104,10 +104,10 @@ const PitchView: React.FC = () => {
 
             {/* Connector 3 */}
             <div className="h-24 flex justify-center items-center relative">
-               <div className="w-1 h-full bg-gradient-to-b from-amber-500 to-fuchsia-500 animate-pulse"></div>
-               <div className="absolute top-1/2 -translate-y-1/2 bg-white border-2 border-amber-100 p-2 rounded-full shadow-sm z-20">
-                 <ArrowDown className="w-6 h-6 text-amber-400 animate-bounce" />
-               </div>
+              <div className="w-1 h-full bg-gradient-to-b from-amber-500 to-fuchsia-500 animate-pulse"></div>
+              <div className="absolute top-1/2 -translate-y-1/2 bg-white border-2 border-amber-100 p-2 rounded-full shadow-sm z-20">
+                <ArrowDown className="w-6 h-6 text-amber-400 animate-bounce" />
+              </div>
             </div>
 
             {/* Step 4: Distribution */}
@@ -166,13 +166,13 @@ const PitchView: React.FC = () => {
       <footer className="bg-slate-900 rounded-[3rem] p-12 text-center space-y-6 relative overflow-hidden">
         <div className="absolute -top-24 -right-24 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl"></div>
         <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl"></div>
-        
+
         <h3 className="text-3xl font-black text-white tracking-tight leading-tight">
           Ready to Upgrade Your <br />
           <span className="text-indigo-400">Distribution Strategy?</span>
         </h3>
-        <p className="text-slate-400 max-w-xl mx-auto text-sm">Join 500+ properties using SyncGuard to protect their revenue and automate their future.</p>
-        
+        <p className="text-slate-400 max-w-xl mx-auto text-sm">Join 500+ properties using Hotel Sathi to protect their revenue and automate their future.</p>
+
         <button className="flex items-center gap-3 bg-white text-slate-900 px-8 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-indigo-50 hover:scale-105 transition-all mx-auto shadow-2xl">
           Get Started Now
           <ArrowRight className="w-4 h-4" />

@@ -604,7 +604,7 @@ const App: React.FC = () => {
             {/* Footer */}
             <div className="px-8 py-4 bg-slate-50 border-t border-slate-100 text-center">
               <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">
-                Powered by SyncGuard PMS
+                Powered by Hotel Sathi
               </p>
             </div>
           </div>
@@ -618,7 +618,7 @@ const App: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-[#fbfcfd] text-slate-500">
         <div className="flex flex-col items-center gap-4">
           <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="font-bold text-sm">Initializing SyncGuard...</p>
+          <p className="font-bold text-sm">Initializing Hotel Sathi...</p>
         </div>
       </div>
     );
@@ -632,7 +632,7 @@ const App: React.FC = () => {
             <div className="bg-indigo-500 p-2 rounded-lg shadow-lg shadow-indigo-500/20 shrink-0">
               <ShieldCheck className="w-5 h-5 flex-shrink-0" />
             </div>
-            {!isSidebarCollapsed && <h1 className="text-lg font-bold tracking-tight whitespace-nowrap truncate">SyncGuard <span className="text-indigo-300">PMS</span></h1>}
+            {!isSidebarCollapsed && <h1 className="text-lg font-bold tracking-tight whitespace-nowrap truncate">Hotel <span className="text-indigo-300">Sathi</span></h1>}
           </div>
           <div className="flex items-center gap-1">
             <button

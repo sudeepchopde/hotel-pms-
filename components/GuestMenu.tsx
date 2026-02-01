@@ -186,7 +186,7 @@ const GuestMenu: React.FC<GuestMenuProps> = ({ roomNumber, onValidateGuest, onPl
             Order More
           </button>
         </div>
-        <p className="text-[10px] font-black text-slate-300 mt-12 uppercase tracking-[0.3em]">SyncGuard Smart Concierge</p>
+        <p className="text-[10px] font-black text-slate-300 mt-12 uppercase tracking-[0.3em]">Hotel Sathi Smart Concierge</p>
       </div>
     );
   }

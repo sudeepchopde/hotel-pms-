@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { 
-  CheckCircle2, ChevronRight, Key, Globe, 
-  Loader2, ExternalLink, ShieldCheck, 
+import {
+  CheckCircle2, ChevronRight, Key, Globe,
+  Loader2, ExternalLink, ShieldCheck,
   ArrowRight, Info, Building, ListTree, Rocket,
   X, AlertCircle, RefreshCw, Link as LinkIcon, ServerCrash,
   MapPin, Home, Star, Compass, Briefcase, Plane
@@ -49,7 +49,7 @@ const OTA_CONFIGS: Record<string, OtaConfig> = {
     guideSteps: [
       "Log in to your MMT Connect extranet portal.",
       "Navigate to 'Channel Manager' in the sidebar menu.",
-      "Select 'SyncGuard PMS' from the provider list.",
+      "Select 'Hotel Sathi' from the provider list.",
       "Copy your Property ID and generate a new API Token."
     ],
     inputs: [
@@ -71,7 +71,7 @@ const OTA_CONFIGS: Record<string, OtaConfig> = {
     guideSteps: [
       "Log in to admin.booking.com extranet.",
       "Go to Account > Connectivity Provider.",
-      "Search for 'SyncGuard PMS' and click Connect.",
+      "Search for 'Hotel Sathi' and click Connect.",
       "Copy your Legal Entity ID (LEID) or Hotel ID."
     ],
     inputs: [
@@ -79,9 +79,9 @@ const OTA_CONFIGS: Record<string, OtaConfig> = {
       { label: 'Machine Account Key', placeholder: '••••••••••••', key: 'apiToken', type: 'password' }
     ],
     mockRooms: [
-       { external_id: 'bcom_deluxe', name: 'Deluxe Double Room', max_occupancy: 2 },
-       { external_id: 'bcom_suite', name: 'Executive Suite', max_occupancy: 3 },
-       { external_id: 'bcom_twin', name: 'Standard Twin', max_occupancy: 2 }
+      { external_id: 'bcom_deluxe', name: 'Deluxe Double Room', max_occupancy: 2 },
+      { external_id: 'bcom_suite', name: 'Executive Suite', max_occupancy: 3 },
+      { external_id: 'bcom_twin', name: 'Standard Twin', max_occupancy: 2 }
     ]
   },
   expedia: {
@@ -92,7 +92,7 @@ const OTA_CONFIGS: Record<string, OtaConfig> = {
     guideSteps: [
       "Log in to Expedia Partner Central (EPC).",
       "Navigate to Rooms and Rates > Connectivity Settings.",
-      "Select 'SyncGuard PMS' from the system list.",
+      "Select 'Hotel Sathi' from the system list.",
       "Authorize the connection to generate EQC credentials."
     ],
     inputs: [
@@ -100,8 +100,8 @@ const OTA_CONFIGS: Record<string, OtaConfig> = {
       { label: 'EQC Username/Token', placeholder: '••••••••••••', key: 'apiToken', type: 'password' }
     ],
     mockRooms: [
-       { external_id: 'exp_std', name: 'Standard Room', max_occupancy: 2 },
-       { external_id: 'exp_king', name: 'King Room with View', max_occupancy: 2 }
+      { external_id: 'exp_std', name: 'Standard Room', max_occupancy: 2 },
+      { external_id: 'exp_king', name: 'King Room with View', max_occupancy: 2 }
     ]
   },
   agoda: {
@@ -112,7 +112,7 @@ const OTA_CONFIGS: Record<string, OtaConfig> = {
     guideSteps: [
       "Login to Agoda YCS (Yield Control System).",
       "Go to Settings > Connectivity Provider.",
-      "Search for 'SyncGuard' and click Enable.",
+      "Search for 'Hotel Sathi' and click Enable.",
       "Copy the 'Hotel ID' and 'API Key' shown on screen."
     ],
     inputs: [
@@ -152,7 +152,7 @@ const OTA_CONFIGS: Record<string, OtaConfig> = {
     guideSteps: [
       "Access TripAdvisor Management Center.",
       "Click 'Connectivity' tab.",
-      "Authorize 'SyncGuard' as your partner.",
+      "Authorize 'Hotel Sathi' as your partner.",
       "Enter your Partner ID below."
     ],
     inputs: [
@@ -189,7 +189,7 @@ const OTAConnectionWizard: React.FC<ConnectionWizardProps> = ({ otaId, onClose, 
   const [currentStep, setCurrentStep] = useState<WizardStep>('authorize');
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  
+
   // Resolve Configuration
   const config = OTA_CONFIGS[otaId] || OTA_CONFIGS['mmt'];
   const ConfigIcon = config.icon;
@@ -198,7 +198,7 @@ const OTAConnectionWizard: React.FC<ConnectionWizardProps> = ({ otaId, onClose, 
   const [isFetchingRooms, setIsFetchingRooms] = useState(false);
   const [otaRooms, setOtaRooms] = useState<ExternalRoom[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  
+
   const [formData, setFormData] = useState<Record<string, string>>({
     propertyId: '',
     apiToken: '',
@@ -212,7 +212,7 @@ const OTAConnectionWizard: React.FC<ConnectionWizardProps> = ({ otaId, onClose, 
     setVerificationStatus('idle');
     // Simulate API Handshake
     await new Promise(resolve => setTimeout(resolve, 2500));
-    
+
     if (formData.propertyId && formData.apiToken) {
       setVerificationStatus('success');
       setTimeout(() => setCurrentStep('mapping'), 800);
@@ -248,7 +248,7 @@ const OTAConnectionWizard: React.FC<ConnectionWizardProps> = ({ otaId, onClose, 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">
       <div className="bg-white w-full max-w-4xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col md:flex-row h-[600px] animate-in zoom-in-95 duration-300">
-        
+
         {/* Left Side: Progress & Guide */}
         <div className="md:w-72 bg-slate-50 border-r border-slate-200 p-8 flex flex-col">
           <div className="flex items-center gap-3 mb-10">
@@ -268,9 +268,8 @@ const OTAConnectionWizard: React.FC<ConnectionWizardProps> = ({ otaId, onClose, 
               const done = (currentStep === 'mapping' && i === 0) || (currentStep === 'golive' && i < 2);
               return (
                 <div key={s.id} className={`flex items-center gap-4 transition-all ${active ? 'opacity-100 scale-105' : 'opacity-40'}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
-                    done ? 'bg-emerald-500 text-white' : active ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-500'
-                  }`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${done ? 'bg-emerald-500 text-white' : active ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-500'
+                    }`}>
                     {done ? <CheckCircle2 className="w-4 h-4" /> : i + 1}
                   </div>
                   <span className={`text-sm font-black uppercase tracking-widest ${active ? 'text-indigo-600' : 'text-slate-500'}`}>
@@ -286,14 +285,14 @@ const OTAConnectionWizard: React.FC<ConnectionWizardProps> = ({ otaId, onClose, 
               <ShieldCheck className="w-3 h-3" /> Security Note
             </p>
             <p className="text-[10px] text-indigo-600/70 leading-relaxed">
-              SyncGuard uses AES-256 vault encryption for all OTA credentials. Keys are never logged.
+              Hotel Sathi uses AES-256 vault encryption for all OTA credentials. Keys are never logged.
             </p>
           </div>
         </div>
 
         {/* Right Side: Content */}
         <div className="flex-1 flex flex-col relative overflow-hidden bg-white">
-          <button 
+          <button
             onClick={onClose}
             className="absolute top-6 right-8 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all z-10"
           >
@@ -324,11 +323,11 @@ const OTAConnectionWizard: React.FC<ConnectionWizardProps> = ({ otaId, onClose, 
                         {input.key === 'propertyId' ? <Building className="w-3 h-3" /> : <Key className="w-3 h-3" />}
                         {input.label}
                       </label>
-                      <input 
+                      <input
                         type={input.type || 'text'}
                         placeholder={input.placeholder}
                         value={formData[input.key] || ''}
-                        onChange={e => setFormData({...formData, [input.key]: e.target.value})}
+                        onChange={e => setFormData({ ...formData, [input.key]: e.target.value })}
                         className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:border-indigo-500 outline-none transition-all"
                       />
                     </div>
@@ -342,7 +341,7 @@ const OTAConnectionWizard: React.FC<ConnectionWizardProps> = ({ otaId, onClose, 
                   </div>
                 )}
 
-                <button 
+                <button
                   onClick={handleVerify}
                   disabled={isVerifying || !formData.propertyId || !formData.apiToken}
                   className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-[0.2em] rounded-2xl shadow-xl shadow-indigo-100 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
@@ -360,7 +359,7 @@ const OTAConnectionWizard: React.FC<ConnectionWizardProps> = ({ otaId, onClose, 
                     <h2 className="text-2xl font-black text-slate-900 tracking-tight">Step 2: Room Mapping</h2>
                     <p className="text-slate-500 text-sm mt-1">Link external {config.name} rooms to your internal inventory.</p>
                   </div>
-                  <button 
+                  <button
                     onClick={fetchOtaRooms}
                     disabled={isFetchingRooms}
                     className="p-3 bg-slate-50 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-slate-200 hover:border-indigo-200"
@@ -402,13 +401,13 @@ const OTAConnectionWizard: React.FC<ConnectionWizardProps> = ({ otaId, onClose, 
                             <p className="text-[10px] text-slate-500 mt-0.5">Max Occupancy: {otaRoom.max_occupancy}</p>
                           </div>
                           <div className="flex-1">
-                            <select 
+                            <select
                               className={`
                                 w-full px-4 py-3 bg-white border-2 rounded-xl text-xs font-bold text-slate-900 outline-none focus:border-indigo-500 transition-all
                                 ${mapping[otaRoom.external_id] ? 'border-emerald-200 bg-emerald-50/10' : 'border-slate-200'}
                               `}
                               value={mapping[otaRoom.external_id] || ''}
-                              onChange={e => setMapping(prev => ({...prev, [otaRoom.external_id]: e.target.value}))}
+                              onChange={e => setMapping(prev => ({ ...prev, [otaRoom.external_id]: e.target.value }))}
                             >
                               <option value="">-- Link to PMS Room --</option>
                               {roomTypes.map(rt => (
@@ -425,7 +424,7 @@ const OTAConnectionWizard: React.FC<ConnectionWizardProps> = ({ otaId, onClose, 
                 </div>
 
                 <div className="pt-4 border-t border-slate-100">
-                  <button 
+                  <button
                     onClick={handleMappingSubmit}
                     disabled={Object.keys(mapping).length === 0}
                     className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-[0.2em] rounded-2xl shadow-xl shadow-indigo-100 transition-all disabled:opacity-50 disabled:shadow-none"
@@ -447,7 +446,7 @@ const OTAConnectionWizard: React.FC<ConnectionWizardProps> = ({ otaId, onClose, 
                     {config.name} connection successfully authorized. Inventory and rate pushes will begin immediately.
                   </p>
                 </div>
-                
+
                 <div className="w-full bg-slate-50 border border-slate-100 p-6 rounded-3xl grid grid-cols-2 gap-4 text-left">
                   <div>
                     <p className="text-[9px] font-black text-slate-400 uppercase">Property ID</p>
@@ -463,7 +462,7 @@ const OTAConnectionWizard: React.FC<ConnectionWizardProps> = ({ otaId, onClose, 
                   </div>
                 </div>
 
-                <button 
+                <button
                   onClick={handleFinish}
                   className="w-full py-4 bg-slate-900 hover:bg-black text-white font-black text-xs uppercase tracking-[0.2em] rounded-2xl transition-all"
                 >

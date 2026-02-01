@@ -593,7 +593,7 @@ const RateRulesPage: React.FC<RateRulesPageProps> = ({ rules, setRules, onStrate
           <div>
             <h3 className="text-2xl font-black text-white tracking-tight">Yield Hierarchy Architecture</h3>
             <p className="text-sm text-slate-400 leading-relaxed font-medium mt-1">
-              SyncGuard uses an atomic priority engine to resolve rate conflicts. Higher priority levels silently override lower logic blocks.
+              Hotel Sathi uses an atomic priority engine to resolve rate conflicts. Higher priority levels silently override lower logic blocks.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">

@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { 
-  TrendingUp, Users, IndianRupee, Activity, 
-  Mic, MicOff, Sparkles, AlertCircle, ArrowUpRight, 
+import {
+  TrendingUp, Users, IndianRupee, Activity,
+  Mic, MicOff, Sparkles, AlertCircle, ArrowUpRight,
   Target, BarChart3, Bot, Waves
 } from 'lucide-react';
 import { AnalyticsData, Hotel } from '../types';
@@ -37,7 +37,7 @@ const IntelligenceView: React.FC<IntelligenceViewProps> = ({ hotel }) => {
     <div className="p-8 max-w-6xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 bg-[#fbfcfd]">
       <header className="flex justify-between items-end relative z-10">
         <div className="space-y-1">
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight">SyncGuard Intelligence</h2>
+          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Hotel Sathi Intelligence</h2>
           <p className="text-slate-500">Real-time revenue metrics and AI-assisted operations for {hotel.name}.</p>
         </div>
         <div className="bg-white px-4 py-2 rounded-2xl border border-slate-200/60 shadow-sm flex items-center gap-2">
@@ -87,10 +87,10 @@ const IntelligenceView: React.FC<IntelligenceViewProps> = ({ hotel }) => {
             {isListening ? (
               <div className="flex items-center gap-1 h-12">
                 {[...Array(12)].map((_, i) => (
-                  <div 
-                    key={i} 
+                  <div
+                    key={i}
                     className="w-1.5 bg-fuchsia-500 rounded-full animate-bounce"
-                    style={{ 
+                    style={{
                       height: `${Math.random() * 100}%`,
                       animationDelay: `${i * 0.05}s`,
                       animationDuration: '0.6s'
@@ -115,7 +115,7 @@ const IntelligenceView: React.FC<IntelligenceViewProps> = ({ hotel }) => {
           </div>
 
           <div className="relative z-10 flex justify-center">
-            <button 
+            <button
               onClick={toggleVoice}
               className={`
                 group relative p-6 rounded-full transition-all duration-500 shadow-2xl
@@ -134,27 +134,27 @@ const IntelligenceView: React.FC<IntelligenceViewProps> = ({ hotel }) => {
             <Activity className="w-5 h-5 text-indigo-600" />
             Strategic Insights
           </h3>
-          
+
           <div className="space-y-6 flex-1">
             {[
-              { 
-                title: 'High Occupancy Alert', 
+              {
+                title: 'High Occupancy Alert',
                 desc: 'Saturday is trending at 98%. Lock remaining direct inventory.',
                 type: 'warning',
                 icon: AlertCircle,
                 color: 'text-amber-600',
                 bg: 'bg-amber-50'
               },
-              { 
-                title: 'Channel Lag Detected', 
+              {
+                title: 'Channel Lag Detected',
                 desc: 'Expedia API latency is 40% higher than average. Monitoring fan-out.',
                 type: 'error',
                 icon: Activity,
                 color: 'text-red-600',
                 bg: 'bg-red-50'
               },
-              { 
-                title: 'Yield Opportunity', 
+              {
+                title: 'Yield Opportunity',
                 desc: 'Local event detected: Cultural Festival. Increase rates by ₹1,500.',
                 type: 'success',
                 icon: TrendingUp,
