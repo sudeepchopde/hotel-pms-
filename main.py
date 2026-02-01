@@ -18,6 +18,7 @@ def normalize_phone(phone: str) -> str:
 # These will be populated on first use
 _db_imports_loaded = False
 _USE_DATABASE = None
+_db_connection_error = None  # Store error message for debugging
 
 # Declare these at module level for DB models (still lazy)
 HotelDB = None
@@ -97,6 +98,7 @@ def _load_db_imports():
         
     except Exception as e:
         _USE_DATABASE = False
+        _db_connection_error = str(e)
         print(f"WARNING: Database unavailable, using in-memory data: {e}")
     
     _db_imports_loaded = True
@@ -1611,6 +1613,8 @@ def db_status():
     if USE_DATABASE():
         status = "connected"
         message = "Connected to database"
+    else:
+        message = _db_connection_error or "Connection failed (no error captured)"
         
     return {
         "status": status,
