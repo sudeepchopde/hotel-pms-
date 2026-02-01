@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X, User, Calendar, MapPin, Smartphone, Mail, FileBadge, XCircle,
   Bed, Users, Star, AlertCircle, CheckCircle2, CreditCard,
@@ -215,7 +215,41 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     ? (roomRate * nights)
     : (booking.amount || 0);
 
-  const totalBill = roomBaseTotal + (booking.folio || []).reduce((sum, item) => sum + item.amount, 0);
+  // Calculate Bill Summary with Taxes to match Invoice
+  const billSummary = useMemo(() => {
+    let totalBase = 0;
+    let totalTax = 0;
+
+    // 1. Room Rent Tax
+    const roomAmount = roomBaseTotal;
+    const roomPrice = roomType?.basePrice || 0;
+    const roomTaxRate = roomPrice >= 7500 ? 18 : (roomPrice < 1000 ? 0 : 12);
+    const roomTax = roomAmount * (roomTaxRate / 100);
+
+    totalBase += roomAmount;
+    totalTax += roomTax;
+
+    // 2. Folio Items Tax
+    (booking.folio || []).forEach(item => {
+      const isInclusive = item.isInclusive === true;
+
+      if (isInclusive) {
+        totalBase += item.amount;
+      } else {
+        let rate = 18; // Default for Service/Other
+        if (item.category === 'F&B') rate = propertySettings?.foodGstRate || 5;
+        else if (item.category === 'Laundry') rate = propertySettings?.otherGstRate || 18;
+        else rate = propertySettings?.otherGstRate || 18;
+
+        totalBase += item.amount;
+        totalTax += item.amount * (rate / 100);
+      }
+    });
+
+    return { totalBase, totalTax, grandTotal: totalBase + totalTax };
+  }, [roomBaseTotal, booking.folio, roomType, propertySettings]);
+
+  const totalBill = billSummary.grandTotal;
   const netOutstanding = totalBill - totalPayments;
   const grandTotal = roomBaseTotal + unpaidFolioTotal; // Keep for backward compatibility in UI where needed
 
@@ -2430,6 +2464,13 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base Total</span>
                         </div>
                         <span className="text-xs font-bold text-slate-200 tabular-nums">₹{roomBaseTotal.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-white/5 rounded-lg border border-white/10"><Receipt className="w-4 h-4 text-emerald-400" /></div>
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Est. Taxes (GST)</span>
+                        </div>
+                        <span className="text-xs font-bold text-emerald-400 tabular-nums">+₹{billSummary.totalTax.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                       </div>
                     </div>
 
