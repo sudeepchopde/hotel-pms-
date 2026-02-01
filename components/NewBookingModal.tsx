@@ -33,7 +33,7 @@ export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents
     const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const today = new Date().toISOString().split('T')[0];
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+
 
     useEffect(() => {
         if (isOpen) {
@@ -47,17 +47,23 @@ export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents
             setSource('Direct');
 
             // Set initial room detail from prefill
+            const initialCheckIn = prefill?.checkIn || today;
+            const d = new Date(initialCheckIn);
+            d.setDate(d.getDate() + 1);
+            const initialCheckOut = d.toISOString().split('T')[0];
+
+            // Set initial room detail from prefill
             const initialRoomDetails = [{
                 tempId: Date.now(),
                 roomTypeId: prefill?.roomTypeId || roomTypes[0]?.id || '',
-                checkIn: prefill?.checkIn || today,
-                checkOut: tomorrow,
+                checkIn: initialCheckIn,
+                checkOut: initialCheckOut,
                 roomNumber: prefill?.roomId
             }];
             setRoomDetails(initialRoomDetails);
             setRoomCount(1);
         }
-    }, [isOpen, prefill, roomTypes, today, tomorrow]);
+    }, [isOpen, prefill, roomTypes, today]);
 
     // Auto-lookup when phone number changes (debounced)
     useEffect(() => {
