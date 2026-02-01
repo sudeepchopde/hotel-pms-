@@ -14,7 +14,9 @@ import GuestsView from './components/GuestsView';
 import ComplianceView from './components/ComplianceView';
 import GuestMenu from './components/GuestMenu';
 import SecurityView from './components/SecurityView';
-import NotificationsPanel from './components/NotificationsPanel';
+// Duplicate removed
+import NotificationsView from './components/NotificationsView';
+// import NotificationsPanel from './components/NotificationsPanel'; // Removed
 import {
   LayoutDashboard, FileText, Database, Settings, ShieldCheck,
   BrainCircuit, Building2, ChevronDown, Presentation, TrendingUp,
@@ -49,6 +51,7 @@ const INITIAL_RULES: RateRulesConfig = {
 // Default navigation items configuration
 const DEFAULT_NAV_ITEMS = [
   { id: 'frontdesk', icon: ConciergeBell, label: 'Front Desk', color: 'text-rose-300' },
+  { id: 'notifications', icon: Bell, label: 'Notifications', color: 'text-yellow-400' },
   { id: 'compliance', icon: FileBadge, label: 'Police Compliance', color: 'text-amber-400' },
   { id: 'guests', icon: Users, label: 'Guests', color: 'text-sky-300' },
   { id: 'security', icon: ShieldAlert, label: 'Security Center', color: 'text-red-400' },
@@ -114,7 +117,7 @@ const INITIAL_ROOM_TYPES: RoomType[] = [
 ];
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'settings' | 'intelligence' | 'flow' | 'rules' | 'analysis' | 'reports' | 'setup' | 'frontdesk' | 'guests' | 'compliance' | 'security'>('frontdesk');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'settings' | 'intelligence' | 'flow' | 'rules' | 'analysis' | 'reports' | 'setup' | 'frontdesk' | 'guests' | 'compliance' | 'security' | 'notifications'>('frontdesk');
   const [selectedHotel, setSelectedHotel] = useState<Hotel | null>(null);
   const [hotels, setHotels] = useState<Hotel[]>([]);
   const [isHotelMenuOpen, setIsHotelMenuOpen] = useState(false);
@@ -125,8 +128,9 @@ const App: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [propertySettings, setPropertySettings] = useState<PropertySettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isNotificationsPanelOpen, setIsNotificationsPanelOpen] = useState(false);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [notificationToast, setNotificationToast] = useState<{ title: string, message: string } | null>(null);
+  const lastNotificationIdRef = React.useRef<string | null>(null);
 
   // Navigation items order state
   const [navItems, setNavItems] = useState(DEFAULT_NAV_ITEMS);
@@ -245,11 +249,49 @@ const App: React.FC = () => {
         setPropertySettings(propertyData);
       } catch (error) {
         console.error("Failed to load initial data", error);
+        // Initial fetch of notifications to set baseline
+        // Initial fetch of notifications to set baseline
+        import('./api').then(m => m.fetchNotifications(true)).then(data => {
+          if (data && data.length > 0) {
+            lastNotificationIdRef.current = data[0].id; // Don't show toast for existing ones
+          }
+        });
       } finally {
         setIsLoading(false);
       }
     };
     loadData();
+
+    // Poll for notifications every 30 seconds
+    const pollNotifications = setInterval(async () => {
+      try {
+        const { fetchNotifications } = await import('./api');
+        // Fetch latest unread notification
+        const data = await fetchNotifications(true);
+        if (data && data.length > 0) {
+          const latest = data[0];
+          if (latest.id !== lastNotificationIdRef.current) {
+            // New notification!
+            lastNotificationIdRef.current = latest.id;
+            setNotificationToast({
+              title: latest.title,
+              message: latest.message
+            });
+            // Auto dismiss after 5 seconds
+            setTimeout(() => setNotificationToast(null), 5000);
+
+            // Update unread count
+            const { fetchUnreadNotificationCount } = await import('./api');
+            const count = await fetchUnreadNotificationCount();
+            setUnreadNotificationCount(count);
+          }
+        }
+      } catch (e) {
+        console.error("Polling notifications failed", e);
+      }
+    }, 30000);
+
+    return () => clearInterval(pollNotifications);
   }, []);
 
   // Poll for notification count
@@ -594,18 +636,6 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => setIsNotificationsPanelOpen(true)}
-              className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors shrink-0 relative"
-              title="Notifications"
-            >
-              <Bell className="w-5 h-5" />
-              {unreadNotificationCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
-                  {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
-                </span>
-              )}
-            </button>
-            <button
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
               className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors shrink-0"
             >
@@ -717,6 +747,23 @@ const App: React.FC = () => {
           </div>
         )}
 
+        {notificationToast && (
+          <div className="fixed top-6 right-6 z-[100] animate-in fade-in slide-in-from-right-4 duration-300">
+            <div className="bg-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-slate-200 min-w-[300px]">
+              <div className="bg-indigo-100 p-2 rounded-lg">
+                <Bell className="w-5 h-5 text-indigo-600" />
+              </div>
+              <div className="flex-1">
+                <p className="font-bold text-sm text-slate-800">{notificationToast.title}</p>
+                <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{notificationToast.message}</p>
+              </div>
+              <button onClick={() => setNotificationToast(null)} className="text-slate-400 hover:text-slate-600">
+                <GripVertical className="w-4 h-4 opacity-0" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'flow' && <PitchView />}
 
         {activeTab === 'dashboard' && <InventoryDashboard hotelId={selectedHotel.id} connections={connections} rules={rules} roomTypes={roomTypes} syncEvents={syncEvents} setSyncEvents={setSyncEvents} />}
@@ -776,17 +823,10 @@ const App: React.FC = () => {
             onToggleQR={toggleQROrdering}
           />
         )}
+        {activeTab === 'notifications' && <NotificationsView />}
       </main>
 
-      {/* Notifications Panel */}
-      <NotificationsPanel
-        isOpen={isNotificationsPanelOpen}
-        onClose={() => {
-          setIsNotificationsPanelOpen(false);
-          // Refresh count after closing
-          import('./api').then(m => m.fetchUnreadNotificationCount()).then(count => setUnreadNotificationCount(count)).catch(() => { });
-        }}
-      />
+
     </div>
   );
 };
