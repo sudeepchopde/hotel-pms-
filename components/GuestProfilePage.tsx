@@ -2412,10 +2412,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           const valStr = netOutstanding.toLocaleString();
                           const len = valStr.length;
                           // Dynamic scaling to prevent truncation
-                          const sizeClass = len > 12 ? 'text-lg' : len > 9 ? 'text-2xl' : 'text-3xl md:text-4xl';
+                          // Dynamic scaling with smaller base sizes to fit the box
+                          const sizeClass = len > 12 ? 'text-lg' : len > 10 ? 'text-xl' : len > 7 ? 'text-2xl' : 'text-3xl';
 
                           return (
-                            <p className={`${sizeClass} font-black tabular-nums tracking-tighter truncate ${netOutstanding <= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            <p className={`${sizeClass} font-black tabular-nums tracking-tighter whitespace-nowrap ${netOutstanding <= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                               ₹{valStr}
                             </p>
                           );
