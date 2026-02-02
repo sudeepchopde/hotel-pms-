@@ -73,11 +73,20 @@ const KitchenDisplay: React.FC = () => {
         try {
             const data = await fetchNotifications(false);
 
-            // Filter active tickets
-            const activeServerOrders = data.filter(n => n.category === 'service_order' && !n.isDismissed);
+            // Filter active tickets - STRICTLY F&B Only
+            const activeServerOrders = data.filter(n =>
+                n.category === 'service_order' &&
+                !n.isDismissed &&
+                // Strict Filter: Must be F&B or have food items
+                (n.title?.includes('F&B') || (n.metadata?.items && Array.isArray(n.metadata.items)))
+            );
 
             // For history (approximate, ideally backend would support this better)
-            const historyServerOrders = data.filter(n => n.category === 'service_order' && n.isDismissed).slice(0, 50);
+            const historyServerOrders = data.filter(n =>
+                n.category === 'service_order' &&
+                n.isDismissed &&
+                (n.title?.includes('F&B') || (n.metadata?.items && Array.isArray(n.metadata.items)))
+            ).slice(0, 50);
             setCompletedOrders(historyServerOrders);
 
             // Merge server data with local status (if we had a backend for status, we'd use that)
