@@ -34,6 +34,7 @@ const KitchenDisplay: React.FC = () => {
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
     const [soundEnabled, setSoundEnabled] = useState(false);
     const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'cooking' | 'ready'>('all');
+    const [avgTime, setAvgTime] = useState<string>('--');
 
     // Refs for change detection & sound
     const previousOrderIds = React.useRef<Set<string>>(new Set());
@@ -99,6 +100,32 @@ const KitchenDisplay: React.FC = () => {
                 .slice(0, 50);
 
             setCompletedOrders(historyServerOrders);
+
+            // Calculate Avg Time from History
+            if (historyServerOrders.length > 0) {
+                let totalSeconds = 0;
+                let validCount = 0;
+
+                historyServerOrders.forEach(o => {
+                    if (o.readAt && o.createdAt) {
+                        const start = new Date(o.createdAt).getTime();
+                        const end = new Date(o.readAt).getTime();
+                        if (!isNaN(start) && !isNaN(end) && end > start) {
+                            totalSeconds += (end - start) / 1000;
+                            validCount++;
+                        }
+                    }
+                });
+
+                if (validCount > 0) {
+                    const avg = totalSeconds / validCount;
+                    setAvgTime(Math.round(avg / 60) + 'm');
+                } else {
+                    setAvgTime('--');
+                }
+            } else {
+                setAvgTime('--');
+            }
 
             // Merge server data with local status (using Ref to avoid stale closures)
             const newKitchenTickets = activeServerOrders.map(o => {
@@ -260,7 +287,7 @@ const KitchenDisplay: React.FC = () => {
                 <div className="flex items-center gap-4">
                     <div className="text-right hidden sm:block">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Avg Time</p>
-                        <p className="text-lg font-black text-white font-mono">12m</p>
+                        <p className="text-lg font-black text-white font-mono">{avgTime}</p>
                     </div>
 
                     <button
