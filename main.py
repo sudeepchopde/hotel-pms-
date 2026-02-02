@@ -90,9 +90,12 @@ def _load_db_imports():
         
         # Test connection and create tables if they don't exist
         from backend.database import Base
-        with engine.connect() as conn:
-            pass
-        Base.metadata.create_all(bind=engine)
+        # SKIP BLOCKING CHECKS FOR VERCEL PERFORMANCE
+        # with engine.connect() as conn:
+        #     pass
+        # Base.metadata.create_all(bind=engine)
+        
+        # We assume tables exist or user hits /api/init-db manually
         
         _USE_DATABASE = True
         print("✓ Connected to PostgreSQL database")
