@@ -46,7 +46,9 @@ from backend.models import (
     RazorpayVerifyRequest,
     InboundEmail,
     Notification,
-    NotificationCreate
+    Notification,
+    NotificationCreate,
+    FolioItem
 )
 
 get_db_real = None
