@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import json
 import re
+import uuid
+from datetime import datetime
 
 def normalize_phone(phone: str) -> str:
     """Normalize phone number by removing all non-digit characters."""
@@ -1596,6 +1598,45 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
                 db.rollback() # Rollback the notification part but booking update was already committed
         
         return db_booking_to_pydantic(db_booking)
+
+@app.post("/api/bookings/{booking_id}/folio")
+def add_folio_item(booking_id: str, item: FolioItem, db=Depends(get_db)):
+    if USE_DATABASE() and db:
+        db_booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
+        if not db_booking:
+            raise HTTPException(status_code=404, detail="Booking not found")
+        
+        current_folio = db_booking.folio or []
+        if isinstance(current_folio, str):
+            current_folio = json.loads(current_folio)
+        
+        current_folio.append(item.dict())
+        db_booking.folio = current_folio
+        
+        # Update timestamp to trigger sync
+        import time
+        db_booking.timestamp = int(time.time() * 1000)
+        
+        db.commit()
+        db.refresh(db_booking)
+        
+        # Create notification
+        create_notification_internal(
+            db,
+            notif_type="housekeeping" if item.category == 'Laundry' else "guest_request",
+            category="service_order",
+            title=f"New {item.category} Order",
+            message=f"Order for {item.description} (₹{item.amount}) received from Room {db_booking.room_number}",
+            priority="normal",
+            booking_id=booking_id,
+            room_number=db_booking.room_number,
+            metadata=item.metadata
+        )
+        db.commit()
+        
+        return db_booking_to_pydantic(db_booking)
+    
+    raise HTTPException(status_code=501, detail="Not implemented in fallback mode")
 
 @app.get("/api/db-status")
 def db_status():

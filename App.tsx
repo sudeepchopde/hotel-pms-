@@ -16,12 +16,13 @@ import GuestMenu from './components/GuestMenu';
 import SecurityView from './components/SecurityView';
 // Duplicate removed
 import NotificationsView from './components/NotificationsView';
+import KitchenDisplay from './components/KitchenDisplay'; // Import new component
 // import NotificationsPanel from './components/NotificationsPanel'; // Removed
 import {
   LayoutDashboard, FileText, Database, Settings, ShieldCheck,
   BrainCircuit, Building2, ChevronDown, Presentation, TrendingUp,
   BarChart2, FileSpreadsheet, Home, ConciergeBell, Users, FileBadge,
-  PanelLeftClose, PanelLeftOpen, ShieldAlert, AlertCircle, GripVertical, Bell
+  PanelLeftClose, PanelLeftOpen, ShieldAlert, AlertCircle, GripVertical, Bell, ChefHat
 } from 'lucide-react';
 import { Hotel, OTAConnection, RateRulesConfig, RoomType, SyncEvent, Booking, FolioItem, VerificationAttempt, RoomSecurityStatus, PropertySettings } from './types';
 
@@ -63,6 +64,7 @@ const DEFAULT_NAV_ITEMS = [
   { id: 'intelligence', icon: BrainCircuit, label: 'AI Intelligence', color: 'text-fuchsia-300' },
   { id: 'settings', icon: Settings, label: 'Channel Settings', color: 'text-slate-400' },
   { id: 'flow', icon: Presentation, label: 'Flow', color: 'text-slate-500' },
+  { id: 'kitchen', icon: ChefHat, label: 'Kitchen Display', color: 'text-orange-400' },
 ];
 
 const INITIAL_ROOM_TYPES: RoomType[] = [
@@ -117,7 +119,7 @@ const INITIAL_ROOM_TYPES: RoomType[] = [
 ];
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'settings' | 'intelligence' | 'flow' | 'rules' | 'analysis' | 'reports' | 'setup' | 'frontdesk' | 'guests' | 'compliance' | 'security' | 'notifications'>('frontdesk');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'settings' | 'intelligence' | 'flow' | 'rules' | 'analysis' | 'reports' | 'setup' | 'frontdesk' | 'guests' | 'compliance' | 'security' | 'notifications' | 'kitchen'>('frontdesk');
   const [selectedHotel, setSelectedHotel] = useState<Hotel | null>(null);
   const [hotels, setHotels] = useState<Hotel[]>([]);
   const [isHotelMenuOpen, setIsHotelMenuOpen] = useState(false);
@@ -262,28 +264,35 @@ const App: React.FC = () => {
     };
     loadData();
 
-    // Poll for notifications every 30 seconds
+    // Poll for notifications and data every 5 seconds
     const pollNotifications = setInterval(async () => {
       try {
-        const { fetchNotifications } = await import('./api');
-        // Fetch latest unread notification
+        const { fetchNotifications, fetchUnreadNotificationCount, fetchBookings } = await import('./api');
+
+        // 1. Fetch latest unread notification
         const data = await fetchNotifications(true);
         if (data && data.length > 0) {
           const latest = data[0];
+
           if (latest.id !== lastNotificationIdRef.current) {
-            // New notification!
+            // New notification detected!
             lastNotificationIdRef.current = latest.id;
+
+            // Show Toast
             setNotificationToast({
               title: latest.title,
               message: latest.message
             });
-            // Auto dismiss after 5 seconds
             setTimeout(() => setNotificationToast(null), 5000);
 
             // Update unread count
-            const { fetchUnreadNotificationCount } = await import('./api');
             const count = await fetchUnreadNotificationCount();
             setUnreadNotificationCount(count);
+
+            // Trigger booking refresh immediately as something changed
+            const bookingsData = await fetchBookings();
+            const bookingEvents = bookingsData.map(b => ({ ...b, type: 'booking' } as SyncEvent));
+            setSyncEvents(bookingEvents);
           }
         }
       } catch (e) {
@@ -291,7 +300,28 @@ const App: React.FC = () => {
       }
     }, 5000);
 
-    return () => clearInterval(pollNotifications);
+    // Complementary periodic poll for bookings every 20 seconds (independent of notifications)
+    const pollBookings = setInterval(async () => {
+      try {
+        const { fetchBookings } = await import('./api');
+        const bookingsData = await fetchBookings();
+        const bookingEvents = bookingsData.map(b => ({ ...b, type: 'booking' } as SyncEvent));
+
+        setSyncEvents(prev => {
+          // Deep compare booking folio and status primarily as they are most likely to change
+          const hasChanges = JSON.stringify(prev.filter(e => e.type === 'booking')) !== JSON.stringify(bookingEvents);
+          if (hasChanges) return bookingEvents;
+          return prev;
+        });
+      } catch (e) {
+        console.error("Periodic booking poll failed", e);
+      }
+    }, 20000);
+
+    return () => {
+      clearInterval(pollNotifications);
+      clearInterval(pollBookings);
+    };
   }, []);
 
   // Poll for notification count
@@ -449,36 +479,49 @@ const App: React.FC = () => {
     });
   };
 
-  const handlePlaceOrder = async (roomNumber: string, items: { name: string, price: number }[]) => {
-    const booking = (syncEvents.find(e => e.type === 'booking' && e.roomNumber === roomNumber && e.status === 'CheckedIn') as Booking);
-    if (!booking) return;
+  const handlePlaceOrder = async (roomNumber: string, items: { name: string, price: number, quantity: number }[]) => {
+    // Find the most recent active booking for this room to avoid stale/historical conflicts
+    const booking = [...syncEvents]
+      .filter(e => e.type === 'booking' && e.roomNumber === roomNumber && e.status === 'CheckedIn')
+      .sort((a, b) => ((b as Booking).timestamp || 0) - ((a as Booking).timestamp || 0))[0] as Booking;
+
+    if (!booking) {
+      console.error(`No active booking found for Room ${roomNumber}`);
+      return;
+    }
 
     const totalAmount = items.reduce((sum, i) => sum + i.price, 0);
-    const description = `In-Room Dining - Order #${Math.floor(Math.random() * 1000)}`;
+    const orderNum = Math.floor(Math.random() * 900) + 100;
+    const description = `In-Room Dining - Order #${orderNum}`;
 
     const newFolioItem: FolioItem = {
-      id: `fi-${Date.now()}`,
+      id: `fi-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
       description,
       amount: totalAmount,
       category: 'F&B',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      isPaid: false,
+      metadata: { items }
     };
 
+    // 1. Optimistic Update for local UI
     const updatedBooking: Booking = {
       ...booking,
       folio: [...(booking.folio || []), newFolioItem],
       timestamp: Date.now()
     };
-
-    // Update local state reactively
     setSyncEvents(prev => prev.map(e => (e.id === booking.id && e.type === 'booking') ? { ...updatedBooking, type: 'booking' } as SyncEvent : e));
 
-    // Persist to backend immediately
+    // 2. Atomic Backend Persist (Prevents overwriting other folio items)
     try {
-      const { updateBooking } = await import('./api');
-      await updateBooking(updatedBooking);
+      const { addFolioItem } = await import('./api');
+      await addFolioItem(booking.id, newFolioItem);
     } catch (err) {
       console.error("Failed to persist in-room dining order:", err);
+      // Fallback: reload data to ensure consistency if atomic update fails
+      const { fetchBookings } = await import('./api');
+      const bookingsData = await fetchBookings();
+      setSyncEvents(bookingsData.map(b => ({ ...b, type: 'booking' } as SyncEvent)));
     }
   };
 
@@ -824,6 +867,7 @@ const App: React.FC = () => {
           />
         )}
         {activeTab === 'notifications' && <NotificationsView />}
+        {activeTab === 'kitchen' && <KitchenDisplay />}
       </main>
 
 

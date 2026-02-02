@@ -178,6 +178,7 @@ export interface FolioItem {
   isInclusive?: boolean; // If true, amount includes GST
   paymentMethod?: string;
   paymentId?: string; // Link to a Payment record if paid
+  metadata?: { items: { name: string; quantity: number; notes?: string }[] };
 }
 
 export interface Booking {

@@ -123,6 +123,7 @@ class FolioItem(BaseModel):
     isPaid: Optional[bool] = False
     paymentMethod: Optional[str] = None
     paymentId: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 class Payment(BaseModel):
     id: str

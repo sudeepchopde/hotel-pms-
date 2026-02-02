@@ -2630,64 +2630,66 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
                     <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-3 custom-scrollbar-dark pb-4">
                       {booking.folio && booking.folio.length > 0 ? (
-                        booking.folio.map((item) => (
-                          <div key={item.id} className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/[0.08] transition-all group/item shadow-sm">
-                            <div className="flex items-center gap-4">
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center border shadow-inner ${item.category === 'F&B' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'} `}>
-                                {item.category === 'F&B' ? <Coffee className="w-5 h-5" /> : item.category === 'Room' ? <Bed className="w-5 h-5" /> : <Zap className="w-5 h-5" />}
-                              </div>
-                              <div>
-                                <p className="text-sm font-bold text-slate-100 uppercase tracking-tight">{item.description}</p>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest tabular-nums">{new Date(item.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                                  <span className="w-1 h-1 bg-white/10 rounded-full"></span>
-                                  <span className="text-[9px] font-black text-indigo-400/80 uppercase">{item.category}</span>
+                        [...booking.folio]
+                          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                          .map((item) => (
+                            <div key={item.id} className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/[0.08] transition-all group/item shadow-sm">
+                              <div className="flex items-center gap-4">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center border shadow-inner ${item.category === 'F&B' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'} `}>
+                                  {item.category === 'F&B' ? <Coffee className="w-5 h-5" /> : item.category === 'Room' ? <Bed className="w-5 h-5" /> : <Zap className="w-5 h-5" />}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-bold text-slate-100 uppercase tracking-tight">{item.description}</p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest tabular-nums">{new Date(item.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                                    <span className="w-1 h-1 bg-white/10 rounded-full"></span>
+                                    <span className="text-[9px] font-black text-indigo-400/80 uppercase">{item.category}</span>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                            <div className="flex items-center gap-6">
-                              <div className="text-right">
-                                <p className="text-base font-black text-white tabular-nums tracking-tighter">₹{item.amount.toLocaleString()}</p>
-                                <button
-                                  className={`text-[8px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5 transition-all px-2 py-1 rounded-md mt-1.5 ${item.isPaid ? 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/30' : 'text-rose-400 bg-rose-400/10 border border-rose-400/30 animate-pulse'} `}
-                                  onClick={() => {
-                                    if (item.isPaid) {
-                                      const newFolio = (booking.folio || []).map(f => f.id === item.id ? { ...f, isPaid: false, paymentMethod: undefined, paymentId: undefined } : f);
-                                      onUpdateFolio?.(booking.id, newFolio);
-                                    } else {
-                                      setTargetFolioItem(item);
-                                      setPaymentAmount(item.amount.toString());
-                                      setPaymentCategory('Folio');
-                                      setShowPaymentModal(true);
-                                    }
-                                  }}
-                                >
-                                  {item.isPaid ? (
-                                    <div className="flex items-center gap-2">
-                                      <CheckCircle2 className="w-3 h-3" />
-                                      <span>{item.paymentMethod || 'Settled'}</span>
-                                      <Printer className="w-3 h-3 opacity-50 hover:opacity-100 transition-opacity ml-1" onClick={(e) => { e.stopPropagation(); printReceipt(item); }} />
-                                    </div>
-                                  ) : 'Mark as Paid'}
+                              <div className="flex items-center gap-6">
+                                <div className="text-right">
+                                  <p className="text-base font-black text-white tabular-nums tracking-tighter">₹{item.amount.toLocaleString()}</p>
+                                  <button
+                                    className={`text-[8px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5 transition-all px-2 py-1 rounded-md mt-1.5 ${item.isPaid ? 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/30' : 'text-rose-400 bg-rose-400/10 border border-rose-400/30 animate-pulse'} `}
+                                    onClick={() => {
+                                      if (item.isPaid) {
+                                        const newFolio = (booking.folio || []).map(f => f.id === item.id ? { ...f, isPaid: false, paymentMethod: undefined, paymentId: undefined } : f);
+                                        onUpdateFolio?.(booking.id, newFolio);
+                                      } else {
+                                        setTargetFolioItem(item);
+                                        setPaymentAmount(item.amount.toString());
+                                        setPaymentCategory('Folio');
+                                        setShowPaymentModal(true);
+                                      }
+                                    }}
+                                  >
+                                    {item.isPaid ? (
+                                      <div className="flex items-center gap-2">
+                                        <CheckCircle2 className="w-3 h-3" />
+                                        <span>{item.paymentMethod || 'Settled'}</span>
+                                        <Printer className="w-3 h-3 opacity-50 hover:opacity-100 transition-opacity ml-1" onClick={(e) => { e.stopPropagation(); printReceipt(item); }} />
+                                      </div>
+                                    ) : 'Mark as Paid'}
+                                  </button>
+                                </div>
+                                <button onClick={() => {
+                                  const isExtraBed = (item.category === 'Other' || item.category === 'Room') &&
+                                    item.description?.toUpperCase().includes('EXTRA BED');
+
+                                  if (isExtraBed) {
+                                    // Using the dedicated handler ensures both count and folio are updated atomically
+                                    onUpdateExtraBeds?.(booking.id, 0);
+                                  } else {
+                                    const newFolio = (booking.folio || []).filter(f => f.id !== item.id);
+                                    onUpdateFolio?.(booking.id, newFolio);
+                                  }
+                                }} className="p-2 text-white/10 hover:text-rose-400 hover:bg-white/5 rounded-xl transition-all opacity-0 group-hover/item:opacity-100">
+                                  <Trash2 className="w-4 h-4" />
                                 </button>
                               </div>
-                              <button onClick={() => {
-                                const isExtraBed = (item.category === 'Other' || item.category === 'Room') &&
-                                  item.description?.toUpperCase().includes('EXTRA BED');
-
-                                if (isExtraBed) {
-                                  // Using the dedicated handler ensures both count and folio are updated atomically
-                                  onUpdateExtraBeds?.(booking.id, 0);
-                                } else {
-                                  const newFolio = (booking.folio || []).filter(f => f.id !== item.id);
-                                  onUpdateFolio?.(booking.id, newFolio);
-                                }
-                              }} className="p-2 text-white/10 hover:text-rose-400 hover:bg-white/5 rounded-xl transition-all opacity-0 group-hover/item:opacity-100">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
                             </div>
-                          </div>
-                        ))
+                          ))
                       ) : (
                         <div className="py-16 text-center border-2 border-dashed border-white/5 rounded-[2rem] bg-white/[0.02]">
                           <Receipt className="w-10 h-10 text-white/5 mx-auto mb-4" />

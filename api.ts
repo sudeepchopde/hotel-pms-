@@ -1,4 +1,4 @@
-import { Hotel, RoomType, OTAConnection, RateRulesConfig, Booking, PropertySettings, Notification } from './types';
+import { Hotel, RoomType, OTAConnection, RateRulesConfig, Booking, PropertySettings, Notification, FolioItem } from './types';
 
 const API_BASE = '/api';
 
@@ -132,6 +132,16 @@ export const transferBooking = async (bookingId: string, transferData: {
         body: JSON.stringify(transferData)
     });
     if (!response.ok) throw new Error('Failed to transfer room');
+    return response.json();
+};
+
+export const addFolioItem = async (bookingId: string, item: FolioItem): Promise<Booking> => {
+    const response = await fetch(`${API_BASE}/bookings/${bookingId}/folio`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item)
+    });
+    if (!response.ok) throw new Error('Failed to add folio item');
     return response.json();
 };
 

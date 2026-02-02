@@ -105,7 +105,11 @@ const GuestsView: React.FC<GuestsViewProps> = ({ syncEvents, setSyncEvents, room
   useEffect(() => {
     if (selectedBooking) {
       const updated = syncEvents.find(e => e.id === selectedBooking.id && e.type === 'booking') as Booking;
-      if (updated && updated.timestamp !== selectedBooking.timestamp) {
+      if (updated && (
+        updated.timestamp !== selectedBooking.timestamp ||
+        (updated.folio?.length || 0) !== (selectedBooking.folio?.length || 0) ||
+        (updated.payments?.length || 0) !== (selectedBooking.payments?.length || 0)
+      )) {
         setSelectedBooking(updated);
       }
     }

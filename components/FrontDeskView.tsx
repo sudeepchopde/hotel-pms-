@@ -251,7 +251,12 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
   useEffect(() => {
     if (selectedBooking) {
       const liveBooking = syncEvents.find(e => e.id === selectedBooking.id && e.type === 'booking') as Booking | undefined;
-      if (liveBooking && (liveBooking.timestamp !== selectedBooking.timestamp || liveBooking.extraBeds !== selectedBooking.extraBeds)) {
+      if (liveBooking && (
+        liveBooking.timestamp !== selectedBooking.timestamp ||
+        liveBooking.extraBeds !== selectedBooking.extraBeds ||
+        (liveBooking.folio?.length || 0) !== (selectedBooking.folio?.length || 0) ||
+        (liveBooking.payments?.length || 0) !== (selectedBooking.payments?.length || 0)
+      )) {
         setSelectedBooking(liveBooking);
       }
     }
