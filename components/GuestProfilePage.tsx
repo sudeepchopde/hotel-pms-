@@ -87,6 +87,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   const [chargeCategory, setChargeCategory] = useState<'F&B' | 'Laundry' | 'Other'>('Other');
   const [isChargeInclusive, setIsChargeInclusive] = useState(true);
   const [targetFolioItem, setTargetFolioItem] = useState<FolioItem | null>(null);
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
 
   // New State for Integrated Check-in & Editing
   const [editableDetails, setEditableDetails] = useState<GuestDetails>(() => {
@@ -794,46 +795,52 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     const amount = parseFloat(paymentAmount);
     if (isNaN(amount) || amount <= 0) return;
 
-    const newPayment: Payment = {
-      id: Math.random().toString(36).substr(2, 9),
-      amount,
-      method: paymentMethod,
-      timestamp: new Date().toISOString(),
-      category: paymentCategory,
-      description: targetFolioItem ? `Payment for ${targetFolioItem.description}` : 'Partial/General Payment',
-      status: 'Completed'
-    };
-
-    const updatedPayments = [...(booking.payments || []), newPayment];
+    let updatedPayments = [...(booking.payments || [])];
     let updatedFolio = booking.folio || [];
-
-    // Auto-settle folio items if full balance is paid or specific item is selected
     let folioUpdated = false;
-    if (targetFolioItem) {
-      updatedFolio = updatedFolio.map(item => {
-        if (item.id === targetFolioItem.id) {
-          return { ...item, isPaid: true, paymentMethod, paymentId: newPayment.id };
-        }
-        // If this payment clears the entire remaining balance, settle other items too
-        // Use tolerance to avoid floating point issues (e.g. 4355.600000000001)
-        if (amount >= netOutstanding - 0.1) {
-          return { ...item, isPaid: true, paymentMethod: item.paymentMethod || paymentMethod, paymentId: item.paymentId || newPayment.id };
-        }
-        return item;
-      });
-      folioUpdated = true;
-    } else if (amount >= netOutstanding - 0.1) {
-      // General payment clears the total balance
-      updatedFolio = updatedFolio.map(item => ({
-        ...item,
-        isPaid: true,
-        paymentMethod: item.paymentMethod || paymentMethod,
-        paymentId: item.paymentId || newPayment.id
-      }));
-      folioUpdated = true;
+
+    if (editingPaymentId) {
+      // Update existing payment
+      updatedPayments = updatedPayments.map(p =>
+        p.id === editingPaymentId ? { ...p, amount, method: paymentMethod, timestamp: new Date().toISOString() } : p
+      );
+    } else {
+      // Add new payment
+      const newPayment: Payment = {
+        id: Math.random().toString(36).substr(2, 9),
+        amount,
+        method: paymentMethod,
+        timestamp: new Date().toISOString(),
+        category: paymentCategory,
+        description: targetFolioItem ? `Payment for ${targetFolioItem.description}` : 'Partial/General Payment',
+        status: 'Completed'
+      };
+
+      updatedPayments.push(newPayment);
+
+      // Auto-settle folio items if full balance is paid or specific item is selected
+      if (targetFolioItem) {
+        updatedFolio = updatedFolio.map(item => {
+          if (item.id === targetFolioItem.id) {
+            return { ...item, isPaid: true, paymentMethod, paymentId: newPayment.id };
+          }
+          if (amount >= netOutstanding - 0.1) {
+            return { ...item, isPaid: true, paymentMethod: item.paymentMethod || paymentMethod, paymentId: item.paymentId || newPayment.id };
+          }
+          return item;
+        });
+        folioUpdated = true;
+      } else if (amount >= netOutstanding - 0.1) {
+        updatedFolio = updatedFolio.map(item => ({
+          ...item,
+          isPaid: true,
+          paymentMethod: item.paymentMethod || paymentMethod,
+          paymentId: item.paymentId || newPayment.id
+        }));
+        folioUpdated = true;
+      }
     }
 
-    // Use combined update if available to avoid race conditions
     if (onUpdateBooking) {
       onUpdateBooking({ ...booking, payments: updatedPayments, folio: updatedFolio });
     } else {
@@ -843,9 +850,14 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       }
     }
 
+    closePaymentModal();
+  };
+
+  const closePaymentModal = () => {
     setShowPaymentModal(false);
     setPaymentAmount('');
     setTargetFolioItem(null);
+    setEditingPaymentId(null);
   };
 
   const [isProcessingOnline, setIsProcessingOnline] = useState(false);
@@ -2564,17 +2576,33 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                               <div className="flex items-center gap-2">
                                 <span className="text-[8px] font-black text-slate-500 uppercase">{new Date(p.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                                 {p.status === 'Completed' && (
-                                  <button
-                                    onClick={() => printReceipt({
-                                      description: p.description || 'Partial Payment',
-                                      amount: p.amount,
-                                      timestamp: p.timestamp,
-                                      paymentMethod: p.method
-                                    })}
-                                    className="p-1 hover:bg-white/10 rounded opacity-0 group-hover/tx:opacity-100 transition-all"
-                                  >
-                                    <Printer className="w-2.5 h-2.5 text-slate-500" />
-                                  </button>
+                                  <div className="flex items-center gap-1.5 opacity-0 group-hover/tx:opacity-100 transition-all">
+                                    <button
+                                      onClick={() => {
+                                        setEditingPaymentId(p.id);
+                                        setPaymentAmount(p.amount.toString());
+                                        setPaymentMethod(p.method);
+                                        setPaymentCategory(p.category);
+                                        setShowPaymentModal(true);
+                                      }}
+                                      className="p-1 hover:bg-white/10 rounded"
+                                      title="Edit Payment"
+                                    >
+                                      <Edit3 className="w-2.5 h-2.5 text-slate-500" />
+                                    </button>
+                                    <button
+                                      onClick={() => printReceipt({
+                                        description: p.description || 'Partial Payment',
+                                        amount: p.amount,
+                                        timestamp: p.timestamp,
+                                        paymentMethod: p.method
+                                      })}
+                                      className="p-1 hover:bg-white/10 rounded"
+                                      title="Print Receipt"
+                                    >
+                                      <Printer className="w-2.5 h-2.5 text-slate-500" />
+                                    </button>
+                                  </div>
                                 )}
                               </div>
                             </div>
@@ -3215,9 +3243,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-xl font-black text-slate-900 tracking-tight uppercase flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-indigo-600" />
-                  Record Payment
+                  {editingPaymentId ? 'Edit Payment Record' : 'Record Payment'}
                 </h3>
-                <button onClick={() => setShowPaymentModal(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                <button onClick={closePaymentModal} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
                   <X className="w-5 h-5 text-slate-400" />
                 </button>
               </div>
@@ -3267,35 +3295,39 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
             <div className="p-8 border-t border-slate-50 bg-slate-50 space-y-4">
               {/* Online Payment Button */}
-              <button
-                onClick={handleCollectOnline}
-                disabled={isProcessingOnline || !paymentAmount}
-                className="w-full py-4 bg-emerald-600 text-white rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {isProcessingOnline ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Globe className="w-4 h-4" />
-                    Collect Online (Razorpay)
-                  </>
-                )}
-              </button>
+              {!editingPaymentId && (
+                <button
+                  onClick={handleCollectOnline}
+                  disabled={isProcessingOnline || !paymentAmount}
+                  className="w-full py-4 bg-emerald-600 text-white rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isProcessingOnline ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="w-4 h-4" />
+                      Collect Online (Razorpay)
+                    </>
+                  )}
+                </button>
+              )}
 
               {/* Divider */}
-              <div className="flex items-center gap-4">
-                <div className="flex-1 h-px bg-slate-200"></div>
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Or Record Offline</span>
-                <div className="flex-1 h-px bg-slate-200"></div>
-              </div>
+              {!editingPaymentId && (
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 h-px bg-slate-200"></div>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Or Record Offline</span>
+                  <div className="flex-1 h-px bg-slate-200"></div>
+                </div>
+              )}
 
               {/* Offline Payment Buttons */}
               <div className="flex gap-4">
                 <button
-                  onClick={() => setShowPaymentModal(false)}
+                  onClick={closePaymentModal}
                   className="flex-1 py-4 text-xs font-black text-slate-400 uppercase tracking-widest"
                 >
                   Cancel
@@ -3304,7 +3336,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   onClick={handleRecordPayment}
                   className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95"
                 >
-                  Record {paymentMethod} Payment
+                  {editingPaymentId ? 'Update Payment' : `Record ${paymentMethod} Payment`}
                 </button>
               </div>
             </div>
