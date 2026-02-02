@@ -277,7 +277,10 @@ const KitchenDisplay: React.FC = () => {
                                     .filter(o => statusFilter === 'all' || o.kitchenStatus === statusFilter)
                                     .map(order => {
                                         // Parse Items
-                                        const items = (order.metadata?.items || [{ name: order.message, quantity: 1 }]) as { name: string, quantity: number, notes?: string }[];
+                                        const rawItems = (order.metadata?.items || [{ name: order.message, quantity: 1 }]) as { name: string, quantity: number, notes?: string }[];
+                                        // Hide Service Charge / Tax line items from Kitchen Display
+                                        const items = rawItems.filter(i => !i.name.toLowerCase().includes('service charge'));
+
                                         const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
 
                                         return (
