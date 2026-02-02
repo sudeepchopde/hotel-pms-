@@ -381,8 +381,43 @@ const App: React.FC = () => {
   }, []);
 
   // Security State
-  const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([]);
-  const [roomSecurity, setRoomSecurity] = useState<RoomSecurityStatus[]>([]);
+  const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([
+    {
+      id: 'mock_1',
+      room_id: '101',
+      input_surname: 'smith',
+      status: 'SUCCESS',
+      ip_address: '192.168.1.42',
+      created_at: new Date(Date.now() - 1000 * 60 * 5).toISOString()
+    },
+    {
+      id: 'mock_2',
+      room_id: '205',
+      input_surname: 'admin',
+      status: 'FAIL',
+      ip_address: '192.168.1.105',
+      created_at: new Date(Date.now() - 1000 * 60 * 15).toISOString()
+    },
+    {
+      id: 'mock_3',
+      room_id: '205',
+      input_surname: 'admin',
+      status: 'FAIL',
+      ip_address: '192.168.1.105',
+      created_at: new Date(Date.now() - 1000 * 60 * 16).toISOString()
+    },
+    {
+      id: 'mock_4',
+      room_id: '205',
+      input_surname: 'root',
+      status: 'LOCKED',
+      ip_address: '192.168.1.105',
+      created_at: new Date(Date.now() - 1000 * 60 * 18).toISOString()
+    }
+  ]);
+  const [roomSecurity, setRoomSecurity] = useState<RoomSecurityStatus[]>([
+    { room_id: '205', isLocked: true, isQRDisabled: false, failCount: 3 }
+  ]);
   const [securityToast, setSecurityToast] = useState<string | null>(null);
 
   // Guest Mode State
