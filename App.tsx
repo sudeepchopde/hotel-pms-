@@ -231,14 +231,23 @@ const App: React.FC = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [hotelsData, connectionsData, rulesData, roomTypesData, bookingsData, propertyData] = await Promise.all([
-          import('./api').then(m => m.fetchHotels()),
-          import('./api').then(m => m.fetchConnections()),
-          import('./api').then(m => m.fetchRules()),
-          import('./api').then(m => m.fetchRoomTypes()),
-          import('./api').then(m => m.fetchBookings()),
-          import('./api').then(m => m.fetchPropertySettings())
-        ]);
+        // Create a timeout promise that rejects after 10 seconds
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Initial data load timed out')), 10000);
+        });
+
+        // Race the data fetching against the timeout
+        const [hotelsData, connectionsData, rulesData, roomTypesData, bookingsData, propertyData] = await Promise.race([
+          Promise.all([
+            import('./api').then(m => m.fetchHotels()),
+            import('./api').then(m => m.fetchConnections()),
+            import('./api').then(m => m.fetchRules()),
+            import('./api').then(m => m.fetchRoomTypes()),
+            import('./api').then(m => m.fetchBookings()),
+            import('./api').then(m => m.fetchPropertySettings())
+          ]),
+          timeoutPromise
+        ]) as [Hotel[], OTAConnection[], RateRulesConfig, RoomType[], Booking[], PropertySettings];
 
         setHotels(hotelsData);
         if (hotelsData.length > 0) setSelectedHotel(hotelsData[0]);
@@ -250,14 +259,13 @@ const App: React.FC = () => {
         setSyncEvents(bookingEvents);
         setPropertySettings(propertyData);
       } catch (error) {
-        console.error("Failed to load initial data", error);
-        // Initial fetch of notifications to set baseline
-        // Initial fetch of notifications to set baseline
+        console.error("Failed to load initial data or timed out", error);
+        // Even on failure/timeout, we try to fetch notifications purely for baseline
         import('./api').then(m => m.fetchNotifications(true)).then(data => {
           if (data && data.length > 0) {
-            lastNotificationIdRef.current = data[0].id; // Don't show toast for existing ones
+            lastNotificationIdRef.current = data[0].id;
           }
-        });
+        }).catch(e => console.error("Failed to fetch notifications on error", e));
       } finally {
         setIsLoading(false);
       }

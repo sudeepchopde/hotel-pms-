@@ -8,7 +8,6 @@ from collections import defaultdict
 import json
 import re
 import uuid
-from datetime import datetime
 
 def normalize_phone(phone: str) -> str:
     """Normalize phone number by removing all non-digit characters."""
