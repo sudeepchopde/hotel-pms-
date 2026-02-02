@@ -903,10 +903,10 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                               </div>
                             </div>
 
-                            <div className="flex-1 max-w-md">
+                            <div className="flex-1 max-w-2xl">
                               <div className="space-y-1.5">
                                 <label className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.2em] ml-1">QR Code Base URL</label>
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                                   <div className="relative flex-1">
                                     <div className="absolute left-3 top-1/2 -translate-y-1/2 p-1.5 bg-indigo-50 rounded-lg text-indigo-600">
                                       <Globe className="w-3 h-3" />
@@ -932,7 +932,7 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                                         alert('❌ Failed to save URL. Please try again.');
                                       }
                                     }}
-                                    className="px-4 py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-200 flex items-center gap-2 whitespace-nowrap"
+                                    className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-200 flex items-center justify-center gap-2 whitespace-nowrap"
                                   >
                                     <Save className="w-3.5 h-3.5" />
                                     Save URL
@@ -941,7 +941,7 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                                 {profileFormData.publicBaseUrl && (
                                   <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
                                     <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span className="text-[10px] font-bold text-emerald-700">
+                                    <span className="text-[10px] font-bold text-emerald-700 truncate">
                                       Saved: <span className="font-mono">{profileFormData.publicBaseUrl}</span>
                                     </span>
                                   </div>
