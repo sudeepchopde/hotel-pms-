@@ -1951,8 +1951,8 @@ def create_notification_internal(db, notif_type: str, category: str, title: str,
         return None
 
 @app.get("/api/notifications")
-def get_notifications(unread_only: bool = False, type_filter: str = None, limit: int = 50):
-    """Get notifications with optional filters"""
+def get_notifications(unread_only: bool = False, type_filter: str = None, limit: int = 50, history_mode: bool = False):
+    """Get notifications with optional filters. history_mode=True fetches dismissed notifications."""
     import os
     
     db_url = os.getenv("DATABASE_URL")
@@ -1968,7 +1968,14 @@ def get_notifications(unread_only: bool = False, type_filter: str = None, limit:
         engine = create_engine(db_url, pool_pre_ping=True)
         
         # Build query
-        sql = "SELECT id, type, category, title, message, priority, is_read, is_dismissed, created_at, read_at, booking_id, room_number, metadata FROM notifications WHERE is_dismissed = FALSE"
+        # IF history_mode is True, we want DISMISSED items.
+        # IF history_mode is False, we want ACTIVE (non-dismissed) items.
+        sql = "SELECT id, type, category, title, message, priority, is_read, is_dismissed, created_at, read_at, booking_id, room_number, metadata FROM notifications WHERE 1=1"
+        
+        if history_mode:
+            sql += " AND is_dismissed = TRUE"
+        else:
+            sql += " AND is_dismissed = FALSE"
         
         if unread_only:
             sql += " AND is_read = FALSE"

@@ -73,22 +73,26 @@ const KitchenDisplay: React.FC = () => {
     // Load Orders Logic
     const loadOrders = async () => {
         try {
-            const data = await fetchNotifications(false);
+            // Fetch Active (Live) and History (Dismissed) separately
+            const [activeData, historyData] = await Promise.all([
+                fetchNotifications(false, undefined, false),
+                fetchNotifications(false, undefined, true)
+            ]);
 
             // Filter active tickets - STRICTLY F&B Only
-            const activeServerOrders = data.filter(n =>
+            // We rely on the title containing 'F&B' or 'Dining' to explicitly identify Kitchen orders.
+            // This excludes 'Other' orders like Flowers even if they have items.
+            const isKitchenOrder = (n: any) =>
                 n.category === 'service_order' &&
-                !n.isDismissed &&
-                // Strict Filter: Must be F&B or have food items
-                (n.title?.includes('F&B') || (n.metadata?.items && Array.isArray(n.metadata.items)))
-            );
+                (n.title?.includes('F&B') || n.title?.includes('Dining') || n.title?.includes('Kitchen'));
 
-            // For history (approximate, ideally backend would support this better)
-            const historyServerOrders = data.filter(n =>
-                n.category === 'service_order' &&
-                n.isDismissed &&
-                (n.title?.includes('F&B') || (n.metadata?.items && Array.isArray(n.metadata.items)))
-            ).slice(0, 50);
+            const activeServerOrders = activeData.filter(n => isKitchenOrder(n));
+
+            // For history
+            const historyServerOrders = historyData
+                .filter(n => isKitchenOrder(n))
+                .slice(0, 50);
+
             setCompletedOrders(historyServerOrders);
 
             // Merge server data with local status (using Ref to avoid stale closures)

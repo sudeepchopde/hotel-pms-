@@ -166,10 +166,11 @@ export const fetchGuestHistory = async (name: string, phone?: string, excludeBoo
 
 // ========== NOTIFICATIONS API ==========
 
-export const fetchNotifications = async (unreadOnly: boolean = false, typeFilter?: string): Promise<Notification[]> => {
+export const fetchNotifications = async (unreadOnly: boolean = false, typeFilter?: string, historyMode: boolean = false): Promise<Notification[]> => {
     const params = new URLSearchParams();
     if (unreadOnly) params.append('unread_only', 'true');
     if (typeFilter) params.append('type_filter', typeFilter);
+    if (historyMode) params.append('history_mode', 'true');
     const response = await fetch(`${API_BASE}/notifications?${params.toString()}`);
     if (!response.ok) return [];
     return response.json();
