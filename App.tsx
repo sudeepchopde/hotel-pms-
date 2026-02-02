@@ -249,17 +249,28 @@ const App: React.FC = () => {
           timeoutPromise
         ]) as [Hotel[], OTAConnection[], RateRulesConfig, RoomType[], Booking[], PropertySettings];
 
-        setHotels(hotelsData);
-        if (hotelsData.length > 0) setSelectedHotel(hotelsData[0]);
-        setConnections(connectionsData);
-        setRules(rulesData);
-        setRoomTypes(roomTypesData);
+        // Use fallback if API returns empty list (e.g. fresh DB)
+        const effectiveHotels = hotelsData && hotelsData.length > 0 ? hotelsData : HOTELS;
+        setHotels(effectiveHotels);
+        setSelectedHotel(effectiveHotels[0]);
+
+        setConnections(connectionsData || INITIAL_CONNECTIONS);
+        setRules(rulesData || INITIAL_RULES);
+        setRoomTypes(roomTypesData || INITIAL_ROOM_TYPES);
         // Convert bookings to SyncEvents (assuming 'booking' type differentiation happens later or cast)
-        const bookingEvents = bookingsData.map(b => ({ ...b, type: 'booking' } as SyncEvent));
+        const bookingEvents = (bookingsData || []).map(b => ({ ...b, type: 'booking' } as SyncEvent));
         setSyncEvents(bookingEvents);
         setPropertySettings(propertyData);
       } catch (error) {
         console.error("Failed to load initial data or timed out", error);
+
+        // FALBACK MODE: Load local constants so the app actually opens!
+        setHotels(HOTELS);
+        setSelectedHotel(HOTELS[0]);
+        setConnections(INITIAL_CONNECTIONS);
+        setRules(INITIAL_RULES);
+        setRoomTypes(INITIAL_ROOM_TYPES);
+
         // Even on failure/timeout, we try to fetch notifications purely for baseline
         import('./api').then(m => m.fetchNotifications(true)).then(data => {
           if (data && data.length > 0) {
