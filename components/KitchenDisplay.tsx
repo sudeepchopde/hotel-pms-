@@ -277,7 +277,7 @@ const KitchenDisplay: React.FC = () => {
                                     .filter(o => statusFilter === 'all' || o.kitchenStatus === statusFilter)
                                     .map(order => {
                                         // Parse Items
-                                        const items = (order.metadata?.items || [{ name: order.message, quantity: 1 }]) as { name: string, quantity: number }[];
+                                        const items = (order.metadata?.items || [{ name: order.message, quantity: 1 }]) as { name: string, quantity: number, notes?: string }[];
                                         const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
 
                                         return (
@@ -304,16 +304,23 @@ const KitchenDisplay: React.FC = () => {
                                                 {/* Items Area */}
                                                 <div className="p-4 bg-slate-900/80 min-h-[160px] space-y-3">
                                                     {items.map((item, idx) => (
-                                                        <div key={idx} className="flex gap-3 text-sm">
-                                                            <span className="font-black text-slate-400 min-w-[20px]">{item.quantity}</span>
-                                                            <span className={`font-bold leading-snug ${order.kitchenStatus === 'ready' ? 'text-emerald-300 line-through opacity-50' : 'text-slate-200'}`}>
-                                                                {item.name}
-                                                            </span>
+                                                        <div key={idx} className="flex flex-col gap-1">
+                                                            <div className="flex gap-3 text-sm">
+                                                                <span className="font-black text-slate-400 min-w-[20px]">{item.quantity}</span>
+                                                                <span className={`font-bold leading-snug ${order.kitchenStatus === 'ready' ? 'text-emerald-300 line-through opacity-50' : 'text-slate-200'}`}>
+                                                                    {item.name}
+                                                                </span>
+                                                            </div>
+                                                            {item.notes && (
+                                                                <div className="ml-8 text-[10px] text-amber-400 font-medium italic">
+                                                                    {item.notes}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     ))}
                                                     {order.metadata?.notes && (
                                                         <div className="mt-4 p-2 bg-amber-500/10 border border-amber-500/20 rounded text-amber-300 text-xs font-bold italic">
-                                                            "{order.metadata.notes}"
+                                                            "General Note: {order.metadata.notes}"
                                                         </div>
                                                     )}
                                                 </div>

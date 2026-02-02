@@ -38,6 +38,20 @@ def migrate(env_file):
         else:
             print("Auto-parsing columns already exist.")
 
+        print("Checking for metadata column in notifications...")
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='notifications' AND column_name='metadata';")
+        if not cur.fetchone():
+            print("Adding metadata column to notifications...")
+            # Note: We must verify if the table exists first, but if it doesn't, SQLAlchemy will create it eventually.
+            # Assuming table exists if user is facing issues.
+            try:
+                cur.execute("ALTER TABLE notifications ADD COLUMN metadata JSON DEFAULT '{}'::json;")
+                print("Done.")
+            except Exception as e:
+                print(f"Could not add metadata column (Table might not exist?): {e}")
+        else:
+            print("Column metadata already exists.")
+
         cur.close()
         conn.close()
     except Exception as e:

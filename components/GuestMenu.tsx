@@ -133,11 +133,16 @@ const GuestMenu: React.FC<GuestMenuProps> = ({ roomNumber, onValidateGuest, onPl
         setSessionToken(token);
         if (onPlaceOrder) {
           // Pass individual items with their quantities plus a 5% service charge
-          const items = cart.map(i => ({ name: i.name, price: i.price * i.quantity, quantity: i.quantity }));
+          const items = cart.map(i => ({
+            name: i.name,
+            price: i.price * i.quantity,
+            quantity: i.quantity,
+            notes: i.instructions
+          }));
           const subtotal = items.reduce((sum, i) => sum + i.price, 0);
           const serviceCharge = Math.round(subtotal * 0.05);
           if (serviceCharge > 0) {
-            items.push({ name: 'Service Charge (5%)', price: serviceCharge, quantity: 1 });
+            items.push({ name: 'Service Charge (5%)', price: serviceCharge, quantity: 1, notes: '' });
           }
           onPlaceOrder(roomNumber, items);
         }

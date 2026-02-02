@@ -498,7 +498,7 @@ const App: React.FC = () => {
     });
   };
 
-  const handlePlaceOrder = async (roomNumber: string, items: { name: string, price: number, quantity: number }[]) => {
+  const handlePlaceOrder = async (roomNumber: string, items: { name: string, price: number, quantity: number, notes?: string }[]) => {
     // Find the most recent active booking for this room to avoid stale/historical conflicts
     const booking = [...syncEvents]
       .filter(e => e.type === 'booking' && e.roomNumber === roomNumber && e.status === 'CheckedIn')
