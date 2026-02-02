@@ -38,6 +38,8 @@ const KitchenDisplay: React.FC = () => {
     // Refs for change detection & sound
     const previousOrderIds = React.useRef<Set<string>>(new Set());
     const isFirstLoad = React.useRef(true);
+    // Persist status across polls
+    const activeStatusesRef = React.useRef<Record<string, TicketStatus>>({});
 
     // Audio Logic
     const playAlertSound = () => {
@@ -89,18 +91,18 @@ const KitchenDisplay: React.FC = () => {
             ).slice(0, 50);
             setCompletedOrders(historyServerOrders);
 
-            // Merge server data with local status (if we had a backend for status, we'd use that)
-            // For now, we assume everything from server is 'new' unless we have local state overrides.
-
+            // Merge server data with local status (using Ref to avoid stale closures)
             const newKitchenTickets = activeServerOrders.map(o => {
                 // Determine elapsed time
                 const seconds = (new Date().getTime() - new Date(o.createdAt).getTime()) / 1000;
 
-                // Try to preserve existing status if present in current state
-                const existing = orders.find(ex => ex.id === o.id);
+                // RESTORE STATUS FROM REF
+                // This ensures that even if 'orders' state is stale/reloaded, we keep the user's workflow state
+                const currentStatus = activeStatusesRef.current[o.id] || 'new';
+
                 return {
                     ...o,
-                    kitchenStatus: existing ? existing.kitchenStatus : 'new',
+                    kitchenStatus: currentStatus,
                     elapsedSeconds: seconds
                 } as KitchenTicket;
             });
@@ -145,6 +147,8 @@ const KitchenDisplay: React.FC = () => {
 
     // Workflow Actions
     const updateTicketStatus = (id: string, newStatus: TicketStatus) => {
+        // Update local ref immediately so next poll respects it
+        activeStatusesRef.current[id] = newStatus;
         setOrders(prev => prev.map(o => o.id === id ? { ...o, kitchenStatus: newStatus } : o));
     };
 
