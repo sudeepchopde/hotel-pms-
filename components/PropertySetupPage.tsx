@@ -5,7 +5,7 @@ import {
   IndianRupee, Users, Bed, Info, X, Save,
   Lock, Check, AlertTriangle, History, Hash, Sofa,
   QrCode, Printer, Download, Terminal, ExternalLink, Globe,
-  Settings2, Smartphone, Building2, RotateCcw, Link as LinkIcon, ArrowRight, Star
+  Settings2, Smartphone, Building2, RotateCcw, Link as LinkIcon, ArrowRight, Star, Copy
 } from 'lucide-react';
 import { RoomType, SyncEvent, PropertySettings, Booking } from '../types';
 import { updatePropertySettings, createRoomType, updateRoomType, deleteRoomType } from '../api';
@@ -886,37 +886,42 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                       </div>
                     ) : (
                       <div className="space-y-10">
-                        <div className="bg-white border-2 border-indigo-100 p-8 rounded-[2.5rem] shadow-sm space-y-6">
-                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                            <div className="flex gap-4">
-                              <div className="p-3 bg-indigo-50 rounded-2xl h-fit text-indigo-600">
+                        <div className="bg-white border-2 border-indigo-100 p-8 rounded-[3rem] shadow-sm space-y-8 relative overflow-hidden">
+                          {/* Subtle background decoration */}
+                          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50/50 rounded-full -mr-32 -mt-32 blur-3xl pointer-events-none"></div>
+
+                          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-8 relative">
+                            <div className="flex gap-4 max-w-xl">
+                              <div className="p-4 bg-indigo-600 rounded-2xl h-fit text-white shadow-lg shadow-indigo-200">
                                 <Smartphone className="w-6 h-6" />
                               </div>
                               <div>
                                 <h4 className="font-black text-slate-900 flex items-center gap-2 uppercase tracking-wider text-sm">
-                                  Local Network Mobile Testing
+                                  Mobile Access Configuration
                                 </h4>
-                                <p className="text-xs text-slate-500 leading-relaxed mt-1 max-w-lg">
-                                  If you are testing on your local network, your phone cannot reach "localhost".
-                                  Enter your computer's <strong>Local IP address</strong> below (e.g., http://192.168.1.15:5173).
+                                <p className="text-xs text-slate-500 leading-relaxed mt-1.5 font-medium">
+                                  Define the base URL for your guest menu. If testing on a local WiFi network, use your computer's <strong>Local IP</strong> (e.g., http://192.168.1.15:3000). For production, use your <strong>Vercel or Custom Domain</strong>.
                                 </p>
                               </div>
                             </div>
 
-                            <div className="flex-1 max-w-2xl">
-                              <div className="space-y-1.5">
-                                <label className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.2em] ml-1">QR Code Base URL</label>
-                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                  <div className="relative flex-1">
-                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 p-1.5 bg-indigo-50 rounded-lg text-indigo-600">
-                                      <Globe className="w-3 h-3" />
+                            <div className="flex-1 max-w-2xl w-full">
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between px-1">
+                                  <label className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em]">Target Base URL</label>
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase">Updates all QR codes</span>
+                                </div>
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                                  <div className="relative flex-1 group">
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 p-1.5 bg-indigo-50 rounded-lg text-indigo-600 group-focus-within:bg-indigo-600 group-focus-within:text-white transition-all">
+                                      <Globe className="w-3.5 h-3.5" />
                                     </div>
                                     <input
                                       type="text"
                                       value={testBaseUrl}
                                       onChange={(e) => setTestBaseUrl(e.target.value)}
                                       placeholder="https://your-app.vercel.app"
-                                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border-2 border-indigo-100 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-sm"
+                                      className="w-full pl-14 pr-4 py-4 bg-slate-50 border-2 border-indigo-100 rounded-2xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-sm"
                                     />
                                   </div>
                                   <button
@@ -932,28 +937,45 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                                         alert('❌ Failed to save URL. Please try again.');
                                       }
                                     }}
-                                    className="px-6 py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-200 flex items-center justify-center gap-2 whitespace-nowrap"
+                                    className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-200 flex items-center justify-center gap-2 whitespace-nowrap"
                                   >
-                                    <Save className="w-3.5 h-3.5" />
-                                    Save URL
+                                    <Save className="w-4 h-4" />
+                                    Save Config
                                   </button>
                                 </div>
+
                                 {profileFormData.publicBaseUrl && (
-                                  <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
-                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span className="text-[10px] font-bold text-emerald-700 truncate">
-                                      Saved: <span className="font-mono">{profileFormData.publicBaseUrl}</span>
-                                    </span>
+                                  <div className="flex items-center justify-between gap-4 mt-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-2xl animate-in fade-in slide-in-from-top-2">
+                                    <div className="flex items-center gap-3 overflow-hidden">
+                                      <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center shrink-0">
+                                        <Check className="w-3.5 h-3.5 text-white" />
+                                      </div>
+                                      <span className="text-[10px] font-bold text-emerald-800 truncate">
+                                        Active URL: <span className="font-mono bg-white/50 px-2 py-0.5 rounded ml-1 border border-emerald-100">{profileFormData.publicBaseUrl}</span>
+                                      </span>
+                                    </div>
+                                    <button
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(profileFormData.publicBaseUrl || '');
+                                        alert('Copied to clipboard!');
+                                      }}
+                                      className="p-2 hover:bg-emerald-100 rounded-lg text-emerald-600 transition-colors"
+                                      title="Copy URL"
+                                    >
+                                      <Copy className="w-3.5 h-3.5" />
+                                    </button>
                                   </div>
                                 )}
                               </div>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-3 p-3 bg-indigo-50 rounded-xl border border-indigo-100">
-                            <Info className="w-4 h-4 text-indigo-500 shrink-0" />
-                            <p className="text-[10px] font-bold text-indigo-700 leading-tight">
-                              <strong>For Vercel:</strong> Enter your Vercel URL (e.g., https://hotel-pms-rust.vercel.app) and click <strong>Save URL</strong>. All QR codes will then work for anyone on the internet.
+                          <div className="flex items-center gap-4 p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100/50">
+                            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm text-indigo-500 shrink-0">
+                              <Info className="w-4 h-4" />
+                            </div>
+                            <p className="text-[10px] font-bold text-indigo-700/80 leading-relaxed">
+                              Tip: Your Vercel URL ensures global access. Use local IP only for offline WiFi testing environments.
                             </p>
                           </div>
                         </div>
