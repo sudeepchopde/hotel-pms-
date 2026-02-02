@@ -133,6 +133,12 @@ const App: React.FC = () => {
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [notificationToast, setNotificationToast] = useState<{ title: string, message: string } | null>(null);
   const lastNotificationIdRef = React.useRef<string | null>(null);
+  const activeTabRef = React.useRef(activeTab);
+
+  // Keep Sync Ref
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
 
   // Navigation items order state
   const [navItems, setNavItems] = useState(DEFAULT_NAV_ITEMS);
@@ -297,12 +303,26 @@ const App: React.FC = () => {
             // New notification detected!
             lastNotificationIdRef.current = latest.id;
 
+            // Determine if we should show toast based on context (Active Tab)
+            let shouldShowToast = true;
+            if (activeTabRef.current === 'kitchen') {
+              // In Kitchen mode, only show F&B/Kitchen/Dining notifications
+              const isKitchenRelated = latest.category === 'service_order' &&
+                (latest.title?.includes('F&B') || latest.title?.includes('Dining') || latest.title?.includes('Kitchen'));
+
+              if (!isKitchenRelated) {
+                shouldShowToast = false;
+              }
+            }
+
             // Show Toast
-            setNotificationToast({
-              title: latest.title,
-              message: latest.message
-            });
-            setTimeout(() => setNotificationToast(null), 5000);
+            if (shouldShowToast) {
+              setNotificationToast({
+                title: latest.title,
+                message: latest.message
+              });
+              setTimeout(() => setNotificationToast(null), 5000);
+            }
 
             // Update unread count
             const count = await fetchUnreadNotificationCount();
