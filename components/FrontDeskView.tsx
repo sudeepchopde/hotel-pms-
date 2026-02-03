@@ -818,14 +818,11 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
               <div className="h-8 w-px bg-slate-100 mx-1"></div>
               <div
                 onClick={() => jumpDateRef.current?.showPicker()}
-                className="h-12 flex items-center gap-3 bg-white px-4 rounded-xl border-2 border-slate-100 hover:border-indigo-300 transition-all cursor-pointer relative group shadow-sm active:scale-95"
+                className="h-12 w-12 flex items-center justify-center bg-white rounded-xl border-2 border-slate-100 hover:border-indigo-300 transition-all cursor-pointer relative group shadow-sm active:scale-95"
+                title="Jump to Date"
               >
                 <div className="p-1.5 bg-indigo-50 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-all">
                   <Calendar className="w-4 h-4 text-indigo-600 group-hover:text-white" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 group-hover:text-indigo-400 leading-none mb-1">Calendar</span>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-800 group-hover:text-indigo-900 leading-none">Jump to Date</span>
                 </div>
                 <input
                   ref={jumpDateRef}
@@ -851,7 +848,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
               <div className="relative">
                 <button
                   onClick={() => setIsAutoBookingsOpen(!isAutoBookingsOpen)}
-                  className={`h-12 flex items-center gap-2 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${autoBookings.length > 0 ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'}`}
+                  className={`h-12 flex items-center gap-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${autoBookings.length > 0 ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'}`}
                 >
                   <Mail className={`w-3.5 h-3.5 ${autoBookings.length > 0 ? 'animate-bounce' : ''}`} />
                   {autoBookings.length > 0 ? (
@@ -859,7 +856,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                       <span>{autoBookings.length} New</span>
                     </>
                   ) : (
-                    <span>Parsing Idle</span>
+                    <span className="hidden sm:inline">Idle</span>
                   )}
                 </button>
 
@@ -1111,7 +1108,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
         </div>
 
         {isActivityPanelOpen && (
-          <div className="w-64 bg-white border-l border-slate-200 h-full overflow-y-auto hidden lg:flex flex-col shrink-0 z-30 shadow-2xl custom-scrollbar animate-in slide-in-from-right-10 duration-300">
+          <div className="w-56 bg-white border-l border-slate-200 h-full overflow-y-auto hidden lg:flex flex-col shrink-0 z-30 shadow-2xl custom-scrollbar animate-in slide-in-from-right-10 duration-300">
             <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
               <div>
                 <h3 className="text-md font-black text-slate-900 tracking-tight flex items-center gap-2"><Zap className="w-4 h-4 text-amber-500 fill-amber-500" />Live Activity</h3>
@@ -1121,50 +1118,50 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="flex-1 p-4 space-y-6">
-              <div className="space-y-3 p-3 bg-indigo-50/40 rounded-xl border border-indigo-100/50">
-                <div className="flex items-center justify-between"><h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Today's Arrivals</h4><span className="text-[9px] font-black bg-indigo-600 text-white px-1.5 py-0.5 rounded-md shadow-md">{todaysArrivals.length}</span></div>
-                {todaysArrivals.length === 0 ? (<div className="text-center py-4 text-slate-400 text-[9px] font-black uppercase tracking-widest bg-white rounded-xl border border-slate-100">All Checked In</div>) : (todaysArrivals.map((b: any) => (
-                  <div key={b.id} className="p-2.5 bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-lg transition-all group border-l-2 border-l-indigo-600">
+            <div className="flex-1 p-3 space-y-4">
+              <div className="space-y-2 p-2 bg-indigo-50/40 rounded-xl border border-indigo-100/50">
+                <div className="flex items-center justify-between"><h4 className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Today's Arrivals</h4><span className="text-[8px] font-black bg-indigo-600 text-white px-1.5 py-0.5 rounded-md shadow-md">{todaysArrivals.length}</span></div>
+                {todaysArrivals.length === 0 ? (<div className="text-center py-3 text-slate-400 text-[8px] font-black uppercase tracking-widest bg-white rounded-xl border border-slate-100">All Checked In</div>) : (todaysArrivals.map((b: any) => (
+                  <div key={b.id} className="p-2 bg-white border border-slate-100 rounded-lg shadow-sm hover:shadow-lg transition-all group border-l-2 border-l-indigo-600">
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-xs shrink-0 shadow-inner border border-indigo-100">{b.guestName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}</div>
+                      <div className="w-6 h-6 rounded-md bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-[10px] shrink-0 shadow-inner border border-indigo-100">{b.guestName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}</div>
                       <div className="overflow-hidden flex-1">
-                        <p className="font-black text-slate-900 text-xs truncate tracking-tighter uppercase">{b.guestName}</p>
+                        <p className="font-black text-slate-900 text-[10px] truncate tracking-tighter uppercase">{b.guestName}</p>
                         <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                          <span className="inline-flex items-center gap-0.5 text-[7px] font-black text-amber-600 bg-amber-50 px-1 py-0.5 rounded uppercase tracking-widest border border-amber-100">Awaiting ID</span>
-                          {b._roomCount > 1 && <span className="inline-flex items-center gap-0.5 text-[7px] font-black text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded uppercase tracking-widest border border-indigo-100">{b._roomCount} Rooms</span>}
+                          <span className="inline-flex items-center gap-0.5 text-[6px] font-black text-amber-600 bg-amber-50 px-1 py-0.5 rounded uppercase tracking-widest border border-amber-100">Awaiting ID</span>
+                          {b._roomCount > 1 && <span className="inline-flex items-center gap-0.5 text-[6px] font-black text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded uppercase tracking-widest border border-indigo-100">{b._roomCount} Rooms</span>}
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center justify-between mb-2 px-1">
-                      <div className="text-[9px] text-slate-500 font-bold uppercase tracking-widest truncate">
+                      <div className="text-[8px] text-slate-500 font-bold uppercase tracking-widest truncate">
                         {b._roomCount > 1 ? 'Multi-Room' : (roomTypes.find(r => r.id === b.roomTypeId)?.name || 'Standard')}
                         <span className="font-black text-indigo-600 ml-1 bg-indigo-50 px-1 py-0.5 rounded shadow-sm">#{b.roomNumber || 'TBD'}</span>
                       </div>
                     </div>
-                    <button onClick={() => setSelectedBooking(b)} className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-black uppercase tracking-[0.2em] rounded-lg transition-all shadow-md shadow-indigo-200 flex items-center justify-center gap-2">Check-In <ArrowRightCircle className="w-3 h-3" /></button>
+                    <button onClick={() => setSelectedBooking(b)} className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[8px] font-black uppercase tracking-[0.2em] rounded-md transition-all shadow-md shadow-indigo-200 flex items-center justify-center gap-2">Check-In <ArrowRightCircle className="w-3 h-3" /></button>
                   </div>
                 )))}
               </div>
-              <div className="space-y-3 p-3 bg-rose-50/40 rounded-xl border border-rose-100/50">
-                <div className="flex items-center justify-between"><h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Pending Departures</h4><span className="text-[9px] font-black bg-rose-600 text-white px-1.5 py-0.5 rounded-md shadow-md">{todaysDepartures.length}</span></div>
-                {todaysDepartures.length === 0 ? (<div className="text-center py-4 text-slate-400 text-[9px] font-black uppercase tracking-widest bg-white rounded-xl border border-slate-100">None Scheduled</div>) : (todaysDepartures.map(b => (
-                  <div key={b.id} className="p-2.5 bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-lg transition-all group border-l-2 border-l-rose-600">
+              <div className="space-y-2 p-2 bg-rose-50/40 rounded-xl border border-rose-100/50">
+                <div className="flex items-center justify-between"><h4 className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Pending Departures</h4><span className="text-[8px] font-black bg-rose-600 text-white px-1.5 py-0.5 rounded-md shadow-md">{todaysDepartures.length}</span></div>
+                {todaysDepartures.length === 0 ? (<div className="text-center py-3 text-slate-400 text-[8px] font-black uppercase tracking-widest bg-white rounded-xl border border-slate-100">None Scheduled</div>) : (todaysDepartures.map(b => (
+                  <div key={b.id} className="p-2 bg-white border border-slate-100 rounded-lg shadow-sm hover:shadow-lg transition-all group border-l-2 border-l-rose-600">
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center font-black text-xs shrink-0 border border-slate-200">{b.guestName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}</div>
+                      <div className="w-6 h-6 rounded-md bg-slate-100 text-slate-500 flex items-center justify-center font-black text-[10px] shrink-0 border border-slate-200">{b.guestName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}</div>
                       <div className="overflow-hidden">
-                        <p className="font-black text-slate-900 text-xs truncate tracking-tighter uppercase">{b.guestName}</p>
+                        <p className="font-black text-slate-900 text-[10px] truncate tracking-tighter uppercase">{b.guestName}</p>
                         {b.isSettled ? (
-                          <span className="inline-flex items-center gap-0.5 text-[7px] font-black text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded uppercase tracking-widest mt-0.5 border border-emerald-100">Paid & Clear</span>
+                          <span className="inline-flex items-center gap-0.5 text-[6px] font-black text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded uppercase tracking-widest mt-0.5 border border-emerald-100">Paid & Clear</span>
                         ) : (
-                          <span className="inline-flex items-center gap-0.5 text-[7px] font-black text-rose-600 bg-rose-50 px-1 py-0.5 rounded uppercase tracking-widest mt-0.5 border border-rose-100 animate-pulse">Payment Due</span>
+                          <span className="inline-flex items-center gap-0.5 text-[6px] font-black text-rose-600 bg-rose-50 px-1 py-0.5 rounded uppercase tracking-widest mt-0.5 border border-rose-100 animate-pulse">Payment Due</span>
                         )}
                       </div>
                     </div>
                     <div className="flex items-center justify-between mb-2 px-1">
-                      <div className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Room <span className="font-black text-rose-600 ml-1 bg-rose-50 px-1 py-0.5 rounded shadow-sm">#{b.roomNumber}</span></div>
+                      <div className="text-[8px] text-slate-500 font-bold uppercase tracking-widest">Room <span className="font-black text-rose-600 ml-1 bg-rose-50 px-1 py-0.5 rounded shadow-sm">#{b.roomNumber}</span></div>
                     </div>
-                    <button onClick={() => setSelectedBooking(b)} className="w-full py-1.5 bg-slate-900 hover:bg-black text-white text-[9px] font-black uppercase tracking-[0.2em] rounded-lg transition-all shadow-xl flex items-center justify-center gap-2">Process Check-Out <LogOut className="w-3 h-3" /></button>
+                    <button onClick={() => setSelectedBooking(b)} className="w-full py-1.5 bg-slate-900 hover:bg-black text-white text-[8px] font-black uppercase tracking-[0.2em] rounded-md transition-all shadow-xl flex items-center justify-center gap-2">Process Check-Out <LogOut className="w-3 h-3" /></button>
                   </div>
                 )))}
               </div>
