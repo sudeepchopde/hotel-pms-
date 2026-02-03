@@ -897,14 +897,16 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                 )}
               </div>
 
-              {/* Live Activity Toggle Button */}
-              <button
-                onClick={() => setIsActivityPanelOpen(!isActivityPanelOpen)}
-                className={`h-12 w-12 flex items-center justify-center rounded-xl bg-white border-2 transition-all shrink-0 ${isActivityPanelOpen ? 'border-amber-400 text-amber-500 bg-amber-50' : 'border-slate-100 text-slate-400 hover:border-slate-300'}`}
-                title="Toggle Live Activity"
-              >
-                <Zap className={`w-5 h-5 ${isActivityPanelOpen ? 'fill-amber-500' : ''}`} />
-              </button>
+              {/* Live Activity Toggle Button - Only visible when panel is closed */}
+              {!isActivityPanelOpen && (
+                <button
+                  onClick={() => setIsActivityPanelOpen(true)}
+                  className="h-12 w-12 flex items-center justify-center rounded-xl bg-white border-2 border-slate-100 text-slate-400 hover:border-amber-300 hover:text-amber-500 hover:bg-amber-50 transition-all shrink-0 shadow-sm"
+                  title="Open Live Activity"
+                >
+                  <Zap className="w-5 h-5" />
+                </button>
+              )}
 
               <button onClick={() => setIsNewBookingModalOpen(true)} className="h-12 flex items-center gap-2 px-6 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl hover:scale-105 active:scale-95"><Plus className="w-4 h-4" /> New Booking</button>
             </div>
@@ -1110,7 +1112,15 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
 
         {isActivityPanelOpen && (
           <div className="w-64 bg-white border-l border-slate-200 h-full overflow-y-auto hidden lg:flex flex-col shrink-0 z-30 shadow-2xl custom-scrollbar animate-in slide-in-from-right-10 duration-300">
-            <div className="p-4 border-b border-slate-100 bg-slate-50/50"><h3 className="text-md font-black text-slate-900 tracking-tight flex items-center gap-2"><Zap className="w-4 h-4 text-amber-500" />Live Activity</h3><p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-widest">{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p></div>
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+              <div>
+                <h3 className="text-md font-black text-slate-900 tracking-tight flex items-center gap-2"><Zap className="w-4 h-4 text-amber-500 fill-amber-500" />Live Activity</h3>
+                <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-widest">{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+              </div>
+              <button onClick={() => setIsActivityPanelOpen(false)} className="p-2 hover:bg-slate-200/50 rounded-lg text-slate-400 hover:text-slate-600 transition-all">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
             <div className="flex-1 p-4 space-y-6">
               <div className="space-y-3 p-3 bg-indigo-50/40 rounded-xl border border-indigo-100/50">
                 <div className="flex items-center justify-between"><h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Today's Arrivals</h4><span className="text-[9px] font-black bg-indigo-600 text-white px-1.5 py-0.5 rounded-md shadow-md">{todaysArrivals.length}</span></div>
