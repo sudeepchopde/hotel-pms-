@@ -711,8 +711,8 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col md:flex-row bg-[#fbfcfd] font-inter antialiased overflow-hidden">
-      <nav className={`flex flex-col gap-6 shrink-0 shadow-xl z-20 border-r border-slate-700/30 bg-slate-800 text-white transition-all duration-300 ${isSidebarCollapsed ? 'w-20 p-4 items-center' : 'w-full md:w-64 px-5 py-6'}`}>
-        <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center flex-col gap-4' : 'justify-between'}`}>
+      <nav className={`flex flex-col gap-3 shrink-0 shadow-xl z-20 border-r border-slate-700/30 bg-slate-800 text-white transition-all duration-300 ${isSidebarCollapsed ? 'w-20 p-2 items-center' : 'w-full md:w-64 px-4 py-4'}`}>
+        <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center flex-col gap-3' : 'justify-between'}`}>
           <div className={`flex items-center min-w-0 transition-all ${isSidebarCollapsed ? 'justify-center' : ''}`}>
             {isSidebarCollapsed ? (
               <div className="w-11 h-11 overflow-hidden rounded-lg shrink-0 relative bg-slate-900">
