@@ -381,43 +381,8 @@ const App: React.FC = () => {
   }, []);
 
   // Security State
-  const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([
-    {
-      id: 'mock_1',
-      room_id: '101',
-      input_surname: 'smith',
-      status: 'SUCCESS',
-      ip_address: '192.168.1.42',
-      created_at: new Date(Date.now() - 1000 * 60 * 5).toISOString()
-    },
-    {
-      id: 'mock_2',
-      room_id: '205',
-      input_surname: 'admin',
-      status: 'FAIL',
-      ip_address: '192.168.1.105',
-      created_at: new Date(Date.now() - 1000 * 60 * 15).toISOString()
-    },
-    {
-      id: 'mock_3',
-      room_id: '205',
-      input_surname: 'admin',
-      status: 'FAIL',
-      ip_address: '192.168.1.105',
-      created_at: new Date(Date.now() - 1000 * 60 * 16).toISOString()
-    },
-    {
-      id: 'mock_4',
-      room_id: '205',
-      input_surname: 'root',
-      status: 'LOCKED',
-      ip_address: '192.168.1.105',
-      created_at: new Date(Date.now() - 1000 * 60 * 18).toISOString()
-    }
-  ]);
-  const [roomSecurity, setRoomSecurity] = useState<RoomSecurityStatus[]>([
-    { room_id: '205', isLocked: true, isQRDisabled: false, failCount: 3 }
-  ]);
+  const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([]);
+  const [roomSecurity, setRoomSecurity] = useState<RoomSecurityStatus[]>([]);
   const [securityToast, setSecurityToast] = useState<string | null>(null);
 
   // Guest Mode State
@@ -746,10 +711,10 @@ const App: React.FC = () => {
       <nav className={`flex flex-col gap-6 shrink-0 shadow-xl z-20 border-r border-slate-700/30 bg-slate-800 text-white transition-all duration-300 ${isSidebarCollapsed ? 'w-20 p-4 items-center' : 'w-full md:w-64 px-5 py-6'}`}>
         <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center flex-col gap-4' : 'justify-between'}`}>
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="bg-indigo-500 p-2 rounded-lg shadow-lg shadow-indigo-500/20 shrink-0">
-              <ShieldCheck className="w-5 h-5 flex-shrink-0" />
+            <div className="bg-indigo-500/10 p-1.5 rounded-lg shrink-0">
+              <img src="/logo.png" alt="Hotel Sathi" className="w-8 h-8 object-contain" />
             </div>
-            {!isSidebarCollapsed && <h1 className="text-lg font-bold tracking-tight whitespace-nowrap truncate">Hotel <span className="text-indigo-300">Sathi</span></h1>}
+            {!isSidebarCollapsed && <h1 className="text-lg font-bold tracking-tight whitespace-nowrap truncate text-slate-100">Hotel <span className="text-indigo-400">Sathi</span></h1>}
           </div>
           <div className="flex items-center gap-1">
             <button

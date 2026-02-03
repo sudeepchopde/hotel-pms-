@@ -1099,7 +1099,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
           </div>
         </div>
 
-        <div className="w-56 bg-white border-l border-slate-200 h-full overflow-y-auto hidden xl:flex flex-col shrink-0 z-30 shadow-2xl custom-scrollbar">
+        <div className="w-56 bg-white border-l border-slate-200 h-full overflow-y-auto hidden lg:flex flex-col shrink-0 z-30 shadow-2xl custom-scrollbar">
           <div className="p-6 border-b border-slate-100 bg-slate-50/50"><h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2"><Zap className="w-5 h-5 text-amber-500" />Live Activity</h3><p className="text-xs text-slate-500 font-bold mt-1 uppercase tracking-widest">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p></div>
           <div className="flex-1 p-6 space-y-8">
             <div className="space-y-4 p-4 bg-indigo-50/40 rounded-2xl border border-indigo-100/50">
