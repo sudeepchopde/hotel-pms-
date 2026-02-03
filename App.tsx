@@ -315,8 +315,11 @@ const App: React.FC = () => {
               }
             }
 
-            // Show Toast
-            if (shouldShowToast) {
+            // Show Toast ONLY if notification is fresh (less than 60 seconds old)
+            // This prevents old unread notifications from popping up on every refresh
+            const isRecent = new Date(latest.createdAt).getTime() > (Date.now() - 60000);
+
+            if (shouldShowToast && isRecent) {
               setNotificationToast({
                 title: latest.title,
                 message: latest.message
