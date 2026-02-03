@@ -763,11 +763,11 @@ def db_booking_to_pydantic(db_booking):
         roomTypeId=db_booking.room_type_id,
         roomNumber=db_booking.room_number,
         guestName=db_booking.guest_name,
-        source=db_booking.source,
+        source=db_booking.source if db_booking.source in ['MMT', 'Booking.com', 'Expedia', 'Direct'] else 'Direct',
         status=db_booking.status,
         timestamp=db_booking.timestamp,
-        checkIn=db_booking.check_in,
-        checkOut=db_booking.check_out,
+        checkIn=db_booking.check_in or "",
+        checkOut=db_booking.check_out or "",
         reservationId=db_booking.reservation_id,
         channelSync=db_booking.channel_sync or {},
         amount=db_booking.amount,
@@ -1226,10 +1226,20 @@ def get_statistics(db=Depends(get_db)):
     """Fetch aggregated statistics for reports and dashboard"""
     bookings_data = []
     if USE_DATABASE() and db:
-        raw_bookings = db.query(BookingDB).filter(BookingDB.status != 'Cancelled').all()
-        bookings_data = [db_booking_to_pydantic(b) for b in raw_bookings]
+        try:
+            raw_bookings = db.query(BookingDB).filter(BookingDB.status != 'Cancelled').all()
+            for b_db in raw_bookings:
+                try:
+                    bookings_data.append(db_booking_to_pydantic(b_db))
+                except Exception as e:
+                    print(f"Skipping malformed booking {b_db.id}: {e}")
+        except Exception as e:
+             print(f"Error querying bookings: {e}")
     else:
-        bookings_data = [b for b in get_fallback_bookings() if b.status != 'Cancelled']
+        try:
+             bookings_data = [b for b in get_fallback_bookings() if b.status != 'Cancelled']
+        except:
+             bookings_data = []
 
     # Get Room Types for popularity mapping
     room_types = {}
@@ -1260,8 +1270,27 @@ def get_statistics(db=Depends(get_db)):
 
     for b in bookings_data:
         try:
-            check_in = datetime.strptime(b.checkIn, "%Y-%m-%d")
-            check_out = datetime.strptime(b.checkOut, "%Y-%m-%d")
+            # Robust date parsing
+            try:
+                check_in = datetime.strptime(b.checkIn, "%Y-%m-%d")
+            except (ValueError, TypeError):
+                try:
+                     # Try ISO format or split by T
+                     check_in = datetime.strptime(b.checkIn.split('T')[0], "%Y-%m-%d")
+                except:
+                     try:
+                        # Fallback to timestamp if it's there
+                        check_in = datetime.fromtimestamp(b.timestamp / 1000)
+                     except:
+                        continue # Skip if date is totally unparseable
+
+            try:
+                check_out = datetime.strptime(b.checkOut, "%Y-%m-%d")
+            except (ValueError, TypeError):
+                try:
+                     check_out = datetime.strptime(b.checkOut.split('T')[0], "%Y-%m-%d")
+                except:
+                     check_out = check_in + timedelta(days=1)
             nights = max((check_out - check_in).days, 1)
             amount = b.amount or 0
             

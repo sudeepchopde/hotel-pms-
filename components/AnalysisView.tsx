@@ -23,6 +23,8 @@ interface StatsData {
   };
 }
 
+import { API_BASE_URL } from '../api';
+
 const AnalysisView: React.FC = () => {
   // State for controls
   const [timeFilter, setTimeFilter] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
@@ -36,7 +38,7 @@ const AnalysisView: React.FC = () => {
     const fetchStats = async () => {
       try {
         setLoading(true);
-        const response = await fetch('http://localhost:8000/api/statistics');
+        const response = await fetch(`${API_BASE_URL}/statistics`);
         const data = await response.json();
         setStats(data);
       } catch (error) {
