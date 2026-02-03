@@ -897,16 +897,16 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                 )}
               </div>
 
-              <button onClick={() => setIsNewBookingModalOpen(true)} className="h-12 flex items-center gap-2 px-6 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl hover:scale-105 active:scale-95"><Plus className="w-4 h-4" /> New Booking</button>
-
               {/* Live Activity Toggle Button */}
               <button
                 onClick={() => setIsActivityPanelOpen(!isActivityPanelOpen)}
-                className={`h-12 w-12 flex items-center justify-center rounded-xl bg-white border-2 transition-all ${isActivityPanelOpen ? 'border-amber-400 text-amber-500 bg-amber-50' : 'border-slate-100 text-slate-400 hover:border-slate-300'}`}
+                className={`h-12 w-12 flex items-center justify-center rounded-xl bg-white border-2 transition-all shrink-0 ${isActivityPanelOpen ? 'border-amber-400 text-amber-500 bg-amber-50' : 'border-slate-100 text-slate-400 hover:border-slate-300'}`}
                 title="Toggle Live Activity"
               >
                 <Zap className={`w-5 h-5 ${isActivityPanelOpen ? 'fill-amber-500' : ''}`} />
               </button>
+
+              <button onClick={() => setIsNewBookingModalOpen(true)} className="h-12 flex items-center gap-2 px-6 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl hover:scale-105 active:scale-95"><Plus className="w-4 h-4" /> New Booking</button>
             </div>
 
           </header>
