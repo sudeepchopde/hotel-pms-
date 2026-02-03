@@ -1109,52 +1109,52 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
         </div>
 
         {isActivityPanelOpen && (
-          <div className="w-80 bg-white border-l border-slate-200 h-full overflow-y-auto hidden lg:flex flex-col shrink-0 z-30 shadow-2xl custom-scrollbar animate-in slide-in-from-right-10 duration-300">
-            <div className="p-6 border-b border-slate-100 bg-slate-50/50"><h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2"><Zap className="w-5 h-5 text-amber-500" />Live Activity</h3><p className="text-xs text-slate-500 font-bold mt-1 uppercase tracking-widest">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p></div>
-            <div className="flex-1 p-6 space-y-8">
-              <div className="space-y-4 p-4 bg-indigo-50/40 rounded-2xl border border-indigo-100/50">
-                <div className="flex items-center justify-between"><h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Today's Arrivals</h4><span className="text-[10px] font-black bg-indigo-600 text-white px-2 py-0.5 rounded-lg shadow-md">{todaysArrivals.length}</span></div>
-                {todaysArrivals.length === 0 ? (<div className="text-center py-6 text-slate-400 text-[10px] font-black uppercase tracking-widest bg-white rounded-2xl border border-slate-100">All Checked In</div>) : (todaysArrivals.map((b: any) => (
-                  <div key={b.id} className="p-3.5 bg-white border border-slate-100 rounded-[2rem] shadow-sm hover:shadow-xl transition-all group border-l-4 border-l-indigo-600">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-sm shrink-0 shadow-inner border border-indigo-100">{b.guestName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}</div>
+          <div className="w-64 bg-white border-l border-slate-200 h-full overflow-y-auto hidden lg:flex flex-col shrink-0 z-30 shadow-2xl custom-scrollbar animate-in slide-in-from-right-10 duration-300">
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50"><h3 className="text-md font-black text-slate-900 tracking-tight flex items-center gap-2"><Zap className="w-4 h-4 text-amber-500" />Live Activity</h3><p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-widest">{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p></div>
+            <div className="flex-1 p-4 space-y-6">
+              <div className="space-y-3 p-3 bg-indigo-50/40 rounded-xl border border-indigo-100/50">
+                <div className="flex items-center justify-between"><h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Today's Arrivals</h4><span className="text-[9px] font-black bg-indigo-600 text-white px-1.5 py-0.5 rounded-md shadow-md">{todaysArrivals.length}</span></div>
+                {todaysArrivals.length === 0 ? (<div className="text-center py-4 text-slate-400 text-[9px] font-black uppercase tracking-widest bg-white rounded-xl border border-slate-100">All Checked In</div>) : (todaysArrivals.map((b: any) => (
+                  <div key={b.id} className="p-2.5 bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-lg transition-all group border-l-2 border-l-indigo-600">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-xs shrink-0 shadow-inner border border-indigo-100">{b.guestName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}</div>
                       <div className="overflow-hidden flex-1">
-                        <p className="font-black text-slate-900 text-sm truncate tracking-tighter uppercase">{b.guestName}</p>
-                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          <span className="inline-flex items-center gap-1 text-[8px] font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded uppercase tracking-widest border border-amber-100">Awaiting ID</span>
-                          {b._roomCount > 1 && <span className="inline-flex items-center gap-1 text-[8px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded uppercase tracking-widest border border-indigo-100">{b._roomCount} Rooms</span>}
+                        <p className="font-black text-slate-900 text-xs truncate tracking-tighter uppercase">{b.guestName}</p>
+                        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                          <span className="inline-flex items-center gap-0.5 text-[7px] font-black text-amber-600 bg-amber-50 px-1 py-0.5 rounded uppercase tracking-widest border border-amber-100">Awaiting ID</span>
+                          {b._roomCount > 1 && <span className="inline-flex items-center gap-0.5 text-[7px] font-black text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded uppercase tracking-widest border border-indigo-100">{b._roomCount} Rooms</span>}
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between mb-3 px-1">
-                      <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-                        {b._roomCount > 1 ? 'Multi-Room Booking' : (roomTypes.find(r => r.id === b.roomTypeId)?.name || 'Standard')}
-                        <span className="font-black text-indigo-600 ml-1 bg-indigo-50 px-1.5 py-0.5 rounded shadow-sm">#{b.roomNumber || 'TBD'}</span>
+                    <div className="flex items-center justify-between mb-2 px-1">
+                      <div className="text-[9px] text-slate-500 font-bold uppercase tracking-widest truncate">
+                        {b._roomCount > 1 ? 'Multi-Room' : (roomTypes.find(r => r.id === b.roomTypeId)?.name || 'Standard')}
+                        <span className="font-black text-indigo-600 ml-1 bg-indigo-50 px-1 py-0.5 rounded shadow-sm">#{b.roomNumber || 'TBD'}</span>
                       </div>
                     </div>
-                    <button onClick={() => setSelectedBooking(b)} className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl shadow-indigo-200 flex items-center justify-center gap-3">Check-In <ArrowRightCircle className="w-4 h-4" /></button>
+                    <button onClick={() => setSelectedBooking(b)} className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-black uppercase tracking-[0.2em] rounded-lg transition-all shadow-md shadow-indigo-200 flex items-center justify-center gap-2">Check-In <ArrowRightCircle className="w-3 h-3" /></button>
                   </div>
                 )))}
               </div>
-              <div className="space-y-4 p-4 bg-rose-50/40 rounded-2xl border border-rose-100/50">
-                <div className="flex items-center justify-between"><h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Pending Departures</h4><span className="text-[10px] font-black bg-rose-600 text-white px-2 py-0.5 rounded-lg shadow-md">{todaysDepartures.length}</span></div>
-                {todaysDepartures.length === 0 ? (<div className="text-center py-6 text-slate-400 text-[10px] font-black uppercase tracking-widest bg-white rounded-2xl border border-slate-100">None Scheduled</div>) : (todaysDepartures.map(b => (
-                  <div key={b.id} className="p-3.5 bg-white border border-slate-100 rounded-[2rem] shadow-sm hover:shadow-xl transition-all group border-l-4 border-l-rose-600">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center font-black text-sm shrink-0 border border-slate-200">{b.guestName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}</div>
+              <div className="space-y-3 p-3 bg-rose-50/40 rounded-xl border border-rose-100/50">
+                <div className="flex items-center justify-between"><h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Pending Departures</h4><span className="text-[9px] font-black bg-rose-600 text-white px-1.5 py-0.5 rounded-md shadow-md">{todaysDepartures.length}</span></div>
+                {todaysDepartures.length === 0 ? (<div className="text-center py-4 text-slate-400 text-[9px] font-black uppercase tracking-widest bg-white rounded-xl border border-slate-100">None Scheduled</div>) : (todaysDepartures.map(b => (
+                  <div key={b.id} className="p-2.5 bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-lg transition-all group border-l-2 border-l-rose-600">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center font-black text-xs shrink-0 border border-slate-200">{b.guestName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}</div>
                       <div className="overflow-hidden">
-                        <p className="font-black text-slate-900 text-sm truncate tracking-tighter uppercase">{b.guestName}</p>
+                        <p className="font-black text-slate-900 text-xs truncate tracking-tighter uppercase">{b.guestName}</p>
                         {b.isSettled ? (
-                          <span className="inline-flex items-center gap-1 text-[8px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded uppercase tracking-widest mt-0.5 border border-emerald-100">Paid & Clear</span>
+                          <span className="inline-flex items-center gap-0.5 text-[7px] font-black text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded uppercase tracking-widest mt-0.5 border border-emerald-100">Paid & Clear</span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-[8px] font-black text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded uppercase tracking-widest mt-0.5 border border-rose-100 animate-pulse">Payment Due</span>
+                          <span className="inline-flex items-center gap-0.5 text-[7px] font-black text-rose-600 bg-rose-50 px-1 py-0.5 rounded uppercase tracking-widest mt-0.5 border border-rose-100 animate-pulse">Payment Due</span>
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center justify-between mb-3 px-1">
-                      <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Room <span className="font-black text-rose-600 ml-1 bg-rose-50 px-1.5 py-0.5 rounded shadow-sm">#{b.roomNumber}</span></div>
+                    <div className="flex items-center justify-between mb-2 px-1">
+                      <div className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Room <span className="font-black text-rose-600 ml-1 bg-rose-50 px-1 py-0.5 rounded shadow-sm">#{b.roomNumber}</span></div>
                     </div>
-                    <button onClick={() => setSelectedBooking(b)} className="w-full py-2.5 bg-slate-900 hover:bg-black text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl transition-all shadow-xl flex items-center justify-center gap-3">Process Check-Out <LogOut className="w-4 h-4" /></button>
+                    <button onClick={() => setSelectedBooking(b)} className="w-full py-1.5 bg-slate-900 hover:bg-black text-white text-[9px] font-black uppercase tracking-[0.2em] rounded-lg transition-all shadow-xl flex items-center justify-center gap-2">Process Check-Out <LogOut className="w-3 h-3" /></button>
                   </div>
                 )))}
               </div>
