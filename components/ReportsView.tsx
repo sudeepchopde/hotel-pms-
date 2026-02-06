@@ -129,6 +129,16 @@ const ReportsView: React.FC = () => {
     }, 0);
   }, [filteredData]);
 
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return '-';
+    try {
+      const [year, month, day] = dateStr.split('T')[0].split('-');
+      return `${day}/${month}/${year.slice(2)}`;
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
@@ -281,8 +291,8 @@ const ReportsView: React.FC = () => {
                           {booking.source}
                         </span>
                       </td>
-                      <td className="p-5 text-xs font-medium text-slate-600">{booking.checkIn}</td>
-                      <td className="p-5 text-xs font-medium text-slate-600">{booking.checkOut}</td>
+                      <td className="p-5 text-xs font-medium text-slate-600">{formatDate(booking.checkIn)}</td>
+                      <td className="p-5 text-xs font-medium text-slate-600">{formatDate(booking.checkOut)}</td>
 
                       {/* Duration Column */}
                       <td className="p-5">
