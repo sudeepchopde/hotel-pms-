@@ -157,6 +157,30 @@ const ComplianceView: React.FC<ComplianceViewProps> = ({ syncEvents, setSyncEven
 
    const flaggedBookings = auditResults.filter(b => b.audit.flagged && b.audit.isNew);
 
+   const mtdStats = useMemo(() => {
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+
+      let total = 0;
+      let foreign = 0;
+
+      allBookings.forEach(b => {
+         const isArrived = ['CheckedIn', 'CheckedOut'].includes(b.status);
+         if (!isArrived) return;
+
+         const checkInDate = new Date(b.checkIn);
+         if (checkInDate.getMonth() === currentMonth && checkInDate.getFullYear() === currentYear) {
+            total++;
+            const nat = b.guestDetails?.nationality || 'Indian';
+            if (nat.toLowerCase() !== 'indian') foreign++;
+         }
+      });
+
+      const percentage = total > 0 ? (foreign / total) * 100 : 0;
+      return { total, foreign, percentage };
+   }, [allBookings]);
+
    const handlePrintRegistry = () => {
       const printWindow = window.open('', '_blank');
       if (!printWindow) {
@@ -414,24 +438,18 @@ const ComplianceView: React.FC<ComplianceViewProps> = ({ syncEvents, setSyncEven
                      <div className="flex justify-between items-center">
                         <span className="text-xs font-bold text-slate-500">Total Foreign Arrivals (MTD)</span>
                         <span className="text-sm font-black text-slate-800">
-                           {(() => {
-                              const now = new Date();
-                              const currentMonth = now.getMonth();
-                              const currentYear = now.getFullYear();
-                              return allBookings.filter(b => {
-                                 const nat = b.guestDetails?.nationality || 'Indian';
-                                 const isForeigner = nat.toLowerCase() !== 'indian';
-                                 const isArrived = ['CheckedIn', 'CheckedOut'].includes(b.status);
-                                 const checkInDate = new Date(b.checkIn);
-                                 const isThisMonth = checkInDate.getMonth() === currentMonth && checkInDate.getFullYear() === currentYear;
-                                 return isForeigner && isArrived && isThisMonth;
-                              }).length;
-                           })()}
+                           {mtdStats.foreign}
                         </span>
                      </div>
                      <div className="w-full bg-slate-100 rounded-full h-1.5">
-                        <div className="bg-indigo-600 h-1.5 rounded-full w-2/3"></div>
+                        <div
+                           className="bg-indigo-600 h-1.5 rounded-full transition-all duration-1000 ease-out"
+                           style={{ width: `${mtdStats.percentage}%` }}
+                        ></div>
                      </div>
+                     <p className="text-[10px] text-slate-400 text-right">
+                        {mtdStats.percentage.toFixed(1)}% of total arrivals
+                     </p>
                   </div>
                </div>
             </div>
