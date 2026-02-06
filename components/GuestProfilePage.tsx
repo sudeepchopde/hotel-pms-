@@ -1487,6 +1487,16 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               <FileText className="w-4 h-4" />
               Reg Card
             </button>
+            <button
+              onClick={() => {
+                const url = `/guest-form?bookingId=${booking.id}`;
+                window.open(url, '_blank');
+              }}
+              className="px-5 py-2 bg-white text-slate-900 border-2 border-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2"
+            >
+              <FileBadge className="w-4 h-4" />
+              Guest Form
+            </button>
           </div>
 
           {/* Status & Check-in/Out Group */}
@@ -1531,7 +1541,19 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               </button>
             )}
 
-            <div className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg transition-all ${getStatusStyles(booking.status)}`}>
+            <div className={`flex items-center gap-2 px-6 py-2.5 rounded-xl border-2 text-xs font-black uppercase tracking-widest bg-white/80 backdrop-blur-sm shadow-sm transition-all
+              ${booking.status === 'CheckedIn' ? 'border-emerald-500 text-emerald-600' :
+                booking.status === 'Confirmed' ? 'border-blue-500 text-blue-600' :
+                  booking.status === 'CheckedOut' ? 'border-slate-300 text-slate-500 bg-slate-50' :
+                    booking.status === 'Cancelled' ? 'border-rose-500 text-rose-600' :
+                      'border-amber-500 text-amber-600'
+              }`}>
+              {booking.status === 'CheckedIn' && (
+                <span className="relative flex h-2 w-2 mr-1">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+              )}
               {booking.status === 'Rejected' ? 'Warning/Unpaid' : booking.status === 'CheckedOut' ? 'Checked Out' : booking.status}
             </div>
           </div>
