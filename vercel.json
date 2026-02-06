@@ -27,11 +27,11 @@
         },
         {
             "src": "/(.*\\.(js|css|ico|png|jpg|jpeg|svg|woff|woff2|ttf|eot))",
-            "dest": "/dist/$1"
+            "dest": "/$1"
         },
         {
             "src": "/(.*)",
-            "dest": "/dist/index.html"
+            "dest": "/index.html"
         }
     ]
 }
