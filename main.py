@@ -299,7 +299,23 @@ def process_ocr(request: OCRRequest, db=Depends(get_db)):
         elif request.type == 'id_back':
             prompt = "Extract the full address, PIN code, and Father/Husband name from this ID card (Back Side). Return as clean JSON with these keys: address, pinCode, fatherName. Ensure the 'address' field contains the complete address text found."
         else:
-            prompt = "Extract all guest information from this registration form. Return as clean JSON. Only return the JSON."
+            prompt = """
+            Extract handwritten guest details from this registration form image.
+            Return a clean JSON object with the following specific keys (if found):
+            - name (Full Name)
+            - phoneNumber (Mobile No)
+            - email
+            - address (Permanent Address as a single string)
+            - idType (Aadhar, Passport, etc)
+            - idNumber
+            - nationality
+            - dob (Date of Birth converted to YYYY-MM-DD format)
+            - arrivedFrom
+            - nextDestination
+            
+            Ignore pre-printed text like "Hotel Name", "Booking Conf", or instructions. Focus strictly on the handwritten filled values.
+            Only return the JSON.
+            """
 
         # List of models to try (prioritizing stable ones with higher/separate quota)
         models_to_try = [

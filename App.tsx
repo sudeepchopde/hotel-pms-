@@ -13,6 +13,7 @@ import FrontDeskView from './components/FrontDeskView';
 import GuestsView from './components/GuestsView';
 import ComplianceView from './components/ComplianceView';
 import GuestMenu from './components/GuestMenu';
+import GuestRegistrationForm from './components/GuestRegistrationForm';
 import SecurityView from './components/SecurityView';
 // Duplicate removed
 import NotificationsView from './components/NotificationsView';
@@ -119,6 +120,10 @@ const INITIAL_ROOM_TYPES: RoomType[] = [
 ];
 
 const App: React.FC = () => {
+  if (window.location.pathname === '/guest-form') {
+    return <GuestRegistrationForm />;
+  }
+
   const [activeTab, setActiveTab] = useState<'dashboard' | 'settings' | 'intelligence' | 'flow' | 'rules' | 'analysis' | 'reports' | 'setup' | 'frontdesk' | 'guests' | 'compliance' | 'security' | 'notifications' | 'kitchen'>('frontdesk');
   const [selectedHotel, setSelectedHotel] = useState<Hotel | null>(null);
   const [hotels, setHotels] = useState<Hotel[]>([]);
