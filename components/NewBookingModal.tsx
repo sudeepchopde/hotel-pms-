@@ -163,6 +163,12 @@ export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents
     };
 
     const handleUpdateRoom = (index: number, field: string, value: any) => {
+        if (field === 'checkIn') {
+            if (value < today) {
+                alert("Cannot book for a previous date");
+                return;
+            }
+        }
         setRoomDetails(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
     };
 
@@ -259,6 +265,12 @@ export default function NewBookingModal({ isOpen, onClose, roomTypes, syncEvents
 
     const handleSubmit = () => {
         // Final validation before submitting
+        const hasPastDates = roomDetails.some(room => room.checkIn < today);
+        if (hasPastDates) {
+            alert("Cannot book for a previous date.");
+            return;
+        }
+
         const hasAvailabilityIssues = roomDetails.some((room, idx) =>
             getRoomAvailability(room.roomTypeId, room.checkIn, room.checkOut, idx) <= 0
         );
