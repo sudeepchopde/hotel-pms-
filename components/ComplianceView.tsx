@@ -228,7 +228,8 @@ const ComplianceView: React.FC<ComplianceViewProps> = ({ syncEvents, setSyncEven
                      <th>Arrival</th>
                      <th>ID Proof</th>
                      <th>Room</th>
-                     <th>Stay Dates</th>
+                     <th>Check-In</th>
+                     <th>Check-Out</th>
                   </tr>
                </thead>
                <tbody>
@@ -253,10 +254,8 @@ const ComplianceView: React.FC<ComplianceViewProps> = ({ syncEvents, setSyncEven
                            <strong>${e.idNumber}</strong>
                         </td>
                         <td>${e.room}</td>
-                        <td>
-                           In: ${e.checkInDate}<br/>
-                           Out: ${e.checkOutDate !== '-' ? e.checkOutDate : 'Active'}
-                        </td>
+                        <td>${e.checkInDate}</td>
+                        <td>${e.checkOutDate !== '-' ? e.checkOutDate : 'Active'}</td>
                      </tr>
                   `).join('')}
                </tbody>
