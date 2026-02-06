@@ -62,7 +62,6 @@ const DEFAULT_NAV_ITEMS = [
   { id: 'analysis', icon: BarChart2, label: 'Analysis', color: 'text-blue-300' },
   { id: 'reports', icon: FileSpreadsheet, label: 'Reports', color: 'text-teal-300' },
   { id: 'rules', icon: TrendingUp, label: 'Revenue Rules', color: 'text-emerald-300' },
-  { id: 'intelligence', icon: BrainCircuit, label: 'AI Intelligence', color: 'text-fuchsia-300' },
   { id: 'settings', icon: Settings, label: 'Channel Settings', color: 'text-slate-400' },
   { id: 'flow', icon: Presentation, label: 'Flow', color: 'text-slate-500' },
   { id: 'kitchen', icon: ChefHat, label: 'Kitchen Display', color: 'text-orange-400' },
@@ -918,7 +917,6 @@ const App: React.FC = () => {
         {activeTab === 'analysis' && <AnalysisView />}
         {activeTab === 'reports' && <ReportsView />}
         {activeTab === 'settings' && <SettingsPage connections={connections} setConnections={setConnections} />}
-        {activeTab === 'intelligence' && <IntelligenceView hotel={selectedHotel} />}
         {activeTab === 'setup' && <PropertySetupPage roomTypes={roomTypes} setRoomTypes={setRoomTypes} syncEvents={syncEvents} propertySettings={propertySettings} setPropertySettings={setPropertySettings} />}
         {activeTab === 'frontdesk' && (
           <FrontDeskView
