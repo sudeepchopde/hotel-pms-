@@ -6,6 +6,7 @@ import {
   ShieldAlert, AlertTriangle, BedDouble, Clock, Loader2
 } from 'lucide-react';
 import { Booking, RoomType } from '../types';
+import { API_BASE_URL } from '../api';
 
 const CHANNELS = ['All', 'Booking.com', 'MMT', 'Expedia', 'Direct'];
 
@@ -25,8 +26,8 @@ const ReportsView: React.FC = () => {
       try {
         setLoading(true);
         const [bookingsRes, roomTypesRes] = await Promise.all([
-          fetch('http://localhost:8000/api/bookings'),
-          fetch('http://localhost:8000/api/room-types')
+          fetch(`${API_BASE_URL}/bookings`),
+          fetch(`${API_BASE_URL}/room-types`)
         ]);
         const bData = await bookingsRes.json();
         const rData = await roomTypesRes.json();
@@ -303,7 +304,7 @@ const ReportsView: React.FC = () => {
                         `}>
                             {booking.status === 'Rejected' ? <ShieldAlert className="w-3.5 h-3.5" /> : (
                               <div className={`w-1.5 h-1.5 rounded-full ${booking.status === 'Confirmed' || booking.status === 'CheckedIn' || booking.status === 'CheckedOut' ? 'bg-emerald-500' :
-                                  booking.status === 'Cancelled' ? 'bg-slate-400' : 'bg-red-500'
+                                booking.status === 'Cancelled' ? 'bg-slate-400' : 'bg-red-500'
                                 }`} />
                             )}
                             <span className="text-[10px] font-black uppercase tracking-widest">{booking.status}</span>
