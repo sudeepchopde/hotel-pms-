@@ -1267,13 +1267,22 @@ def get_statistics(db=Depends(get_db)):
 
     now = datetime.now()
     year_start = datetime(now.year, 1, 1)
+    one_month_ago = now - timedelta(days=30)
+    six_months_ago = now - timedelta(days=180)
 
     total_revenue_ytd = 0
     total_bookings_ytd = 0
     total_nights_ytd = 0
     
-    # Aggregations
-    revenue_by_source = defaultdict(float)
+    # Aggregations for different periods
+    revenue_by_source_1y = defaultdict(float)
+    revenue_by_source_6m = defaultdict(float)
+    revenue_by_source_1m = defaultdict(float)
+    
+    total_rev_1y = 0
+    total_rev_6m = 0
+    total_rev_1m = 0
+
     bookings_by_source = defaultdict(int)
     room_type_popularity = defaultdict(int)
     
@@ -1307,6 +1316,9 @@ def get_statistics(db=Depends(get_db)):
                      check_out = datetime.strptime(b.checkOut.split('T')[0], "%Y-%m-%d")
                 except:
                      check_out = check_in + timedelta(days=1)
+            
+            nights = max((check_out - check_in).days, 1)
+
             # Calculate actual paid amount from payments instead of booking total
             amount = 0
             if b.payments:
@@ -1322,17 +1334,29 @@ def get_statistics(db=Depends(get_db)):
             source_key = raw_source.lower().replace('.', '').replace('bookingcom', 'bcom').replace('makemytrip', 'mmt').replace('expedia', 'exp').replace('direct', 'dir')
             if source_key not in ['mmt', 'bcom', 'exp', 'dir']: source_key = 'dir'
 
-            # YTD Logic
+            # YTD / 1Y Logic
             if check_in >= year_start:
                 total_revenue_ytd += amount
                 total_bookings_ytd += 1
                 total_nights_ytd += nights
-                revenue_by_source[source_key] += amount
+                revenue_by_source_1y[source_key] += amount
+                total_rev_1y += amount
+                
                 bookings_by_source[source_key] += 1
                 
-                # Room Type Logic
+                # Room Type Logic (only for YTD)
                 rt_name = room_types.get(b.roomTypeId, 'Unknown')
                 room_type_popularity[rt_name] += 1
+            
+            # 6 Months Logic
+            if check_in >= six_months_ago:
+                revenue_by_source_6m[source_key] += amount
+                total_rev_6m += amount
+
+            # 1 Month Logic
+            if check_in >= one_month_ago:
+                revenue_by_source_1m[source_key] += amount
+                total_rev_1m += amount
 
             # Historical Trends
             day_str = check_in.strftime("%Y-%m-%d")
@@ -1358,6 +1382,14 @@ def get_statistics(db=Depends(get_db)):
             "total": sum(trend_dict[k].values())
         } for k in sorted_keys]
 
+    def format_share(source_dict, total):
+        return [
+            {"name": "Booking.com", "value": round((source_dict['bcom'] / total * 100), 1) if total > 0 else 0, "color": "bg-blue-500", "hex": "#3b82f6"},
+            {"name": "MakeMyTrip", "value": round((source_dict['mmt'] / total * 100), 1) if total > 0 else 0, "color": "bg-red-500", "hex": "#ef4444"},
+            {"name": "Expedia", "value": round((source_dict['exp'] / total * 100), 1) if total > 0 else 0, "color": "bg-yellow-500", "hex": "#eab308"},
+            {"name": "Direct", "value": round((source_dict['dir'] / total * 100), 1) if total > 0 else 0, "color": "bg-emerald-500", "hex": "#10b981"},
+        ]
+
     avg_daily_rate = total_revenue_ytd / total_nights_ytd if total_nights_ytd > 0 else 0
 
     return {
@@ -1369,12 +1401,11 @@ def get_statistics(db=Depends(get_db)):
             "bookingsGrowth": 8.2, 
             "adrGrowth": -1.2
         },
-        "revenueShare": [
-            {"name": "Booking.com", "value": round((revenue_by_source['bcom'] / total_revenue_ytd * 100), 1) if total_revenue_ytd > 0 else 25.0, "color": "bg-blue-500", "hex": "#3b82f6"},
-            {"name": "MakeMyTrip", "value": round((revenue_by_source['mmt'] / total_revenue_ytd * 100), 1) if total_revenue_ytd > 0 else 25.0, "color": "bg-red-500", "hex": "#ef4444"},
-            {"name": "Expedia", "value": round((revenue_by_source['exp'] / total_revenue_ytd * 100), 1) if total_revenue_ytd > 0 else 25.0, "color": "bg-yellow-500", "hex": "#eab308"},
-            {"name": "Direct", "value": round((revenue_by_source['dir'] / total_revenue_ytd * 100), 1) if total_revenue_ytd > 0 else 25.0, "color": "bg-emerald-500", "hex": "#10b981"},
-        ],
+        "revenueShare": {
+            "1y": format_share(revenue_by_source_1y, total_rev_1y),
+            "6m": format_share(revenue_by_source_6m, total_rev_6m),
+            "1m": format_share(revenue_by_source_1m, total_rev_1m)
+        },
         "trends": {
             "daily": format_trend(daily_revenue, 14),
             "weekly": format_trend(weekly_revenue, 12),

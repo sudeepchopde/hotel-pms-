@@ -11,7 +11,11 @@ interface StatsData {
     bookingsGrowth: number;
     adrGrowth: number;
   };
-  revenueShare: Array<{ name: string; value: number; color: string; hex: string }>;
+  revenueShare: {
+    "1m": Array<{ name: string; value: number; color: string; hex: string }>;
+    "6m": Array<{ name: string; value: number; color: string; hex: string }>;
+    "1y": Array<{ name: string; value: number; color: string; hex: string }>;
+  };
   trends: {
     daily: Array<{ label: string; channels: any; total: number }>;
     weekly: Array<{ label: string; channels: any; total: number }>;
@@ -62,12 +66,11 @@ const AnalysisView: React.FC = () => {
     return Math.max(...chartData.map(d => d.channels[sourceFilter] || 0));
   }, [chartData, sourceFilter]);
 
-  // Derived Share data (Since backend currently returns YTD, we use that for all periods in demo, 
-  // but in real app we could pass params to /api/statistics)
+  // Derived Share data - Now supports multiple periods from backend
   const normalizedChannelData = useMemo(() => {
     if (!stats) return [];
-    return stats.revenueShare;
-  }, [stats]);
+    return stats.revenueShare[sharePeriod] || [];
+  }, [stats, sharePeriod]);
 
   // Derived room popularity data
   const roomTypeData = useMemo(() => {
@@ -90,15 +93,16 @@ const AnalysisView: React.FC = () => {
 
   // Robust Pie Chart Gradient
   const pieGradient = useMemo(() => {
-    if (!stats || stats.revenueShare.length === 0) return '#f1f5f9';
+    const currentData = stats?.revenueShare[sharePeriod] || [];
+    if (!stats || currentData.length === 0) return '#f1f5f9';
     let currentPos = 0;
-    const parts = stats.revenueShare.map(c => {
+    const parts = currentData.map(c => {
       const start = currentPos;
       currentPos += c.value;
       return `${c.hex} ${start}% ${currentPos}%`;
     });
     return `conic-gradient(${parts.join(', ')})`;
-  }, [stats]);
+  }, [stats, sharePeriod]);
 
   if (loading) {
     return (
@@ -291,7 +295,7 @@ const AnalysisView: React.FC = () => {
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-6 w-full max-w-xl px-4">
-            {stats.revenueShare.map(c => (
+            {normalizedChannelData.map(c => (
               <div key={c.name} className="flex flex-col gap-1.5">
                 <div className="flex justify-between items-center px-1">
                   <div className="flex items-center gap-2">
