@@ -388,6 +388,20 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Play sound on new notification toast
+  useEffect(() => {
+    if (notificationToast) {
+      try {
+        // Simple cheerful chime
+        const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
+        audio.volume = 0.6;
+        audio.play().catch(e => console.warn('Audio play failed (user interaction required first)', e));
+      } catch (e) {
+        console.error("Audio init failed", e);
+      }
+    }
+  }, [notificationToast]);
+
   // Security State
   const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([]);
   const [roomSecurity, setRoomSecurity] = useState<RoomSecurityStatus[]>([]);
@@ -807,8 +821,14 @@ const App: React.FC = () => {
                   title={isSidebarCollapsed ? item.label : (item.id === 'flow' ? 'Temporarily Deactivated' : undefined)}
                   disabled={item.id === 'flow'}
                 >
-                  <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? item.color : (item.id === 'flow' ? 'text-slate-500' : '')}`} />
+                  <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? item.color : (item.id === 'flow' ? 'text-slate-500' : '')} ${item.id === 'notifications' && unreadNotificationCount > 0 ? 'animate-swing text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]' : ''}`} />
                   {!isSidebarCollapsed && <span className="font-semibold text-sm whitespace-nowrap truncate flex-1 text-left">{item.label}</span>}
+                  {item.id === 'notifications' && unreadNotificationCount > 0 && (
+                    <span className={`absolute ${isSidebarCollapsed ? 'top-2 right-2' : 'top-3 right-3'} flex h-3 w-3`}>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                    </span>
+                  )}
                 </button>
 
                 {/* Drag handle - visible on hover, restricted to this element */}
