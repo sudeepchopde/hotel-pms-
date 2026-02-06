@@ -96,12 +96,18 @@ const ReportsView: React.FC = () => {
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
   };
 
+  const getPaidAmount = (b: Booking) => {
+    if (!b.payments) return 0;
+    return b.payments.reduce((sum, p) => p.status === 'Completed' ? sum + (p.amount || 0) : sum, 0);
+  };
+
   const handleDownloadCSV = () => {
-    const headers = ['ID,Guest Name,Room Type,Channel,Check-in,Check-out,Duration (Nights),Amount,Status,Reason'];
+    const headers = ['ID,Guest Name,Room Type,Channel,Check-in,Check-out,Duration (Nights),Bill Amount,Paid Amount,Status,Reason'];
     const rows = filteredData.map(b => {
       const duration = getDuration(b.checkIn, b.checkOut);
       const roomName = roomNameMap[b.roomTypeId] || b.roomTypeId;
-      return `${b.id},"${b.guestName}","${roomName}",${b.source},${b.checkIn},${b.checkOut},${duration},${b.amount},${b.status},${b.rejectionReason || ''}`;
+      const paid = getPaidAmount(b);
+      return `${b.id},"${b.guestName}","${roomName}",${b.source},${b.checkIn},${b.checkOut},${duration},${b.amount},${paid},${b.status},${b.rejectionReason || ''}`;
     });
     const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -119,10 +125,7 @@ const ReportsView: React.FC = () => {
 
   const totalRevenue = useMemo(() => {
     return filteredData.reduce((sum, b) => {
-      if (b.status === 'Confirmed' || b.status === 'CheckedIn' || b.status === 'CheckedOut') {
-        return sum + (b.amount || 0);
-      }
-      return sum;
+      return sum + getPaidAmount(b);
     }, 0);
   }, [filteredData]);
 
@@ -227,7 +230,7 @@ const ReportsView: React.FC = () => {
       {/* Summary Stat */}
       <div className="flex justify-end">
         <div className="bg-indigo-50 border border-indigo-100 px-6 py-3 rounded-2xl flex items-center gap-3">
-          <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Total Revenue (Period)</span>
+          <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Total Collections (Period)</span>
           <span className="text-xl font-black text-indigo-900">₹{totalRevenue.toLocaleString()}</span>
         </div>
       </div>
@@ -238,7 +241,7 @@ const ReportsView: React.FC = () => {
           <table className="w-full text-left border-collapse">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
-                {['ID', 'Guest Name', 'Room Type', 'Channel', 'Check-in', 'Check-out', 'Duration', 'Amount', 'Status'].map((h) => (
+                {['ID', 'Guest Name', 'Room Type', 'Channel', 'Check-in', 'Check-out', 'Duration', 'Bill Amount', 'Paid', 'Status'].map((h) => (
                   <th key={h} className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">
                     {h}
                   </th>
@@ -249,6 +252,7 @@ const ReportsView: React.FC = () => {
               {filteredData.length > 0 ? (
                 filteredData.map((booking) => {
                   const duration = getDuration(booking.checkIn, booking.checkOut);
+                  const paidAmount = getPaidAmount(booking);
                   return (
                     <tr key={booking.id} className="hover:bg-slate-50/50 transition-colors group">
                       <td className="p-5 text-xs font-bold text-slate-500 font-mono">{booking.id}</td>
@@ -295,6 +299,12 @@ const ReportsView: React.FC = () => {
                           `₹${booking.amount?.toLocaleString()}`
                         )}
                       </td>
+
+                      {/* Paid Amount Column */}
+                      <td className="p-5 text-sm font-bold text-emerald-600">
+                        ₹{paidAmount.toLocaleString()}
+                      </td>
+
                       <td className="p-5">
                         <div className="flex flex-col gap-1">
                           <span className={`
