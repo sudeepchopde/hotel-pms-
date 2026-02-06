@@ -1307,8 +1307,16 @@ def get_statistics(db=Depends(get_db)):
                      check_out = datetime.strptime(b.checkOut.split('T')[0], "%Y-%m-%d")
                 except:
                      check_out = check_in + timedelta(days=1)
-            nights = max((check_out - check_in).days, 1)
-            amount = b.amount or 0
+            # Calculate actual paid amount from payments instead of booking total
+            amount = 0
+            if b.payments:
+                for p in b.payments:
+                    # p is a Payment object (Pydantic)
+                    if p.status == 'Completed':
+                        amount += p.amount
+            
+            # Fallback (optional): if no payments recorded but status is CheckedOut/Settled, maybe assume full amount? 
+            # User specifically asked for "actual amount paid", so 0 is correct if no payments are recorded.
             
             raw_source = b.source or 'Direct'
             source_key = raw_source.lower().replace('.', '').replace('bookingcom', 'bcom').replace('makemytrip', 'mmt').replace('expedia', 'exp').replace('direct', 'dir')
