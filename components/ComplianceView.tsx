@@ -16,6 +16,8 @@ interface ComplianceViewProps {
 const ComplianceView: React.FC<ComplianceViewProps> = ({ syncEvents, setSyncEvents }) => {
    const [searchQuery, setSearchQuery] = useState('');
    const [filterType, setFilterType] = useState<'all' | 'flagged' | 'foreign'>('all');
+   const [startDate, setStartDate] = useState('');
+   const [endDate, setEndDate] = useState('');
 
    const allBookings = useMemo(() => {
       return syncEvents.filter(e => e.type === 'booking') as Booking[];
@@ -149,11 +151,14 @@ const ComplianceView: React.FC<ComplianceViewProps> = ({ syncEvents, setSyncEven
          const matchSearch = e.guestName.toLowerCase().includes(searchQuery.toLowerCase()) || e.room.includes(searchQuery);
          if (!matchSearch) return false;
 
+         if (startDate && e.checkInDate < startDate) return false;
+         if (endDate && e.checkInDate > endDate) return false;
+
          if (filterType === 'foreign') return e.isForeigner;
          if (filterType === 'flagged') return e.idNumber === 'PENDING';
          return true;
       }).sort((a, b) => b.checkInDate.localeCompare(a.checkInDate));
-   }, [auditResults, searchQuery, filterType]);
+   }, [auditResults, searchQuery, filterType, startDate, endDate]);
 
    const flaggedBookings = auditResults.filter(b => b.audit.flagged && b.audit.isNew);
 
@@ -188,6 +193,10 @@ const ComplianceView: React.FC<ComplianceViewProps> = ({ syncEvents, setSyncEven
          return;
       }
 
+      const dateRangeLabel = startDate || endDate
+         ? `Period: ${startDate || 'Start'} to ${endDate || 'End'}`
+         : 'All Time';
+
       const htmlContent = `
          <html>
          <head>
@@ -206,6 +215,7 @@ const ComplianceView: React.FC<ComplianceViewProps> = ({ syncEvents, setSyncEven
             <h2>Guest Register</h2>
             <div class="meta">
                Generated on: ${new Date().toLocaleString()}<br>
+               ${dateRangeLabel}<br>
                Total Entries: ${masterRegister.length}
             </div>
             <table>
@@ -289,14 +299,31 @@ const ComplianceView: React.FC<ComplianceViewProps> = ({ syncEvents, setSyncEven
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-6">
                <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[500px]">
-                  <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                  <div className="p-6 border-b border-slate-100 bg-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
                      <div>
                         <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
                            <FileText className="w-4 h-4 text-indigo-500" /> Master Guest Register
                         </h3>
                         <p className="text-[10px] text-slate-400 mt-1">Unified view of all occupants (Primary & Accessory)</p>
                      </div>
-                     <div className="flex items-center gap-2">
+                     <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+                           <span className="text-[10px] font-bold text-slate-400 uppercase">From</span>
+                           <input
+                              type="date"
+                              value={startDate}
+                              onChange={e => setStartDate(e.target.value)}
+                              className="bg-transparent text-xs font-bold text-slate-700 outline-none w-24"
+                           />
+                           <span className="text-[10px] font-bold text-slate-400 uppercase">To</span>
+                           <input
+                              type="date"
+                              value={endDate}
+                              onChange={e => setEndDate(e.target.value)}
+                              className="bg-transparent text-xs font-bold text-slate-700 outline-none w-24"
+                           />
+                        </div>
+
                         <div className="relative">
                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                            <input
