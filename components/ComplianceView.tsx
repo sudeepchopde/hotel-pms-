@@ -157,6 +157,87 @@ const ComplianceView: React.FC<ComplianceViewProps> = ({ syncEvents, setSyncEven
 
    const flaggedBookings = auditResults.filter(b => b.audit.flagged && b.audit.isNew);
 
+   const handlePrintRegistry = () => {
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+         alert('Please allow popups to print the registry');
+         return;
+      }
+
+      const htmlContent = `
+         <html>
+         <head>
+            <title>Guest Register - Police Compliance</title>
+            <style>
+               body { font-family: sans-serif; font-size: 10px; padding: 20px; }
+               table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+               th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+               th { background-color: #f0f0f0; font-weight: bold; }
+               h2 { text-align: center; margin-bottom: 5px; }
+               .meta { text-align: center; margin-bottom: 20px; font-size: 12px; color: #555; }
+               tr:nth-child(even) { background-color: #f9f9f9; }
+            </style>
+         </head>
+         <body>
+            <h2>Guest Register</h2>
+            <div class="meta">
+               Generated on: ${new Date().toLocaleString()}<br>
+               Total Entries: ${masterRegister.length}
+            </div>
+            <table>
+               <thead>
+                  <tr>
+                     <th>S.No</th>
+                     <th>Guest Name / Parent Name</th>
+                     <th>Details</th>
+                     <th>Address</th>
+                     <th>Arrival</th>
+                     <th>ID Proof</th>
+                     <th>Room</th>
+                     <th>Stay Dates</th>
+                  </tr>
+               </thead>
+               <tbody>
+                  ${masterRegister.map((e, i) => `
+                     <tr>
+                        <td>${i + 1}</td>
+                        <td>
+                           <strong>${e.guestName}</strong><br/>
+                           <span style="color: #666; font-size: 9px">F/H: ${e.fatherOrHusbandName}</span>
+                        </td>
+                        <td>
+                           ${e.nationality}<br/>
+                           ${e.type}
+                        </td>
+                        <td style="max-width: 150px; word-wrap: break-word;">${e.address}</td>
+                        <td>
+                           From: ${e.arrivedFrom}<br/>
+                           Purp: ${e.purposeOfVisit}
+                        </td>
+                        <td>
+                           ${e.idType}<br/>
+                           <strong>${e.idNumber}</strong>
+                        </td>
+                        <td>${e.room}</td>
+                        <td>
+                           In: ${e.checkInDate}<br/>
+                           Out: ${e.checkOutDate !== '-' ? e.checkOutDate : 'Active'}
+                        </td>
+                     </tr>
+                  `).join('')}
+               </tbody>
+            </table>
+            <script>
+               window.onload = function() { window.print(); }
+            </script>
+         </body>
+         </html>
+      `;
+
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+   };
+
    return (
       <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 pb-24">
          <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -168,7 +249,10 @@ const ComplianceView: React.FC<ComplianceViewProps> = ({ syncEvents, setSyncEven
                <p className="text-slate-500 mt-1 font-medium">Automated Form C processing and Master Guest Register audit.</p>
             </div>
             <div className="flex gap-3">
-               <button className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-xl transition-all shadow-sm">
+               <button
+                  onClick={handlePrintRegistry}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-xl transition-all shadow-sm"
+               >
                   <Printer className="w-4 h-4" /> Print Registry
                </button>
                <button className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white hover:bg-indigo-700 font-bold text-xs rounded-xl transition-all shadow-lg shadow-indigo-600/20">
