@@ -1067,15 +1067,24 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                       statusLabel = 'Inspecting';
                       statusTextColor = 'text-amber-600';
                     } else if (status === 'OutOfOrder') {
-                      statusColor = 'bg-slate-500';
-                      statusLabel = 'Out of Order';
-                      statusTextColor = 'text-slate-400';
-                      statusBg = 'bg-slate-100';
+                      statusColor = 'bg-red-500 animate-pulse';
+                      statusLabel = 'MAINTENANCE';
+                      statusTextColor = 'text-white/90';
+                      statusBg = 'bg-slate-800';
+                      statusBorder = 'border-slate-900';
                     }
 
                     const categoryIndex = row.parentId ? roomTypes.findIndex(rt => rt.id === row.parentId) : -1;
                     const rowTintStyle = categoryIndex >= 0 ? ROW_TINTS[categoryIndex % ROW_TINTS.length] : { backgroundColor: '#ffffff' };
                     const labelTintStyle = categoryIndex >= 0 ? LABEL_TINTS[categoryIndex % LABEL_TINTS.length] : { backgroundColor: '#ffffff' };
+
+                    // Override row style for OutOfOrder
+                    const effectiveRowStyle = status === 'OutOfOrder'
+                      ? {
+                        backgroundImage: 'repeating-linear-gradient(45deg, #f1f5f9 0px, #f1f5f9 10px, #e2e8f0 10px, #e2e8f0 20px)',
+                        opacity: 0.8
+                      }
+                      : rowTintStyle;
 
                     return (
                       <div key={row.id} className="flex flex-col md:flex-row gap-3 group animate-in slide-in-from-top-2 fade-in duration-300 ease-out fill-mode-forwards">
@@ -1083,7 +1092,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                           <div className={`h-[48px] w-full ${statusBg} rounded-xl shadow-lg border ${statusBorder} px-3 py-1 flex flex-col justify-center hover:shadow-indigo-500/10 transition-all group-hover:border-indigo-400/50 relative overflow-hidden`} style={isAlerted || statusBg ? {} : labelTintStyle}>
                             <div className={`absolute top-0 left-0 w-1.5 h-full ${isAlerted ? 'bg-amber-600' : 'bg-indigo-600'} opacity-0 group-hover:opacity-100 transition-opacity`}></div>
                             <div className="flex justify-between items-center">
-                              <span className={`text-lg font-black ${isAlerted ? 'text-amber-900' : 'text-slate-900'} tabular-nums tracking-tighter`}>{row.name}</span>
+                              <span className={`text-lg font-black ${isAlerted ? 'text-amber-900' : (status === 'OutOfOrder' ? 'text-white' : 'text-slate-900')} tabular-nums tracking-tighter`}>{row.name}</span>
                               <div className={`w-2 h-2 rounded-full ${statusColor}`}></div>
                             </div>
                             <span className={`text-[8px] font-black ${statusTextColor} uppercase tracking-[0.2em] leading-none`}>
@@ -1091,7 +1100,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                             </span>
                           </div>
                         </div>
-                        <div className="flex-1 rounded-xl shadow-2xl border border-black/10 relative flex overflow-hidden hover:shadow-indigo-900/10 transition-all" style={rowTintStyle}>
+                        <div className="flex-1 rounded-xl shadow-2xl border border-black/10 relative flex overflow-hidden hover:shadow-indigo-900/10 transition-all" style={effectiveRowStyle}>
                           {timelineDates.map(date => {
                             const booking = getBookingForCell(row.id, date);
                             const d = new Date(date);
