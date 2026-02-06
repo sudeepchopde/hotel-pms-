@@ -1587,17 +1587,20 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
         if new_folio_count > old_folio_count:
             try:
                 last_item = booking.folio[-1]
-                create_notification_internal(
-                    db,
-                    notif_type="housekeeping" if last_item.category == 'Laundry' else "guest_request",
-                    category="service_order",
-                    title=f"New {last_item.category} Order",
-                    message=f"Order for {last_item.description} (₹{last_item.amount}) received from Room {booking.roomNumber}",
-                    priority="normal",
-                    booking_id=booking_id,
-                    room_number=booking.roomNumber
-                )
-                db.commit()
+                
+                # Sudeep's Rule: Do not trigger notification for Extra Bed setup
+                if "Extra Bed" not in last_item.description:
+                    create_notification_internal(
+                        db,
+                        notif_type="housekeeping" if last_item.category == 'Laundry' else "guest_request",
+                        category="service_order",
+                        title=f"New {last_item.category} Order",
+                        message=f"Order for {last_item.description} (₹{last_item.amount}) received from Room {booking.roomNumber}",
+                        priority="normal",
+                        booking_id=booking_id,
+                        room_number=booking.roomNumber
+                    )
+                    db.commit()
             except Exception as e:
                 print(f"Error creating folio notification: {e}")
                 db.rollback()
