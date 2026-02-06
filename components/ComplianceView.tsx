@@ -271,6 +271,110 @@ const ComplianceView: React.FC<ComplianceViewProps> = ({ syncEvents, setSyncEven
       printWindow.document.close();
    };
 
+   const handleExportFormCBatch = () => {
+      // 1. Gather all foreign guests (primary + accessory) that match the filters
+      const formCEntries: any[] = [];
+
+      auditResults.forEach(b => {
+         // Check date filter
+         if (startDate && b.checkIn < startDate) return;
+         if (endDate && b.checkIn > endDate) return;
+
+         // Primary Guest
+         const pNat = b.guestDetails?.nationality || 'Indian';
+         if (pNat.toLowerCase() !== 'indian') {
+            formCEntries.push({
+               type: 'Primary',
+               bookingId: b.id,
+               name: b.guestName,
+               nationality: pNat,
+               ...b.guestDetails, // Spread all details
+               checkIn: b.checkIn,
+               checkOut: b.checkOut,
+               room: b.roomNumber
+            });
+         }
+
+         // Accessory Guests
+         b.accessoryGuests?.forEach(g => {
+            const gNat = g.nationality || 'Indian';
+            if (gNat.toLowerCase() !== 'indian') {
+               formCEntries.push({
+                  type: 'Co-Guest',
+                  bookingId: b.id,
+                  name: g.name,
+                  nationality: gNat,
+                  ...g,
+                  checkIn: b.checkIn,
+                  checkOut: b.checkOut,
+                  room: b.roomNumber
+               });
+            }
+         });
+      });
+
+      if (formCEntries.length === 0) {
+         alert('No foreign guests found in the selected period for Form C export.');
+         return;
+      }
+
+      // 2. Generate CSV
+      const headers = [
+         'Guest Name', 'Gender', 'Nationality',
+         'Passport Number', 'Passport Place of Issue', 'Passport Issue Date', 'Passport Expiry Date',
+         'Visa Number', 'Visa Type', 'Visa Place of Issue', 'Visa Issue Date', 'Visa Expiry Date',
+         'Arrived From', 'Arrival Date India', 'Arrival Port',
+         'Next Destination', 'Address in India', 'City', 'State', 'Pin Code',
+         'Phone', 'Email', 'Purpose of Visit',
+         'Room Number', 'Check-In Date', 'Check-Out Date'
+      ];
+
+      const csvRows = [headers.join(',')];
+
+      formCEntries.forEach(e => {
+         const row = [
+            `"${e.name || ''}"`,
+            `"${e.gender || ''}"`,
+            `"${e.nationality || ''}"`,
+            `"${e.passportNumber || ''}"`,
+            `"${e.passportPlaceIssue || ''}"`,
+            `"${e.passportIssueDate || ''}"`,
+            `"${e.passportExpiry || ''}"`,
+            `"${e.visaNumber || ''}"`,
+            `"${e.visaType || ''}"`,
+            `"${e.visaPlaceIssue || ''}"`,
+            `"${e.visaIssueDate || ''}"`,
+            `"${e.visaExpiry || ''}"`,
+            `"${e.arrivedFrom || ''}"`,
+            `"${e.arrivalDateIndia || ''}"`,
+            `"${e.arrivalPort || ''}"`,
+            `"${e.nextDestination || ''}"`,
+            `"${e.address || ''}"`,
+            `"${e.city || ''}"`,
+            `"${e.state || ''}"`,
+            `"${e.pinCode || ''}"`,
+            `"${e.phoneNumber || ''}"`,
+            `"${e.email || ''}"`,
+            `"${e.purposeOfVisit || ''}"`,
+            `"${e.room || ''}"`,
+            `"${e.checkIn || ''}"`,
+            `"${e.checkOut || ''}"`
+         ];
+         csvRows.push(row.join(','));
+      });
+
+      // 3. Download
+      const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Form_C_Batch_Export_${startDate || 'All'}_to_${endDate || 'All'}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+   };
+
    return (
       <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 pb-24">
          <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -288,7 +392,10 @@ const ComplianceView: React.FC<ComplianceViewProps> = ({ syncEvents, setSyncEven
                >
                   <Printer className="w-4 h-4" /> Print Registry
                </button>
-               <button className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white hover:bg-indigo-700 font-bold text-xs rounded-xl transition-all shadow-lg shadow-indigo-600/20">
+               <button
+                  onClick={handleExportFormCBatch}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white hover:bg-indigo-700 font-bold text-xs rounded-xl transition-all shadow-lg shadow-indigo-600/20"
+               >
                   <Download className="w-4 h-4" /> Export Form C Batch
                </button>
             </div>
