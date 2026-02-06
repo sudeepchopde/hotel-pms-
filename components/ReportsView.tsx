@@ -120,7 +120,15 @@ const ReportsView: React.FC = () => {
   };
 
   const handleDownloadPDF = () => {
-    alert(`Generating PDF Report via /api/reports/bookings...\n\nFilters:\nStart: ${startDate || 'Any'}\nEnd: ${endDate || 'Any'}\nChannels: ${selectedChannels.join(', ')}`);
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    if (selectedChannels.length > 0) {
+      params.append('channels', selectedChannels.join(','));
+    }
+
+    const url = `${API_BASE_URL}/reports/bookings?${params.toString()}`;
+    window.open(url, '_blank');
   };
 
   const totalRevenue = useMemo(() => {

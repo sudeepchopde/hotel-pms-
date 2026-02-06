@@ -1,9 +1,11 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import os
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
+from fpdf import FPDF
 from collections import defaultdict
 import json
 import re
@@ -1416,6 +1418,118 @@ def get_statistics(db=Depends(get_db)):
             "bookingTrend": format_trend(monthly_counts, 6)
         }
     }
+
+@app.get("/api/reports/bookings")
+def generate_booking_report(
+    startDate: Optional[str] = None,
+    endDate: Optional[str] = None,
+    channels: Optional[str] = None,
+    db=Depends(get_db)
+):
+    bookings_data = []
+    if USE_DATABASE() and db:
+        try:
+            bookings_db = db.query(BookingDB).all()
+            for b_db in bookings_db:
+                 try:
+                    bookings_data.append(db_booking_to_pydantic(b_db))
+                 except: pass
+        except: pass
+    else:
+        bookings_data = get_fallback_bookings()
+    
+    filtered = []
+    selected_channels = [c.strip() for c in channels.split(',')] if channels and channels != 'null' else ['All']
+    if 'All' in selected_channels: selected_channels = ['All']
+    
+    for b in bookings_data:
+        # Date Filter
+        if startDate and startDate != 'undefined' and startDate != '':
+             if b.checkIn < startDate: continue
+        if endDate and endDate != 'undefined' and endDate != '':
+             if b.checkOut > endDate: continue
+        
+        # Channel Filter
+        if 'All' not in selected_channels and b.source not in selected_channels: continue
+        
+        filtered.append(b)
+
+    # Generate PDF
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=10)
+    
+    # Title
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(190, 10, txt="Booking Report", ln=True, align='C')
+    pdf.set_font("Arial", size=10)
+    pdf.cell(190, 10, txt=f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align='C')
+    pdf.ln(10)
+    
+    # Filters applied
+    filter_str = f"Start: {startDate or 'Any'} | End: {endDate or 'Any'} | Channels: {', '.join(selected_channels)}"
+    pdf.set_font("Arial", 'I', 8)
+    pdf.cell(190, 8, txt=filter_str, ln=True, align='L')
+    pdf.ln(5)
+
+    # Table Header
+    headers = ["ID", "Name", "Source", "Check-In", "Out", "Bill", "Paid"]
+    col_widths = [30, 45, 20, 25, 25, 25, 20]
+    
+    pdf.set_font("Arial", 'B', 9)
+    # Header bg color
+    pdf.set_fill_color(240, 240, 240)
+    for i, h in enumerate(headers):
+        pdf.cell(col_widths[i], 8, h, 1, 0, 'C', True)
+    pdf.ln()
+    
+    # Rows
+    pdf.set_font("Arial", size=8)
+    total_bill = 0
+    total_paid = 0
+    
+    for b in filtered:
+        paid = 0
+        if b.payments:
+            for p in b.payments:
+                if p.status == 'Completed':
+                     paid += p.amount
+        
+        total_bill += (b.amount or 0)
+        total_paid += paid
+        
+        b_id = str(b.id)[:12]
+        b_name = b.guestName[:22]
+        
+        row_data = [
+            b_id,
+            b_name,
+            b.source[:10],
+            b.checkIn,
+            b.checkOut,
+            f"{b.amount or 0:,.0f}",
+            f"{paid:,.0f}"
+        ]
+        
+        for i, data in enumerate(row_data):
+            align = 'R' if i >= 5 else 'L'
+            pdf.cell(col_widths[i], 8, str(data), 1, 0, align)
+        pdf.ln()
+        
+    # Totals
+    pdf.ln(5)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(sum(col_widths[:5]), 10, "Totals:", 0, 0, 'R')
+    pdf.cell(col_widths[5], 10, f"{total_bill:,.0f}", 1, 0, 'R')
+    pdf.cell(col_widths[6], 10, f"{total_paid:,.0f}", 1, 0, 'R')
+    
+    # Output
+    # Handle Vercel /tmp or local
+    out_dir = "/tmp" if os.path.exists("/tmp") else "."
+    report_path = os.path.join(out_dir, f"report_{uuid.uuid4().hex}.pdf")
+    pdf.output(report_path)
+    
+    return FileResponse(report_path, filename=f"Booking_Report_{datetime.now().strftime('%Y%m%d')}.pdf", media_type='application/pdf')
 
 @app.post("/api/bookings")
 def create_booking(booking: Booking, db=Depends(get_db)):
