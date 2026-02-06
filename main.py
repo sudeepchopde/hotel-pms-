@@ -32,6 +32,7 @@ RateRulesDB = None
 GuestProfileDB = None
 PropertySettingsDB = None
 NotificationDB = None
+RoomStatusDB = None
 
 # Import Pydantic models at top level for FastAPI type validation
 from backend.models import (
@@ -50,7 +51,9 @@ from backend.models import (
     Notification,
     Notification,
     NotificationCreate,
-    FolioItem
+    NotificationCreate,
+    FolioItem,
+    RoomStatus
 )
 
 get_db_real = None
@@ -59,8 +62,8 @@ engine = None
 def _load_db_imports():
     """Lazy load database imports to avoid import-time failures on Vercel."""
     global _db_imports_loaded, _USE_DATABASE, _db_connection_error
-    global HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, RateRulesDB, GuestProfileDB, PropertySettingsDB, NotificationDB
-    global Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest, GuestProfile, PropertySettings
+    global HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, RateRulesDB, GuestProfileDB, PropertySettingsDB, NotificationDB, RoomStatusDB
+    global Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest, GuestProfile, PropertySettings, RoomStatus
     global get_db_real, engine
     
     if _db_imports_loaded:
@@ -77,7 +80,8 @@ def _load_db_imports():
             RateRulesDB as _RateRulesDB, 
             GuestProfileDB as _GuestProfileDB, 
             PropertySettingsDB as _PropertySettingsDB,
-            NotificationDB as _NotificationDB
+            NotificationDB as _NotificationDB,
+            RoomStatusDB as _RoomStatusDB
         )
         
         # Assign to globals
@@ -91,6 +95,7 @@ def _load_db_imports():
         GuestProfileDB = _GuestProfileDB
         PropertySettingsDB = _PropertySettingsDB
         NotificationDB = _NotificationDB
+        RoomStatusDB = _RoomStatusDB
         
         # Test connection and create tables if they don't exist
         from backend.database import Base
@@ -1786,6 +1791,27 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
                         booking_id=booking_id,
                         room_number=booking.roomNumber
                     )
+                    
+                    # Automate Housekeeping Status
+                    if booking.roomNumber and booking.roomNumber != 'Unassigned':
+                        try:
+                            from sqlalchemy import text
+                            from datetime import datetime
+                            
+                            # Upsert Room Status
+                            check_stmt = text("SELECT 1 FROM room_status WHERE room_number = :rn")
+                            exists = db.execute(check_stmt, {"rn": booking.roomNumber}).fetchone()
+                            
+                            now_ts = datetime.now().isoformat()
+                            
+                            if exists:
+                                db.execute(text("UPDATE room_status SET status = 'Dirty' WHERE room_number = :rn"), {"rn": booking.roomNumber})
+                            else:
+                                db.execute(text("INSERT INTO room_status (room_number, status, priority, last_cleaned) VALUES (:rn, 'Dirty', 'Medium', :ts)"), {"rn": booking.roomNumber, "ts": now_ts})
+                            
+                            db.commit()
+                        except Exception as ex:
+                            print(f"Failed to update room status on checkout: {ex}")
                 elif new_status == 'Cancelled':
                     create_notification_internal(
                         db,
@@ -2365,3 +2391,95 @@ def dismiss_notification(notification_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ========== HOUSEKEEPING API ==========
+
+@app.get("/api/room-status")
+def get_room_statuses():
+    import os
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url: return []
+    
+    try:
+        from sqlalchemy import create_engine, text
+        if db_url.startswith("postgres://"): db_url = db_url.replace("postgres://", "postgresql://", 1)
+        engine = create_engine(db_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            # Check if table exists first (handling migration lag)
+            try:
+                result = conn.execute(text("SELECT * FROM room_status"))
+            except Exception:
+                return []
+                
+            rows = result.fetchall()
+            return [
+                {
+                    "roomNumber": r.room_number,
+                    "status": r.status,
+                    "priority": r.priority,
+                    "notes": r.notes,
+                    "lastCleaned": r.last_cleaned,
+                    "housekeeper": r.housekeeper
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        print(f"Error fetching room statuses: {e}")
+        return []
+
+@app.post("/api/room-status")
+def update_room_status_endpoint(status_data: RoomStatus):
+    import os
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url: raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        from sqlalchemy import create_engine, text
+        if db_url.startswith("postgres://"): db_url = db_url.replace("postgres://", "postgresql://", 1)
+        engine = create_engine(db_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            # Check if exists
+            exists = conn.execute(
+                text("SELECT 1 FROM room_status WHERE room_number = :rn"),
+                {"rn": status_data.roomNumber}
+            ).fetchone()
+            
+            if exists:
+                conn.execute(
+                    text("""
+                        UPDATE room_status 
+                        SET status = :status, priority = :priority, notes = :notes, 
+                            last_cleaned = :last_cleaned, housekeeper = :housekeeper
+                        WHERE room_number = :rn
+                    """),
+                    {
+                        "status": status_data.status,
+                        "priority": status_data.priority, 
+                        "notes": status_data.notes,
+                        "last_cleaned": status_data.lastCleaned,
+                        "housekeeper": status_data.housekeeper,
+                        "rn": status_data.roomNumber
+                    }
+                )
+            else:
+                conn.execute(
+                    text("""
+                        INSERT INTO room_status (room_number, status, priority, notes, last_cleaned, housekeeper)
+                        VALUES (:rn, :status, :priority, :notes, :last_cleaned, :housekeeper)
+                    """),
+                    {
+                        "rn": status_data.roomNumber,
+                        "status": status_data.status,
+                        "priority": status_data.priority,
+                        "notes": status_data.notes,
+                        "last_cleaned": status_data.lastCleaned,
+                        "housekeeper": status_data.housekeeper
+                    }
+                )
+            conn.commit()
+            return status_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

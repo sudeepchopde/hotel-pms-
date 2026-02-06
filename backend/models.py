@@ -238,3 +238,12 @@ class NotificationCreate(BaseModel):
     roomNumber: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
+class RoomStatus(BaseModel):
+    roomNumber: str
+    status: Literal['Clean', 'Dirty', 'Inspecting', 'OutOfOrder']
+    priority: Literal['Low', 'Medium', 'High'] = 'Medium'
+    notes: Optional[str] = None
+    lastCleaned: Optional[str] = None
+    housekeeper: Optional[str] = None
+
+

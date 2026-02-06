@@ -18,14 +18,15 @@ import SecurityView from './components/SecurityView';
 // Duplicate removed
 import NotificationsView from './components/NotificationsView';
 import KitchenDisplay from './components/KitchenDisplay'; // Import new component
+import HousekeepingView from './components/HousekeepingView';
 // import NotificationsPanel from './components/NotificationsPanel'; // Removed
 import {
   LayoutDashboard, FileText, Database, Settings, ShieldCheck,
   BrainCircuit, Building2, ChevronDown, Presentation, TrendingUp,
   BarChart2, FileSpreadsheet, Home, ConciergeBell, Users, FileBadge,
-  PanelLeftClose, PanelLeftOpen, ShieldAlert, AlertCircle, GripVertical, Bell, ChefHat
+  PanelLeftClose, PanelLeftOpen, ShieldAlert, AlertCircle, GripVertical, Bell, ChefHat, Brush
 } from 'lucide-react';
-import { Hotel, OTAConnection, RateRulesConfig, RoomType, SyncEvent, Booking, FolioItem, VerificationAttempt, RoomSecurityStatus, PropertySettings } from './types';
+import { Hotel, OTAConnection, RateRulesConfig, RoomType, SyncEvent, Booking, FolioItem, VerificationAttempt, RoomSecurityStatus, PropertySettings, RoomStatus } from './types';
 
 const HOTELS: Hotel[] = [
   { id: 'h-1', name: 'Hotel Satsangi', location: 'Deoghar', color: 'indigo', otaConfig: { expedia: 'active', booking: 'active', mmt: 'active' } },
@@ -65,6 +66,7 @@ const DEFAULT_NAV_ITEMS = [
   { id: 'settings', icon: Settings, label: 'Channel Settings', color: 'text-slate-400' },
   { id: 'flow', icon: Presentation, label: 'Flow', color: 'text-slate-500' },
   { id: 'kitchen', icon: ChefHat, label: 'Kitchen Display', color: 'text-orange-400' },
+  { id: 'housekeeping', icon: Brush, label: 'Housekeeping', color: 'text-indigo-400' },
 ];
 
 const INITIAL_ROOM_TYPES: RoomType[] = [
@@ -123,13 +125,14 @@ const App: React.FC = () => {
     return <GuestRegistrationForm />;
   }
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'settings' | 'intelligence' | 'flow' | 'rules' | 'analysis' | 'reports' | 'setup' | 'frontdesk' | 'guests' | 'compliance' | 'security' | 'notifications' | 'kitchen'>('frontdesk');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'settings' | 'intelligence' | 'flow' | 'rules' | 'analysis' | 'reports' | 'setup' | 'frontdesk' | 'guests' | 'compliance' | 'security' | 'notifications' | 'kitchen' | 'housekeeping'>('frontdesk');
   const [selectedHotel, setSelectedHotel] = useState<Hotel | null>(null);
   const [hotels, setHotels] = useState<Hotel[]>([]);
   const [isHotelMenuOpen, setIsHotelMenuOpen] = useState(false);
   const [connections, setConnections] = useState<OTAConnection[]>([]);
   const [rules, setRules] = useState<RateRulesConfig | null>(null);
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
+  const [roomStatuses, setRoomStatuses] = useState<RoomStatus[]>([]);
   const [syncEvents, setSyncEvents] = useState<SyncEvent[]>([]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [propertySettings, setPropertySettings] = useState<PropertySettings | null>(null);
@@ -247,17 +250,18 @@ const App: React.FC = () => {
         });
 
         // Race the data fetching against the timeout
-        const [hotelsData, connectionsData, rulesData, roomTypesData, bookingsData, propertyData] = await Promise.race([
+        const [hotelsData, connectionsData, rulesData, roomTypesData, bookingsData, propertyData, roomStatusesData] = await Promise.race([
           Promise.all([
             import('./api').then(m => m.fetchHotels()),
             import('./api').then(m => m.fetchConnections()),
             import('./api').then(m => m.fetchRules()),
             import('./api').then(m => m.fetchRoomTypes()),
             import('./api').then(m => m.fetchBookings()),
-            import('./api').then(m => m.fetchPropertySettings())
+            import('./api').then(m => m.fetchPropertySettings()),
+            import('./api').then(m => m.fetchRoomStatuses()).catch(() => []) as Promise<RoomStatus[]>
           ]),
           timeoutPromise
-        ]) as [Hotel[], OTAConnection[], RateRulesConfig, RoomType[], Booking[], PropertySettings];
+        ]) as [Hotel[], OTAConnection[], RateRulesConfig, RoomType[], Booking[], PropertySettings, RoomStatus[]];
 
         // Use fallback if API returns empty list (e.g. fresh DB)
         const effectiveHotels = hotelsData && hotelsData.length > 0 ? hotelsData : HOTELS;
@@ -267,6 +271,7 @@ const App: React.FC = () => {
         setConnections(connectionsData || INITIAL_CONNECTIONS);
         setRules(rulesData || INITIAL_RULES);
         setRoomTypes(roomTypesData || INITIAL_ROOM_TYPES);
+        setRoomStatuses(roomStatusesData || []);
         // Convert bookings to SyncEvents (assuming 'booking' type differentiation happens later or cast)
         const bookingEvents = (bookingsData || []).map(b => ({ ...b, type: 'booking' } as SyncEvent));
         setSyncEvents(bookingEvents);
@@ -927,6 +932,7 @@ const App: React.FC = () => {
             onUpdateExtraBeds={handleUpdateExtraBeds}
             roomSecurity={roomSecurity}
             propertySettings={propertySettings}
+            roomStatuses={roomStatuses}
           />
         )}
         {activeTab === 'guests' && <GuestsView syncEvents={syncEvents} setSyncEvents={setSyncEvents} roomTypes={roomTypes} onUpdateExtraBeds={handleUpdateExtraBeds} />}
@@ -941,6 +947,7 @@ const App: React.FC = () => {
         )}
         {activeTab === 'notifications' && <NotificationsView />}
         {activeTab === 'kitchen' && <KitchenDisplay />}
+        {activeTab === 'housekeeping' && <HousekeepingView roomTypes={roomTypes} roomStatuses={roomStatuses} setRoomStatuses={setRoomStatuses} />}
       </main>
 
 

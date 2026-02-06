@@ -18,7 +18,7 @@ import {
   PointerSensor,
   KeyboardSensor
 } from '@dnd-kit/core';
-import { RoomType, SyncEvent, Booking, GuestDetails, RoomSecurityStatus, ChannelStatus, OTAConnection, FolioItem, Payment, PropertySettings } from '../types';
+import { RoomType, SyncEvent, Booking, GuestDetails, RoomSecurityStatus, ChannelStatus, OTAConnection, FolioItem, Payment, PropertySettings, RoomStatus } from '../types';
 import GuestProfilePage from './GuestProfilePage';
 import NewBookingModal from './NewBookingModal';
 import { createBulkBookings, updateBooking, transferBooking, lookupGuest, fetchBookings } from '../api';
@@ -32,6 +32,7 @@ interface FrontDeskViewProps {
   onUpdateExtraBeds?: (bookingId: string, count: number) => void;
   roomSecurity?: RoomSecurityStatus[];
   propertySettings: PropertySettings | null;
+  roomStatuses?: RoomStatus[];
 }
 
 const CELL_WIDTH = 140;
@@ -197,7 +198,7 @@ const DroppableCell: React.FC<DroppableCellProps> = ({ date, roomNumber, childre
   );
 };
 
-const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, syncEvents, setSyncEvents, onUpdateExtraBeds, roomSecurity = [], propertySettings }) => {
+const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, syncEvents, setSyncEvents, onUpdateExtraBeds, roomSecurity = [], propertySettings, roomStatuses = [] }) => {
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -1040,6 +1041,38 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                     const securityStatus = roomSecurity.find(rs => rs.room_id === row.id);
                     const isAlerted = securityStatus && (securityStatus.failCount >= 3 || securityStatus.isLocked);
 
+                    const roomStatus = roomStatuses.find(s => s.roomNumber === row.id);
+                    const status = isAlerted ? 'Alert' : (roomStatus?.status || 'Clean');
+
+                    let statusColor = 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]';
+                    let statusLabel = 'Clean & Ready';
+                    let statusTextColor = 'text-slate-500';
+                    let statusBg = '';
+                    let statusBorder = 'border-slate-300/30';
+
+                    if (isAlerted) {
+                      statusColor = 'bg-amber-500 shadow-[0_0_10px_rgba(251,191,36,1)] animate-pulse';
+                      statusLabel = 'Alert Active';
+                      statusTextColor = 'text-amber-700';
+                      statusBg = 'bg-amber-100 ring-2 ring-amber-400';
+                      statusBorder = 'border-amber-500';
+                    } else if (status === 'Dirty') {
+                      statusColor = 'bg-rose-500';
+                      statusLabel = 'Dirty';
+                      statusTextColor = 'text-rose-600';
+                      statusBorder = 'border-rose-200';
+                      statusBg = 'bg-rose-50';
+                    } else if (status === 'Inspecting') {
+                      statusColor = 'bg-amber-400';
+                      statusLabel = 'Inspecting';
+                      statusTextColor = 'text-amber-600';
+                    } else if (status === 'OutOfOrder') {
+                      statusColor = 'bg-slate-500';
+                      statusLabel = 'Out of Order';
+                      statusTextColor = 'text-slate-400';
+                      statusBg = 'bg-slate-100';
+                    }
+
                     const categoryIndex = row.parentId ? roomTypes.findIndex(rt => rt.id === row.parentId) : -1;
                     const rowTintStyle = categoryIndex >= 0 ? ROW_TINTS[categoryIndex % ROW_TINTS.length] : { backgroundColor: '#ffffff' };
                     const labelTintStyle = categoryIndex >= 0 ? LABEL_TINTS[categoryIndex % LABEL_TINTS.length] : { backgroundColor: '#ffffff' };
@@ -1047,14 +1080,14 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({ roomTypes, connections, s
                     return (
                       <div key={row.id} className="flex flex-col md:flex-row gap-3 group animate-in slide-in-from-top-2 fade-in duration-300 ease-out fill-mode-forwards">
                         <div className="w-full md:w-44 md:sticky md:left-0 z-20 shrink-0">
-                          <div className={`h-[48px] w-full ${isAlerted ? 'bg-amber-100 ring-2 ring-amber-400' : ''} rounded-xl shadow-lg border ${isAlerted ? 'border-amber-500' : 'border-slate-300/30'} px-3 py-1 flex flex-col justify-center hover:shadow-indigo-500/10 transition-all group-hover:border-indigo-400/50 relative overflow-hidden`} style={isAlerted ? {} : labelTintStyle}>
+                          <div className={`h-[48px] w-full ${statusBg} rounded-xl shadow-lg border ${statusBorder} px-3 py-1 flex flex-col justify-center hover:shadow-indigo-500/10 transition-all group-hover:border-indigo-400/50 relative overflow-hidden`} style={isAlerted || statusBg ? {} : labelTintStyle}>
                             <div className={`absolute top-0 left-0 w-1.5 h-full ${isAlerted ? 'bg-amber-600' : 'bg-indigo-600'} opacity-0 group-hover:opacity-100 transition-opacity`}></div>
                             <div className="flex justify-between items-center">
                               <span className={`text-lg font-black ${isAlerted ? 'text-amber-900' : 'text-slate-900'} tabular-nums tracking-tighter`}>{row.name}</span>
-                              <div className={`w-2 h-2 rounded-full ${isAlerted ? 'bg-amber-500 shadow-[0_0_10px_rgba(251,191,36,1)] animate-pulse' : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'}`}></div>
+                              <div className={`w-2 h-2 rounded-full ${statusColor}`}></div>
                             </div>
-                            <span className={`text-[8px] font-black ${isAlerted ? 'text-amber-700' : 'text-slate-500'} uppercase tracking-[0.2em] leading-none`}>
-                              {isAlerted ? 'Alert Active' : 'Clean & Ready'}
+                            <span className={`text-[8px] font-black ${statusTextColor} uppercase tracking-[0.2em] leading-none`}>
+                              {statusLabel}
                             </span>
                           </div>
                         </div>

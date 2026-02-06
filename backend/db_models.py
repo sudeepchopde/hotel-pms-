@@ -160,3 +160,15 @@ class NotificationDB(Base):
     room_number = Column(String, nullable=True)
     extra_data = Column("metadata", JSON, default={})  # 'metadata' is reserved in SQLAlchemy, so we map it
 
+class RoomStatusDB(Base):
+    __tablename__ = "room_status"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    room_number = Column(String, unique=True, index=True)
+    status = Column(String, default="Clean") # Clean, Dirty, Inspecting, OutOfOrder
+    priority = Column(String, default="Medium") # Low, Medium, High
+    notes = Column(String, nullable=True)
+    last_cleaned = Column(String, nullable=True)
+    housekeeper = Column(String, nullable=True)
+
+

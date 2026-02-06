@@ -1,4 +1,4 @@
-import { Hotel, RoomType, OTAConnection, RateRulesConfig, Booking, PropertySettings, Notification, FolioItem } from './types';
+import { Hotel, RoomType, OTAConnection, RateRulesConfig, Booking, PropertySettings, Notification, FolioItem, RoomStatus } from './types';
 
 export const API_BASE_URL = '/api';
 
@@ -199,4 +199,20 @@ export const dismissNotification = async (notificationId: string): Promise<void>
     await fetch(`${API_BASE_URL}/notifications/${notificationId}`, {
         method: 'DELETE'
     });
+};
+
+export const fetchRoomStatuses = async (): Promise<RoomStatus[]> => {
+    const response = await fetch(`${API_BASE_URL}/room-status`);
+    if (!response.ok) return [];
+    return response.json();
+};
+
+export const updateRoomStatus = async (status: RoomStatus): Promise<RoomStatus> => {
+    const response = await fetch(`${API_BASE_URL}/room-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(status)
+    });
+    if (!response.ok) throw new Error('Failed to update room status');
+    return response.json();
 };

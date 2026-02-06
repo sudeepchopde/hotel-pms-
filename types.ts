@@ -235,6 +235,16 @@ export interface SystemLog {
   data?: any;
 }
 
+
+export interface RoomStatus {
+  roomNumber: string;
+  status: 'Clean' | 'Dirty' | 'Inspecting' | 'OutOfOrder';
+  priority: 'Low' | 'Medium' | 'High';
+  notes?: string;
+  lastCleaned?: string;
+  housekeeper?: string;
+}
+
 export interface OTAConnection {
   id: string;
   name: string;
