@@ -702,33 +702,32 @@ export default function NewBookingModal({
               ))}
             </div>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-8 py-6 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-          <button
-            onClick={step === 2 ? () => setStep(1) : onClose}
-            className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors"
-          >
-            {step === 2 ? "Go Back" : "Cancel"}
-          </button>
-
-          {step === 1 ? (
+          {/* Action Buttons at the end of content */}
+          <div className="mt-8 pt-8 border-t border-slate-100 flex items-center justify-between pb-4">
             <button
-              onClick={handleNext}
-              disabled={!guestName.trim()}
-              className="flex items-center gap-2 px-8 py-3 bg-slate-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl disabled:opacity-20"
+              onClick={step === 2 ? () => setStep(1) : onClose}
+              className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors"
             >
-              Configure Rooms <ArrowRight className="w-4 h-4" />
+              {step === 2 ? "Go Back" : "Cancel"}
             </button>
-          ) : (
-            <button
-              onClick={handleSubmit}
-              className="flex items-center gap-2 px-8 py-3 bg-indigo-600 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100"
-            >
-              Confirm All Bookings <CheckCircle2 className="w-4 h-4" />
-            </button>
-          )}
+
+            {step === 1 ? (
+              <button
+                onClick={handleNext}
+                disabled={!guestName.trim()}
+                className="flex items-center gap-2 px-8 py-3 bg-slate-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl disabled:opacity-20"
+              >
+                Configure Rooms <ArrowRight className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                className="flex items-center gap-2 px-8 py-3 bg-indigo-600 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100"
+              >
+                Confirm All Bookings <CheckCircle2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
