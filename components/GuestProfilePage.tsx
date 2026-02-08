@@ -359,13 +359,16 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     let totalBase = 0;
     let totalTax = 0;
 
-    // 1. Room Rent Tax
+    // 1. Room Rent Tax (NOW INCLUSIVE)
     const roomAmount = roomBaseTotal;
-    const roomPrice = roomType?.basePrice || 0;
-    const roomTaxRate = roomPrice >= 7500 ? 18 : roomPrice < 1000 ? 0 : 12;
-    const roomTax = roomAmount * (roomTaxRate / 100);
+    // Use consistent GST rate from settings (or default to 12%)
+    const roomGstRate = propertySettings?.gstRate || 12.0;
 
-    totalBase += roomAmount;
+    // Derived base through backing out the tax
+    const roomBase = roomAmount / (1 + roomGstRate / 100);
+    const roomTax = roomAmount - roomBase;
+
+    totalBase += roomBase;
     totalTax += roomTax;
 
     // 2. Folio Items Tax
@@ -1414,8 +1417,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     const foodGstRate = propertySettings?.foodGstRate || 5.0;
     const otherGstRate = propertySettings?.otherGstRate || 18.0;
 
-    // Room is always exclusive in this system (per standard reservation practice)
-    const roomTax = roomBaseTotal * (roomGstRate / 100);
+    // Room is now inclusive of taxes
+    const roomBase = roomBaseTotal / (1 + roomGstRate / 100);
+    const roomTax = roomBaseTotal - roomBase;
 
     let totalFolioTax = 0;
     let totalFolioBase = 0;
@@ -1446,7 +1450,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       };
     });
 
-    const netSubtotal = roomBaseTotal + totalFolioBase;
+    const netSubtotal = roomBase + totalFolioBase;
     const totalTax = roomTax + totalFolioTax;
     const finalNetInvoiceTotal = netSubtotal + totalTax;
     const cgst = totalTax / 2;
@@ -1536,11 +1540,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 <tr>
                   <td class="py-6">
                     <p class="text-sm font-black text-slate-900 uppercase">Room Rent</p>
-                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">Accommodation (${roomGstRate}% GST)</p>
+                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">Accommodation (Inclusive of ${roomGstRate}% GST)</p>
                   </td>
                   <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">${nights}</td>
-                  <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${roomRate.toLocaleString()}</td>
-                  <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${roomBaseTotal.toLocaleString()}</td>
+                  <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${(roomRate / (1 + roomGstRate / 100)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${roomBase.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 </tr>
                 ${folioRows
                   .map(
@@ -3408,7 +3412,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                             <Hash className="w-4 h-4 text-indigo-400" />
                           </div>
                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                            Base Total
+                            Stay Total (Incl. Tax)
                           </span>
                         </div>
                         <span className="text-xs font-bold text-slate-200 tabular-nums">
@@ -3421,11 +3425,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                             <Receipt className="w-4 h-4 text-emerald-400" />
                           </div>
                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                            Est. Taxes (GST)
+                            GST Portion
                           </span>
                         </div>
                         <span className="text-xs font-bold text-emerald-400 tabular-nums">
-                          +₹
+                          ₹
                           {billSummary.totalTax.toLocaleString(undefined, {
                             maximumFractionDigits: 2,
                           })}
