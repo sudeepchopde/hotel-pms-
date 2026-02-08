@@ -25,10 +25,27 @@ def ping():
 
 @app.get("/api/health")
 def health():
+    db_vars = {
+        "DATABASE_URL": "set" if os.getenv("DATABASE_URL") else "not set",
+        "POSTGRES_URL": "set" if os.getenv("POSTGRES_URL") else "not set",
+        "POSTGRES_PRISMA_URL": "set" if os.getenv("POSTGRES_PRISMA_URL") else "not set",
+        "NEON_DATABASE_URL": "set" if os.getenv("NEON_DATABASE_URL") else "not set",
+    }
+    
+    # Try to see if main app has a connection error
+    db_error = None
+    try:
+        from main import _db_connection_error
+        db_error = _db_connection_error
+    except:
+        pass
+
     return {
         "status": "healthy",
         "python_version": sys.version,
-        "env_database_url": "set" if os.getenv("DATABASE_URL") else "not set"
+        "database_env_vars": db_vars,
+        "database_connection_error": db_error,
+        "full_app_loaded": _full_app_loaded
     }
 
 # Try to import the full app, but catch errors gracefully

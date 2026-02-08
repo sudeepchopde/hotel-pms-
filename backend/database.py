@@ -13,13 +13,24 @@ except:
 
 # Get DATABASE_URL from environment variable
 # Vercel's Neon integration may use different variable names
+POSTGRES_URL = os.getenv("POSTGRES_URL")
+POSTGRES_PRISMA_URL = os.getenv("POSTGRES_PRISMA_URL")
+DATABASE_URL_ENV = os.getenv("DATABASE_URL")
+NEON_DATABASE_URL = os.getenv("NEON_DATABASE_URL")
+
 DATABASE_URL = (
-    os.getenv("POSTGRES_URL") or 
-    os.getenv("POSTGRES_PRISMA_URL") or 
+    POSTGRES_URL or 
+    POSTGRES_PRISMA_URL or 
     os.getenv("POSTGRES_URL_NON_POOLING") or
-    os.getenv("DATABASE_URL") or 
+    DATABASE_URL_ENV or 
+    NEON_DATABASE_URL or
     "postgresql://postgres:postgres@localhost:5432/hotel_pms"
 )
+
+print(f"DEBUG: Selected Database Source: {'POSTGRES_URL' if POSTGRES_URL else 'Other'}")
+if POSTGRES_PRISMA_URL: print("DEBUG: POSTGRES_PRISMA_URL is set")
+if DATABASE_URL_ENV: print("DEBUG: DATABASE_URL is set")
+if NEON_DATABASE_URL: print("DEBUG: NEON_DATABASE_URL is set")
 
 # Fix Neon's postgres:// URL format to postgresql:// for SQLAlchemy
 if DATABASE_URL.startswith("postgres://"):

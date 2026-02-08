@@ -155,11 +155,12 @@ def init_db():
         "NEON_DATABASE_URL": "YES" if os.getenv("NEON_DATABASE_URL") else "NO",
     }
     
-    # Try to get any database URL
+    # Try to get any database URL (synchronized with backend/database.py)
     db_url = (
-        os.getenv("DATABASE_URL") or 
         os.getenv("POSTGRES_URL") or 
         os.getenv("POSTGRES_PRISMA_URL") or 
+        os.getenv("POSTGRES_URL_NON_POOLING") or
+        os.getenv("DATABASE_URL") or 
         os.getenv("NEON_DATABASE_URL")
     )
     
