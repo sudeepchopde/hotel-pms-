@@ -378,7 +378,10 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
   const [isNewBookingModalOpen, setIsNewBookingModalOpen] = useState(false);
 
   const toggleExpand = (id: string) => {
-    setExpandedTypes((prev) => ({ ...prev, [id]: !prev[id] }));
+    setExpandedTypes((prev) => ({
+      ...prev,
+      [id]: !effectiveExpandedTypes[id],
+    }));
   };
 
   const timelineDates = useMemo(() => {
@@ -411,43 +414,6 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
     });
     return spans;
   }, [timelineDates]);
-
-  const gridRows = useMemo(() => {
-    const rows: {
-      type: "header" | "room";
-      id: string;
-      name: string;
-      parentId?: string;
-      capacity?: number;
-      category?: RoomType;
-    }[] = [];
-    roomTypes.forEach((rt) => {
-      rows.push({
-        type: "header",
-        id: rt.id,
-        name: rt.name,
-        capacity: rt.totalCapacity,
-        category: rt,
-      });
-      if (expandedTypes[rt.id]) {
-        const rooms =
-          rt.roomNumbers ||
-          Array.from(
-            { length: rt.totalCapacity },
-            (_, i) => `${rt.name.substring(0, 2).toUpperCase()}-${101 + i}`,
-          );
-        rooms.forEach((roomNum) => {
-          rows.push({
-            type: "room",
-            id: roomNum,
-            name: roomNum,
-            parentId: rt.id,
-          });
-        });
-      }
-    });
-    return rows;
-  }, [roomTypes, expandedTypes]);
 
   const assignedBookings = useMemo(() => {
     const bookings = syncEvents.filter(
@@ -485,6 +451,63 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
       return { ...b, roomNumber: assignedNum };
     });
   }, [syncEvents, roomTypes]);
+
+  const effectiveExpandedTypes = useMemo(() => {
+    const result: Record<string, boolean> = {};
+    const tStart = timelineDates[0];
+    const tEnd = timelineDates[timelineDates.length - 1];
+
+    roomTypes.forEach((rt) => {
+      if (expandedTypes[rt.id] !== undefined) {
+        result[rt.id] = expandedTypes[rt.id];
+        return;
+      }
+
+      const hasBooking = assignedBookings.some((b) => {
+        if (b.roomTypeId !== rt.id) return false;
+        return b.checkIn <= tEnd && b.checkOut > tStart;
+      });
+      result[rt.id] = hasBooking;
+    });
+    return result;
+  }, [roomTypes, expandedTypes, assignedBookings, timelineDates]);
+
+  const gridRows = useMemo(() => {
+    const rows: {
+      type: "header" | "room";
+      id: string;
+      name: string;
+      parentId?: string;
+      capacity?: number;
+      category?: RoomType;
+    }[] = [];
+    roomTypes.forEach((rt) => {
+      rows.push({
+        type: "header",
+        id: rt.id,
+        name: rt.name,
+        capacity: rt.totalCapacity,
+        category: rt,
+      });
+      if (effectiveExpandedTypes[rt.id]) {
+        const rooms =
+          rt.roomNumbers ||
+          Array.from(
+            { length: rt.totalCapacity },
+            (_, i) => `${rt.name.substring(0, 2).toUpperCase()}-${101 + i}`,
+          );
+        rooms.forEach((roomNum) => {
+          rows.push({
+            type: "room",
+            id: roomNum,
+            name: roomNum,
+            parentId: rt.id,
+          });
+        });
+      }
+    });
+    return rows;
+  }, [roomTypes, effectiveExpandedTypes]);
 
   // Get all bookings related to the selected booking by reservationId
   const relatedBookings = useMemo(() => {
@@ -1523,7 +1546,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                               </div>
                               <div className="flex items-center gap-2 relative z-10">
                                 <div className="p-1 bg-white/20 rounded-md text-white hover:bg-white/30 transition-colors shadow-sm shrink-0">
-                                  {expandedTypes[row.id] ? (
+                                  {effectiveExpandedTypes[row.id] ? (
                                     <Minimize2 className="w-3 h-3" />
                                   ) : (
                                     <Maximize2 className="w-3 h-3" />
@@ -1562,7 +1585,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                               <div className="relative z-10 flex-1 flex items-center justify-end px-6 opacity-0 group-hover/lane:opacity-100 transition-opacity">
                                 <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
                                   Click heading to{" "}
-                                  {expandedTypes[row.id]
+                                  {effectiveExpandedTypes[row.id]
                                     ? "collapse"
                                     : "expand"}
                                 </span>
