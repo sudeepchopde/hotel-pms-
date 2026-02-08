@@ -1409,7 +1409,6 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
 
           <div
             ref={scrollContainerRef}
-            onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUpOrLeave}
             onMouseLeave={handleMouseUpOrLeave}
@@ -1418,8 +1417,9 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
             <div className="min-w-max pb-24">
               {/* FROZEN DATES PANE (VERTICAL STICKY) */}
               <div
-                className="sticky top-0 z-[55] flex gap-3 px-6 py-4 bg-[#f8fafc]/95 backdrop-blur-sm border-b border-slate-200/50 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.1)]"
+                className={`sticky top-0 z-[55] flex gap-3 px-6 py-4 bg-[#f8fafc]/95 backdrop-blur-sm border-b border-slate-200/50 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.1)] cursor-grab ${isPanning ? "cursor-grabbing" : ""}`}
                 style={{ height: STICKY_HEADER_TOTAL_HEIGHT }}
+                onMouseDown={handleMouseDown}
               >
                 {/* Left Card - Matches Room Rows */}
                 <div className="w-44 h-[72px] shrink-0 bg-white rounded-2xl shadow-xl border border-slate-300/30 px-6 flex flex-col justify-center sticky left-0 z-[56]">
