@@ -52,14 +52,14 @@ export interface SpecialEvent {
   name: string;
   startDate: string;
   endDate: string;
-  modifierType: 'percentage' | 'fixed';
+  modifierType: "percentage" | "fixed";
   modifierValue: number; // e.g., 1.2 for +20% or 500 for +500 INR
 }
 
 export interface WeeklyRule {
   isActive: boolean;
   activeDays: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
-  modifierType: 'percentage' | 'fixed';
+  modifierType: "percentage" | "fixed";
   modifierValue: number;
 }
 
@@ -77,17 +77,23 @@ export interface InventoryItem {
   appliedRule?: string; // Name of the rule applied (e.g., 'Weekend', 'Diwali')
 }
 
-export type ChannelStatus = 'pending' | 'success' | 'error' | 'retrying' | 'waiting_retry' | 'stopped';
+export type ChannelStatus =
+  | "pending"
+  | "success"
+  | "error"
+  | "retrying"
+  | "waiting_retry"
+  | "stopped";
 
 export interface GuestDetails {
   profileId?: number;
   name?: string;
   phoneNumber?: string;
   email?: string;
-  idType?: 'Aadhar' | 'Passport' | 'Driving License' | 'Voter ID' | 'Other';
+  idType?: "Aadhar" | "Passport" | "Driving License" | "Voter ID" | "Other";
   idNumber?: string;
   nationality: string;
-  gender?: 'Male' | 'Female' | 'Other';
+  gender?: "Male" | "Female" | "Other";
   dob?: string;
 
   // ========== FORM B - General Guest Register Fields ==========
@@ -110,7 +116,13 @@ export interface GuestDetails {
   destination?: string; // Where going after leaving
 
   // Purpose
-  purposeOfVisit?: 'Business' | 'Tourism' | 'Transit' | 'Personal' | 'Medical' | 'Other';
+  purposeOfVisit?:
+    | "Business"
+    | "Tourism"
+    | "Transit"
+    | "Personal"
+    | "Medical"
+    | "Other";
 
   // Signature
   signature?: string; // Base64 digital signature or path to image
@@ -124,7 +136,15 @@ export interface GuestDetails {
 
   // Visa Details
   visaNumber?: string;
-  visaType?: 'Tourist' | 'Business' | 'Medical' | 'E-Visa' | 'Employment' | 'Student' | 'Transit' | 'Other';
+  visaType?:
+    | "Tourist"
+    | "Business"
+    | "Medical"
+    | "E-Visa"
+    | "Employment"
+    | "Student"
+    | "Transit"
+    | "Other";
   visaPlaceIssue?: string;
   visaIssueDate?: string;
   visaExpiry?: string;
@@ -157,22 +177,21 @@ export interface GuestDetails {
   formPages?: string[];
 }
 
-
 export interface Payment {
   id: string;
   amount: number;
-  method: 'Cash' | 'UPI' | 'Card';
+  method: "Cash" | "UPI" | "Card";
   timestamp: string;
-  category: 'Room' | 'Folio' | 'Extra' | 'Partial';
+  category: "Room" | "Folio" | "Extra" | "Partial";
   description?: string;
-  status: 'Completed' | 'Refunded' | 'Cancelled';
+  status: "Completed" | "Refunded" | "Cancelled";
 }
 
 export interface FolioItem {
   id: string;
   description: string;
   amount: number;
-  category: 'F&B' | 'Laundry' | 'Room' | 'Other';
+  category: "F&B" | "Laundry" | "Room" | "Other";
   timestamp: string;
   isPaid?: boolean;
   isInclusive?: boolean; // If true, amount includes GST
@@ -186,8 +205,8 @@ export interface Booking {
   roomTypeId: string;
   roomNumber?: string; // Assigned specific unit (e.g., "101")
   guestName: string;
-  source: 'MMT' | 'Booking.com' | 'Expedia' | 'Direct';
-  status: 'Confirmed' | 'CheckedIn' | 'CheckedOut' | 'Cancelled' | 'Rejected';
+  source: "MMT" | "Booking.com" | "Expedia" | "Direct";
+  status: "Confirmed" | "CheckedIn" | "CheckedOut" | "Cancelled" | "Rejected";
   timestamp: number;
   checkIn: string;
   checkOut: string;
@@ -211,11 +230,15 @@ export interface Booking {
   externalReferenceId?: string;
   folio?: FolioItem[];
   payments?: Payment[];
+  discount?: {
+    type: "percentage" | "fixed";
+    value: number;
+  };
 }
 
 export interface RateSyncEvent {
   id: string;
-  type: 'rate_update';
+  type: "rate_update";
   roomTypeId: string;
   newPrice: number;
   date?: string;
@@ -225,21 +248,20 @@ export interface RateSyncEvent {
   ruleApplied?: string;
 }
 
-export type SyncEvent = (Booking & { type: 'booking' }) | RateSyncEvent;
+export type SyncEvent = (Booking & { type: "booking" }) | RateSyncEvent;
 
 export interface SystemLog {
   id: string;
   timestamp: string;
-  level: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR';
+  level: "INFO" | "SUCCESS" | "WARNING" | "ERROR";
   message: string;
   data?: any;
 }
 
-
 export interface RoomStatus {
   roomNumber: string;
-  status: 'Clean' | 'Dirty' | 'Inspecting' | 'OutOfOrder';
-  priority: 'Low' | 'Medium' | 'High';
+  status: "Clean" | "Dirty" | "Inspecting" | "OutOfOrder";
+  priority: "Low" | "Medium" | "High";
   notes?: string;
   lastCleaned?: string;
   housekeeper?: string;
@@ -250,10 +272,10 @@ export interface OTAConnection {
   name: string;
   key: string;
   isVisible: boolean;
-  status: 'connected' | 'disconnected' | 'testing';
+  status: "connected" | "disconnected" | "testing";
   lastValidated?: string;
   category?: string;
-  markupType?: 'percentage' | 'fixed';
+  markupType?: "percentage" | "fixed";
   markupValue?: number; // e.g., 5 for 5% or 500 for ₹500
   isStopped?: boolean; // Master switch to stop sales on this channel
 }
@@ -269,7 +291,7 @@ export interface VerificationAttempt {
   id: string;
   room_id: string;
   input_surname: string;
-  status: 'SUCCESS' | 'FAIL' | 'LOCKED';
+  status: "SUCCESS" | "FAIL" | "LOCKED";
   ip_address: string;
   created_at: string;
 }
@@ -281,8 +303,15 @@ export interface RoomSecurityStatus {
   failCount: number;
 }
 
-export type NotificationType = 'reservation' | 'checkin' | 'checkout' | 'payment' | 'housekeeping' | 'guest_request' | 'system';
-export type NotificationPriority = 'low' | 'normal' | 'high' | 'urgent';
+export type NotificationType =
+  | "reservation"
+  | "checkin"
+  | "checkout"
+  | "payment"
+  | "housekeeping"
+  | "guest_request"
+  | "system";
+export type NotificationPriority = "low" | "normal" | "high" | "urgent";
 
 export interface Notification {
   id: string;
@@ -299,4 +328,3 @@ export interface Notification {
   roomNumber?: string;
   metadata?: Record<string, any>;
 }
-

@@ -52,6 +52,8 @@ import {
   Loader2,
   Keyboard,
   Save,
+  Tag,
+  Percent,
 } from "lucide-react";
 import {
   Booking,
@@ -186,6 +188,13 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     null,
   );
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const [discountType, setDiscountType] = useState<"percentage" | "fixed">(
+    booking.discount?.type || "percentage",
+  );
+  const [discountValue, setDiscountValue] = useState(
+    booking.discount?.value?.toString() || "",
+  );
 
   // New State for Integrated Check-in & Editing
   const [editableDetails, setEditableDetails] = useState<GuestDetails>(() => {
@@ -360,11 +369,21 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     let totalTax = 0;
 
     // 1. Room Rent Tax (NOW INCLUSIVE)
-    const roomAmount = roomBaseTotal;
+    let roomAmount = roomBaseTotal;
+
+    // Apply discount if present
+    if (booking.discount) {
+      if (booking.discount.type === "percentage") {
+        roomAmount = roomAmount * (1 - booking.discount.value / 100);
+      } else {
+        roomAmount = Math.max(0, roomAmount - booking.discount.value);
+      }
+    }
+
     // Use consistent GST rate from settings (or default to 12%)
     const roomGstRate = propertySettings?.gstRate || 12.0;
 
-    // Derived base through backing out the tax
+    // Derived base through backing out the tax from SHOULD-BE-NET-TOTAL
     const roomBase = roomAmount / (1 + roomGstRate / 100);
     const roomTax = roomAmount - roomBase;
 
@@ -390,7 +409,29 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     });
 
     return { totalBase, totalTax, grandTotal: totalBase + totalTax };
-  }, [roomBaseTotal, booking.folio, roomType, propertySettings]);
+  }, [
+    roomBaseTotal,
+    booking.folio,
+    booking.discount,
+    roomType,
+    propertySettings,
+  ]);
+
+  const handleApplyDiscount = () => {
+    const val = parseFloat(discountValue);
+    if (isNaN(val) || val < 0) {
+      // If empty or invalid, remove discount
+      onUpdateBooking(booking.id, { discount: undefined });
+    } else {
+      onUpdateBooking(booking.id, {
+        discount: {
+          type: discountType,
+          value: val,
+        },
+      });
+    }
+    setShowDiscountModal(false);
+  };
 
   const totalBill = billSummary.grandTotal;
   const netOutstanding = totalBill - totalPayments;
@@ -1417,9 +1458,20 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     const foodGstRate = propertySettings?.foodGstRate || 5.0;
     const otherGstRate = propertySettings?.otherGstRate || 18.0;
 
-    // Room is now inclusive of taxes
-    const roomBase = roomBaseTotal / (1 + roomGstRate / 100);
-    const roomTax = roomBaseTotal - roomBase;
+    let roomDiscountAmount = 0;
+    if (booking.discount) {
+      if (booking.discount.type === "percentage") {
+        roomDiscountAmount = roomBaseTotal * (booking.discount.value / 100);
+      } else {
+        roomDiscountAmount = booking.discount.value;
+      }
+    }
+
+    const discountedRoomTotal = roomBaseTotal - roomDiscountAmount;
+
+    // Room is now inclusive of taxes (calculated from the final discounted amount)
+    const roomBase = discountedRoomTotal / (1 + roomGstRate / 100);
+    const roomTax = discountedRoomTotal - roomBase;
 
     let totalFolioTax = 0;
     let totalFolioBase = 0;
@@ -1543,9 +1595,24 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     <p class="text-[10px] font-bold text-slate-400 mt-0.5">Accommodation (Inclusive of ${roomGstRate}% GST)</p>
                   </td>
                   <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">${nights}</td>
-                  <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${(roomRate / (1 + roomGstRate / 100)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${roomBase.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${roomRate.toLocaleString()}</td>
+                  <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${roomBaseTotal.toLocaleString()}</td>
                 </tr>
+                ${
+                  booking.discount
+                    ? `
+                <tr>
+                  <td class="py-6">
+                    <p class="text-sm font-black text-rose-600 uppercase">Discount</p>
+                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">${booking.discount.type === "percentage" ? `${booking.discount.value}% Applied` : "Fixed Deduction"}</p>
+                  </td>
+                  <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">-</td>
+                  <td class="py-6 text-right text-sm font-black text-rose-600 tabular-nums">-₹${roomDiscountAmount.toLocaleString()}</td>
+                  <td class="py-6 text-right text-sm font-black text-rose-600 tabular-nums">-₹${roomDiscountAmount.toLocaleString()}</td>
+                </tr>
+                `
+                    : ""
+                }
                 ${folioRows
                   .map(
                     (item) => `
@@ -3269,6 +3336,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       </button>
                     )}
                     <button
+                      onClick={() => setShowDiscountModal(true)}
+                      className="px-5 py-2.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 rounded-xl text-[10px] font-black uppercase tracking-widest border border-rose-500/30 transition-all flex items-center gap-2"
+                    >
+                      <Tag className="w-4 h-4" /> Discount
+                    </button>
+                    <button
                       onClick={() => setShowAddChargeModal(true)}
                       className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-indigo-900/40"
                     >
@@ -3419,6 +3492,25 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           ₹{roomBaseTotal.toLocaleString()}
                         </span>
                       </div>
+                      {booking.discount && (
+                        <div className="flex justify-between items-center bg-rose-500/10 p-3 rounded-2xl border border-rose-500/20">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-rose-500/20 rounded-lg border border-rose-500/30">
+                              <Tag className="w-4 h-4 text-rose-400" />
+                            </div>
+                            <span className="text-[10px] font-black text-rose-400 uppercase tracking-widest">
+                              Applied Discount
+                            </span>
+                          </div>
+                          <span className="text-xs font-bold text-rose-400 tabular-nums">
+                            -₹
+                            {(booking.discount.type === "percentage"
+                              ? roomBaseTotal * (booking.discount.value / 100)
+                              : booking.discount.value
+                            ).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-3">
                           <div className="p-2 bg-white/5 rounded-lg border border-white/10">
@@ -4524,6 +4616,107 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
           </div>
         </div>
       )}
+
+      {/* Discount Management Modal */}
+      {showDiscountModal && (
+        <div className="fixed inset-0 z-[11000] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300 border border-white/20">
+            <div className="p-8 border-b border-slate-100 bg-slate-50">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xl font-black text-slate-900 tracking-tight uppercase flex items-center gap-2">
+                  <Tag className="w-5 h-5 text-rose-600" />
+                  Grant Discount
+                </h3>
+                <button
+                  onClick={() => setShowDiscountModal(false)}
+                  className="p-2 hover:bg-slate-200 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                Reduces total room rent amount
+              </p>
+            </div>
+
+            <div className="p-8 space-y-8">
+              {/* Type Selection */}
+              <div className="space-y-4">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <Percent className="w-3 h-3" /> Discount Type
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setDiscountType("percentage")}
+                    className={`py-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${discountType === "percentage" ? "bg-rose-600 border-rose-600 text-white shadow-xl shadow-rose-200" : "bg-white border-slate-100 text-slate-600 hover:border-rose-200"} `}
+                  >
+                    <Percent className="w-5 h-5" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">
+                      Percentage
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setDiscountType("fixed")}
+                    className={`py-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2 ${discountType === "fixed" ? "bg-rose-600 border-rose-600 text-white shadow-xl shadow-rose-200" : "bg-white border-slate-100 text-slate-600 hover:border-rose-200"} `}
+                  >
+                    <IndianRupee className="w-5 h-5" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">
+                      Flat Amount
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Value Input */}
+              <div className="space-y-4">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  {discountType === "percentage" ? (
+                    <Percent className="w-3 h-3" />
+                  ) : (
+                    <IndianRupee className="w-3 h-3" />
+                  )}{" "}
+                  {discountType === "percentage"
+                    ? "Percentage (%)"
+                    : "Amount (INR)"}
+                </label>
+                <div className="relative">
+                  <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-slate-300">
+                    {discountType === "percentage" ? "%" : "₹"}
+                  </span>
+                  <input
+                    type="number"
+                    value={discountValue}
+                    onChange={(e) => setDiscountValue(e.target.value)}
+                    className="w-full pl-12 pr-6 py-5 bg-slate-50 border-2 border-slate-100 rounded-3xl text-3xl font-black text-slate-900 focus:border-rose-600 focus:ring-0 transition-all outline-none"
+                    placeholder="0"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-8 border-t border-slate-50 bg-slate-50 flex gap-4">
+              <button
+                onClick={() => {
+                  setDiscountValue("");
+                  onUpdateBooking(booking.id, { discount: undefined });
+                  setShowDiscountModal(false);
+                }}
+                className="flex-1 py-4 text-xs font-black text-rose-600 uppercase tracking-widest hover:bg-rose-50 rounded-2xl transition-colors"
+              >
+                Clear Discount
+              </button>
+              <button
+                onClick={handleApplyDiscount}
+                className="flex-[2] py-4 bg-rose-600 text-white rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-rose-200 hover:bg-rose-700 transition-all active:scale-95"
+              >
+                Apply Discount
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toastMessage && (
         <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[20000] animate-in slide-in-from-bottom-10 fade-in duration-300">
           <div className="bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl border border-white/10 flex items-center gap-4">
