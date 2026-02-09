@@ -328,3 +328,11 @@ export interface Notification {
   roomNumber?: string;
   metadata?: Record<string, any>;
 }
+
+export interface UserResponse {
+  id: number;
+  username: string;
+  full_name: string;
+  role: string;
+  allowed_sections: string[];
+}

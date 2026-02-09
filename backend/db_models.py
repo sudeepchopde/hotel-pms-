@@ -172,4 +172,14 @@ class RoomStatusDB(Base):
     last_cleaned = Column(String, nullable=True)
     housekeeper = Column(String, nullable=True)
 
+class UserDB(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    password_hash = Column(String)
+    full_name = Column(String)
+    role = Column(String, default="staff")
+    allowed_sections = Column(JSON, default=list)
+
 

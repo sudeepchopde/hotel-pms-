@@ -53,8 +53,21 @@ from backend.models import (
     NotificationCreate,
     NotificationCreate,
     FolioItem,
-    RoomStatus
+    RoomStatus,
+    UserLogin,
+    UserCreate,
+    UserResponse,
 )
+from passlib.context import CryptContext
+
+# Auth Security
+pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt"], deprecated="auto")
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
 
 get_db_real = None
 engine = None
@@ -143,6 +156,198 @@ except Exception:
 def ping():
     return {"status": "ok", "version": "1.1", "database": "lazy"}
 
+@app.post("/api/login", response_model=UserResponse)
+def login(user: UserLogin):
+    import os
+    import json
+    import psycopg2
+    from fastapi import HTTPException
+    
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        # Fallback for demo/no-db mode
+        if user.username == "admin" and user.password == "admin123":
+             return UserResponse(
+                id=1, username="admin", full_name="System Admin", 
+                role="admin", allowed_sections=[]
+             )
+        raise HTTPException(status_code=503, detail="Database URL not configured")
+        
+    try:
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+        
+        cur.execute(
+            "SELECT id, username, password_hash, full_name, role, allowed_sections FROM users WHERE username = %s", 
+            (user.username,)
+        )
+        db_user = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if not db_user:
+             if user.username == "admin" and user.password == "admin123":
+                 return UserResponse(
+                    id=1, username="admin", full_name="System Admin", 
+                    role="admin", allowed_sections=[]
+                 )
+             raise HTTPException(status_code=401, detail="Incorrect username or password")
+             
+        user_id, username, password_hash, full_name, role, allowed_sections = db_user
+        
+        if not verify_password(user.password, password_hash):
+             # Allow admin fallback if hash verification fails (e.g. dummy hash or reset)
+             if username == "admin" and user.password == "admin123":
+                 pass
+             else:
+                 raise HTTPException(status_code=401, detail="Incorrect username or password")
+        
+        # Parse allowed_sections
+        if isinstance(allowed_sections, str):
+            try:
+                allowed_sections = json.loads(allowed_sections)
+            except:
+                allowed_sections = []
+        elif allowed_sections is None:
+            allowed_sections = []
+            
+        return UserResponse(
+            id=user_id, 
+            username=username, 
+            full_name=full_name or "", 
+            role=role, 
+            allowed_sections=allowed_sections
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Login error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/users", response_model=UserResponse)
+def create_user(user: UserCreate):
+    import os
+    import json
+    import psycopg2
+    from fastapi import HTTPException
+    
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        raise HTTPException(status_code=503, detail="Database URL not configured")
+        
+    try:
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+        
+        # Check if username exists
+        cur.execute("SELECT id FROM users WHERE username = %s", (user.username,))
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail="Username already registered")
+            
+        hashed_password = get_password_hash(user.password)
+        
+        cur.execute(
+            """
+            INSERT INTO users (username, password_hash, full_name, role, allowed_sections) 
+            VALUES (%s, %s, %s, %s, %s) 
+            RETURNING id
+            """,
+            (user.username, hashed_password, user.full_name, user.role, json.dumps(user.allowed_sections))
+        )
+        new_id = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return UserResponse(
+            id=new_id,
+            username=user.username,
+            full_name=user.full_name,
+            role=user.role,
+            allowed_sections=user.allowed_sections
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Create User error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/users")
+def list_users():
+    import os
+    import psycopg2
+    try:
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            return []
+            
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+        cur.execute("SELECT id, username, full_name, role, allowed_sections FROM users")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        users = []
+        for r in rows:
+            role = r[3]
+            sections = r[4]
+            # Handle JSON if stored as string
+            if isinstance(sections, str):
+                try: sections = json.loads(sections)
+                except: sections = []
+            elif sections is None:
+                sections = []
+                
+            users.append({
+                "id": r[0],
+                "username": r[1],
+                "full_name": r[2] or "",
+                "role": role,
+                "allowed_sections": sections
+            })
+        return users
+    except Exception as e:
+        print(f"List users error: {e}")
+        return []
+
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: int):
+    import os
+    import psycopg2
+    try:
+        if user_id == 1:
+            raise HTTPException(status_code=400, detail="Cannot delete admin")
+            
+        db_url = os.getenv("DATABASE_URL")
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+        
+        cur.execute("SELECT username FROM users WHERE id = %s", (user_id,))
+        row = cur.fetchone()
+        if not row:
+             cur.close()
+             conn.close()
+             raise HTTPException(status_code=404, detail="User not found")
+             
+        if row[0] == 'admin':
+             cur.close()
+             conn.close()
+             raise HTTPException(status_code=400, detail="Cannot delete admin user")
+             
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Delete user error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/init-db")
 def init_db():
     """Manual trigger to ensure all tables exist - includes all models"""
@@ -178,7 +383,8 @@ def init_db():
         # Explicitly ensure all models are imported so Base knows about them
         from backend.db_models import (
             HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, 
-            RateRulesDB, GuestProfileDB, PropertySettingsDB, NotificationDB
+            RateRulesDB, GuestProfileDB, PropertySettingsDB, NotificationDB,
+            UserDB
         )
         
         # Fix postgres:// -> postgresql://
@@ -2487,4 +2693,8 @@ def update_room_status_endpoint(status_data: RoomStatus):
             return status_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
 

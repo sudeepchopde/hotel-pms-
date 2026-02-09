@@ -248,3 +248,23 @@ class RoomStatus(BaseModel):
     housekeeper: Optional[str] = None
 
 
+# Auth Models
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    full_name: str
+    role: str = "staff"
+    allowed_sections: List[str] = []
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    full_name: str
+    role: str
+    allowed_sections: List[str]
+
+
