@@ -217,7 +217,21 @@ export default function NewBookingModal({
       }
     }
     setRoomDetails((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)),
+      prev.map((item, i) => {
+        if (i !== index) return item;
+
+        // When room type changes, clear the room number and custom rate
+        if (field === "roomTypeId" && value !== item.roomTypeId) {
+          return {
+            ...item,
+            [field]: value,
+            roomNumber: undefined,
+            customRate: undefined,
+          };
+        }
+
+        return { ...item, [field]: value };
+      }),
     );
   };
 
