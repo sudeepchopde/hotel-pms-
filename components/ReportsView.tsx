@@ -267,27 +267,42 @@ const ReportsView: React.FC = () => {
 
           <div className="h-4 w-px bg-slate-200 mx-2 hidden md:block" />
 
-          <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl flex-1 min-w-[300px]">
-            <Calendar className="w-4 h-4 text-slate-400" />
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setActiveQuickFilter(null);
-              }}
-              className="bg-transparent text-xs font-bold text-slate-700 outline-none w-full"
-            />
-            <span className="text-slate-300 font-bold">to</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => {
-                setEndDate(e.target.value);
-                setActiveQuickFilter(null);
-              }}
-              className="bg-transparent text-xs font-bold text-slate-700 outline-none w-full"
-            />
+          <div className="flex flex-col sm:flex-row gap-4 items-center flex-1 min-w-[300px]">
+            <div className="relative w-full">
+              <label className="absolute -top-2 left-3 bg-white px-1 text-[10px] font-bold text-slate-400">
+                From
+              </label>
+              <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl w-full hover:border-indigo-300 transition-colors">
+                <Calendar className="w-4 h-4 text-indigo-500" />
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setActiveQuickFilter(null);
+                  }}
+                  className="bg-transparent text-xs font-bold text-slate-700 outline-none w-full"
+                />
+              </div>
+            </div>
+
+            <div className="relative w-full">
+              <label className="absolute -top-2 left-3 bg-white px-1 text-[10px] font-bold text-slate-400">
+                To
+              </label>
+              <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl w-full hover:border-indigo-300 transition-colors">
+                <Calendar className="w-4 h-4 text-indigo-500" />
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setActiveQuickFilter(null);
+                  }}
+                  className="bg-transparent text-xs font-bold text-slate-700 outline-none w-full"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -328,15 +343,21 @@ const ReportsView: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-            <Search className="w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search Guest Name or Booking ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-700 outline-none w-full placeholder:text-slate-400"
-            />
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-1 px-4 py-2.5 bg-white border border-slate-200 rounded-xl focus-within:border-indigo-400 transition-all shadow-sm">
+              <Search className="w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search Guest Name or Booking ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="bg-transparent text-xs font-bold text-slate-700 outline-none w-full placeholder:text-slate-400"
+              />
+            </div>
+            <button className="px-6 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/10 flex items-center gap-2 shrink-0">
+              <Search className="w-4 h-4" />
+              Search
+            </button>
           </div>
         </div>
       </div>

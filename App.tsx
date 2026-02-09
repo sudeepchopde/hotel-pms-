@@ -20,6 +20,7 @@ import KitchenDisplay from "./components/KitchenDisplay"; // Import new componen
 import HousekeepingView from "./components/HousekeepingView";
 import LoginPage from "./components/LoginPage";
 import UserManagement from "./components/UserManagement";
+import SettingsLayout from "./components/SettingsLayout";
 // import NotificationsPanel from './components/NotificationsPanel'; // Removed
 import {
   LayoutDashboard,
@@ -46,6 +47,7 @@ import {
   Bell,
   ChefHat,
   Brush,
+  ChevronRight,
 } from "lucide-react";
 import {
   Hotel,
@@ -153,12 +155,6 @@ const DEFAULT_NAV_ITEMS = [
     color: "text-red-400",
   },
   {
-    id: "setup",
-    icon: Home,
-    label: "Property Setup",
-    color: "text-emerald-300",
-  },
-  {
     id: "dashboard",
     icon: LayoutDashboard,
     label: "Live Inventory",
@@ -176,6 +172,32 @@ const DEFAULT_NAV_ITEMS = [
     label: "Reports",
     color: "text-teal-300",
   },
+  { id: "flow", icon: Presentation, label: "Flow", color: "text-slate-500" },
+  {
+    id: "kitchen",
+    icon: ChefHat,
+    label: "Kitchen Display",
+    color: "text-orange-400",
+  },
+  {
+    id: "housekeeping",
+    icon: Brush,
+    label: "Housekeeping",
+    color: "text-indigo-400",
+  },
+  {
+    id: "settings_hub",
+    icon: Settings,
+    label: "Settings",
+    color: "text-slate-400",
+  },
+  // Hidden internal tabs for settings
+  {
+    id: "setup",
+    icon: Home,
+    label: "Property Setup",
+    color: "text-emerald-300",
+  },
   {
     id: "rules",
     icon: TrendingUp,
@@ -188,17 +210,10 @@ const DEFAULT_NAV_ITEMS = [
     label: "Channel Settings",
     color: "text-slate-400",
   },
-  { id: "flow", icon: Presentation, label: "Flow", color: "text-slate-500" },
   {
-    id: "kitchen",
-    icon: ChefHat,
-    label: "Kitchen Display",
-    color: "text-orange-400",
-  },
-  {
-    id: "housekeeping",
-    icon: Brush,
-    label: "Housekeeping",
+    id: "users",
+    icon: Users,
+    label: "User Management",
     color: "text-indigo-400",
   },
 ];
@@ -348,6 +363,85 @@ const App: React.FC = () => {
     setUser(null);
     localStorage.removeItem("pms_user");
   };
+
+  const renderNavItem = (item: (typeof DEFAULT_NAV_ITEMS)[0]) => (
+    <div
+      key={item.id}
+      onDragOver={(e) => handleDragOver(e, item.id)}
+      onDragLeave={handleDragLeave}
+      onDrop={(e) => handleDrop(e, item.id)}
+      className={`relative transition-all duration-300 ${
+        dragOverItem === item.id ? "translate-x-1" : ""
+      } ${draggedItem === item.id ? "opacity-60 scale-95 ring-1 ring-white/10 rounded-xl bg-slate-700/50 shadow-inner" : ""}`}
+    >
+      {/* Drop indicator line */}
+      {dragOverItem === item.id && draggedItem !== item.id && (
+        <div className="absolute -top-1 left-2 right-2 h-0.5 bg-indigo-400 rounded-full shadow-lg shadow-indigo-400/50 z-10" />
+      )}
+      <div
+        className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all group relative nav-item-row ${
+          activeTab === item.id
+            ? "bg-indigo-600 text-white shadow-lg"
+            : "hover:bg-slate-700/50 text-slate-400"
+        } ${isSidebarCollapsed ? "justify-center" : ""}`}
+      >
+        <button
+          onClick={() => {
+            if (item.id === "settings_hub") {
+              const settingsItems = ["users", "setup", "rules", "settings"];
+              const firstAllowed = settingsItems.find(
+                (id) =>
+                  user?.role === "admin" || user?.allowed_sections.includes(id),
+              );
+              if (firstAllowed) setActiveTab(firstAllowed as any);
+            } else {
+              item.id !== "flow" && setActiveTab(item.id as any);
+            }
+          }}
+          className={`flex flex-1 items-center gap-3 min-w-0 ${item.id === "flow" ? "cursor-not-allowed opacity-50" : ""}`}
+          title={
+            isSidebarCollapsed
+              ? item.label
+              : item.id === "flow"
+                ? "Temporarily Deactivated"
+                : undefined
+          }
+          disabled={item.id === "flow"}
+        >
+          <item.icon
+            className={`w-5 h-5 shrink-0 ${activeTab === item.id || (item.id === "settings_hub" && ["users", "setup", "rules", "settings"].includes(activeTab)) ? item.color : item.id === "flow" ? "text-slate-500" : ""} ${item.id === "notifications" && unreadNotificationCount > 0 ? "animate-swing text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]" : ""}`}
+          />
+          {!isSidebarCollapsed && (
+            <span className="font-semibold text-sm whitespace-nowrap truncate flex-1 text-left">
+              {item.label}
+            </span>
+          )}
+          {item.id === "notifications" && unreadNotificationCount > 0 && (
+            <span
+              className={`absolute ${isSidebarCollapsed ? "top-2 right-2" : "top-3 right-3"} flex h-3 w-3`}
+            >
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+            </span>
+          )}
+        </button>
+
+        {/* Drag handle - visible on hover, restricted to this element */}
+        {!isSidebarCollapsed && (
+          <div
+            draggable
+            onDragStart={(e) => handleDragStart(e, item.id)}
+            onDragEnd={handleDragEnd}
+            className="cursor-grab active:cursor-grabbing p-1 -mr-1 hover:bg-white/10 rounded-md transition-all opacity-0 group-hover:opacity-100"
+          >
+            <GripVertical
+              className={`w-4 h-4 shrink-0 ${activeTab === item.id ? "text-white/60" : "text-slate-500"}`}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   // Validate activeTab access access
   useEffect(() => {
@@ -1247,100 +1341,21 @@ const App: React.FC = () => {
         <div className="flex-1 flex flex-col gap-1 mt-2 w-full overflow-y-auto min-h-0 custom-scrollbar">
           {navItems
             .filter((item) => {
+              // Hide sub-items from main list
+              if (["setup", "rules", "settings", "users"].includes(item.id))
+                return false;
               if (!user) return false;
               if (user.role === "admin") return true;
+              if (item.id === "settings_hub") {
+                const settingsItems = ["setup", "rules", "settings", "users"];
+                return settingsItems.some((id) =>
+                  user.allowed_sections.includes(id),
+                );
+              }
               return user.allowed_sections.includes(item.id);
             })
-            .map((item) => (
-              <div
-                key={item.id}
-                onDragOver={(e) => handleDragOver(e, item.id)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, item.id)}
-                className={`relative transition-all duration-300 ${
-                  dragOverItem === item.id ? "translate-x-1" : ""
-                } ${draggedItem === item.id ? "opacity-60 scale-95 ring-1 ring-white/10 rounded-xl bg-slate-700/50 shadow-inner" : ""}`}
-              >
-                {/* Drop indicator line */}
-                {dragOverItem === item.id && draggedItem !== item.id && (
-                  <div className="absolute -top-1 left-2 right-2 h-0.5 bg-indigo-400 rounded-full shadow-lg shadow-indigo-400/50 z-10" />
-                )}
-                <div
-                  className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all group relative nav-item-row ${
-                    activeTab === item.id
-                      ? "bg-indigo-600 text-white shadow-lg"
-                      : "hover:bg-slate-700/50 text-slate-400"
-                  } ${isSidebarCollapsed ? "justify-center" : ""}`}
-                >
-                  <button
-                    onClick={() =>
-                      item.id !== "flow" && setActiveTab(item.id as any)
-                    }
-                    className={`flex flex-1 items-center gap-3 min-w-0 ${item.id === "flow" ? "cursor-not-allowed opacity-50" : ""}`}
-                    title={
-                      isSidebarCollapsed
-                        ? item.label
-                        : item.id === "flow"
-                          ? "Temporarily Deactivated"
-                          : undefined
-                    }
-                    disabled={item.id === "flow"}
-                  >
-                    <item.icon
-                      className={`w-5 h-5 shrink-0 ${activeTab === item.id ? item.color : item.id === "flow" ? "text-slate-500" : ""} ${item.id === "notifications" && unreadNotificationCount > 0 ? "animate-swing text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]" : ""}`}
-                    />
-                    {!isSidebarCollapsed && (
-                      <span className="font-semibold text-sm whitespace-nowrap truncate flex-1 text-left">
-                        {item.label}
-                      </span>
-                    )}
-                    {item.id === "notifications" &&
-                      unreadNotificationCount > 0 && (
-                        <span
-                          className={`absolute ${isSidebarCollapsed ? "top-2 right-2" : "top-3 right-3"} flex h-3 w-3`}
-                        >
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                        </span>
-                      )}
-                  </button>
-
-                  {/* Drag handle - visible on hover, restricted to this element */}
-                  {!isSidebarCollapsed && (
-                    <div
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, item.id)}
-                      onDragEnd={handleDragEnd}
-                      className="cursor-grab active:cursor-grabbing p-1 -mr-1 hover:bg-white/10 rounded-md transition-all opacity-0 group-hover:opacity-100"
-                    >
-                      <GripVertical
-                        className={`w-4 h-4 shrink-0 ${activeTab === item.id ? "text-white/60" : "text-slate-500"}`}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
+            .map((item) => renderNavItem(item))}
         </div>
-
-        {user?.role === "admin" && (
-          <div className="w-full px-2 mt-2 shrink-0">
-            <button
-              onClick={() => setActiveTab("users")}
-              className={`w-full flex items-center p-3 rounded-xl transition-all ${
-                activeTab === "users"
-                  ? "bg-indigo-600 text-white"
-                  : "hover:bg-slate-700/50 text-slate-400"
-              } ${isSidebarCollapsed ? "justify-center" : "justify-start gap-3"}`}
-              title={isSidebarCollapsed ? "User Management" : undefined}
-            >
-              <Users className="w-5 h-5" />
-              {!isSidebarCollapsed && (
-                <span className="font-semibold text-sm">User Management</span>
-              )}
-            </button>
-          </div>
-        )}
 
         <div className="w-full px-2 mt-1 mb-2 shrink-0">
           <button
@@ -1371,14 +1386,7 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        <div className="mt-auto flex flex-col gap-2 pt-8 border-t border-slate-700/50 w-full">
-          <div
-            className={`flex items-center gap-3 p-3 text-slate-500 text-sm ${isSidebarCollapsed ? "justify-center" : ""}`}
-          >
-            <Database className="w-4 h-4 shrink-0" />
-            {!isSidebarCollapsed && <span>Engine v2.6.0-pro</span>}
-          </div>
-        </div>
+        <div className="mt-auto pt-8 border-t border-slate-700/50 w-full" />
       </nav>
 
       <main
@@ -1431,96 +1439,8 @@ const App: React.FC = () => {
             setSyncEvents={setSyncEvents}
           />
         )}
-        {activeTab === "rules" && (
-          <RateRulesPage
-            rules={rules}
-            setRules={setRules}
-            onStrategySync={(label) => {
-              const eventId = `rule-${Date.now()}`;
-              const activeChannels = connections.filter(
-                (c) => c.status === "connected",
-              );
-
-              setSyncEvents((prev) => [
-                ...prev,
-                {
-                  id: eventId,
-                  type: "rate_update",
-                  roomTypeId: roomTypes[0]?.id || "global",
-                  newPrice: 0,
-                  timestamp: Date.now(),
-                  channelSync: {},
-                  ruleApplied: label,
-                },
-              ]);
-
-              activeChannels.forEach(async (channel) => {
-                if (channel.isStopped) {
-                  setSyncEvents((prev) =>
-                    prev.map((e) =>
-                      e.id === eventId
-                        ? {
-                            ...e,
-                            channelSync: {
-                              ...(e.channelSync || {}),
-                              [channel.name]: "stopped",
-                            },
-                          }
-                        : e,
-                    ),
-                  );
-                  return;
-                }
-                setSyncEvents((prev) =>
-                  prev.map((e) =>
-                    e.id === eventId
-                      ? {
-                          ...e,
-                          channelSync: {
-                            ...(e.channelSync || {}),
-                            [channel.name]: "pending",
-                          },
-                        }
-                      : e,
-                  ),
-                );
-                await new Promise((r) =>
-                  setTimeout(r, 1000 + Math.random() * 2000),
-                );
-                setSyncEvents((prev) =>
-                  prev.map((e) =>
-                    e.id === eventId
-                      ? {
-                          ...e,
-                          channelSync: {
-                            ...(e.channelSync || {}),
-                            [channel.name]: "success",
-                          },
-                        }
-                      : e,
-                  ),
-                );
-              });
-            }}
-          />
-        )}
         {activeTab === "analysis" && <AnalysisView />}
         {activeTab === "reports" && <ReportsView />}
-        {activeTab === "settings" && (
-          <SettingsPage
-            connections={connections}
-            setConnections={setConnections}
-          />
-        )}
-        {activeTab === "setup" && (
-          <PropertySetupPage
-            roomTypes={roomTypes}
-            setRoomTypes={setRoomTypes}
-            syncEvents={syncEvents}
-            propertySettings={propertySettings}
-            setPropertySettings={setPropertySettings}
-          />
-        )}
         {activeTab === "frontdesk" && (
           <FrontDeskView
             roomTypes={roomTypes}
@@ -1564,7 +1484,103 @@ const App: React.FC = () => {
             setRoomStatuses={setRoomStatuses}
           />
         )}
-        {activeTab === "users" && <UserManagement />}
+        {["setup", "rules", "settings", "users"].includes(activeTab) && (
+          <SettingsLayout
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            user={user}
+          >
+            {activeTab === "users" && <UserManagement />}
+            {activeTab === "setup" && (
+              <PropertySetupPage
+                roomTypes={roomTypes}
+                setRoomTypes={setRoomTypes}
+                syncEvents={syncEvents}
+                propertySettings={propertySettings}
+                setPropertySettings={setPropertySettings}
+              />
+            )}
+            {activeTab === "rules" && (
+              <RateRulesPage
+                rules={rules}
+                setRules={setRules}
+                onStrategySync={(label) => {
+                  const eventId = `rule-${Date.now()}`;
+                  const activeChannels = connections.filter(
+                    (c) => c.status === "connected",
+                  );
+
+                  setSyncEvents((prev) => [
+                    ...prev,
+                    {
+                      id: eventId,
+                      type: "rate_update",
+                      roomTypeId: roomTypes[0]?.id || "global",
+                      newPrice: 0,
+                      timestamp: Date.now(),
+                      channelSync: {},
+                      ruleApplied: label,
+                    },
+                  ]);
+
+                  activeChannels.forEach(async (channel) => {
+                    if (channel.isStopped) {
+                      setSyncEvents((prev) =>
+                        prev.map((e) =>
+                          e.id === eventId
+                            ? {
+                                ...e,
+                                channelSync: {
+                                  ...(e.channelSync || {}),
+                                  [channel.name]: "stopped",
+                                },
+                              }
+                            : e,
+                        ),
+                      );
+                      return;
+                    }
+                    setSyncEvents((prev) =>
+                      prev.map((e) =>
+                        e.id === eventId
+                          ? {
+                              ...e,
+                              channelSync: {
+                                ...(e.channelSync || {}),
+                                [channel.name]: "pending",
+                              },
+                            }
+                          : e,
+                      ),
+                    );
+                    await new Promise((r) =>
+                      setTimeout(r, 1000 + Math.random() * 2000),
+                    );
+                    setSyncEvents((prev) =>
+                      prev.map((e) =>
+                        e.id === eventId
+                          ? {
+                              ...e,
+                              channelSync: {
+                                ...(e.channelSync || {}),
+                                [channel.name]: "success",
+                              },
+                            }
+                          : e,
+                      ),
+                    );
+                  });
+                }}
+              />
+            )}
+            {activeTab === "settings" && (
+              <SettingsPage
+                connections={connections}
+                setConnections={setConnections}
+              />
+            )}
+          </SettingsLayout>
+        )}
       </main>
     </div>
   );
