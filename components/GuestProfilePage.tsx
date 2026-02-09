@@ -392,15 +392,20 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     (booking.folio || []).forEach((item) => {
       const isInclusive = item.isInclusive === true;
 
-      if (isInclusive) {
-        totalBase += item.amount;
-      } else {
-        let rate = 18; // Default for Service/Other
-        if (item.category === "F&B") rate = propertySettings?.foodGstRate || 5;
-        else if (item.category === "Laundry")
-          rate = propertySettings?.otherGstRate || 18;
-        else rate = propertySettings?.otherGstRate || 18;
+      // Determine the GST rate based on category
+      let rate = propertySettings?.otherGstRate || 18; // Default for Service/Other
+      if (item.category === "F&B") rate = propertySettings?.foodGstRate || 5;
+      else if (item.category === "Laundry")
+        rate = propertySettings?.otherGstRate || 18;
 
+      if (isInclusive) {
+        // For inclusive items, back out the tax from the amount (amount already includes tax)
+        const itemBase = item.amount / (1 + rate / 100);
+        const itemTax = item.amount - itemBase;
+        totalBase += itemBase;
+        totalTax += itemTax;
+      } else {
+        // For exclusive items, tax is added on top
         totalBase += item.amount;
         totalTax += item.amount * (rate / 100);
       }
@@ -3680,6 +3685,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                   <p className="text-base font-black text-white tabular-nums tracking-tighter">
                                     ₹{item.amount.toLocaleString()}
                                   </p>
+                                  {item.isInclusive && (
+                                    <p className="text-[7px] font-bold text-slate-500 uppercase tracking-widest">
+                                      incl. tax
+                                    </p>
+                                  )}
                                   <button
                                     className={`text-[8px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5 transition-all px-2 py-1 rounded-md mt-1.5 ${item.isPaid ? "text-emerald-400 bg-emerald-400/10 border border-emerald-400/30" : "text-rose-400 bg-rose-400/10 border border-rose-400/30 animate-pulse"} `}
                                     onClick={() => {
