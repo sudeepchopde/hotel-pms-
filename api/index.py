@@ -61,10 +61,8 @@ try:
     # Try to import the main app's routes
     from main import app as main_app
     
-    # Copy routes from main_app to our app
-    for route in main_app.routes:
-        if hasattr(route, 'path') and route.path not in ['/api/ping', '/api/health']:
-            app.routes.append(route)
+    # Properly merge the main app into our wrapper app
+    app.include_router(main_app.router)
     
     _full_app_loaded = True
     
