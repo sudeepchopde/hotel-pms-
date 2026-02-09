@@ -20,8 +20,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     try {
       // Use local API
       // In production, allow changing base URL via props or env
-      const API_BASE_URL =
-        import.meta.env.VITE_API_URL || "http://localhost:8000";
+      const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 
       const res = await fetch(`${API_BASE_URL}/api/login`, {
         method: "POST",
