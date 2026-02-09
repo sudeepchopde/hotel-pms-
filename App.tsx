@@ -307,6 +307,7 @@ const App: React.FC = () => {
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [roomStatuses, setRoomStatuses] = useState<RoomStatus[]>([]);
   const [syncEvents, setSyncEvents] = useState<SyncEvent[]>([]);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
 
   const [propertySettings, setPropertySettings] =
     useState<PropertySettings | null>(null);
@@ -1161,21 +1162,35 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col md:flex-row bg-[#fbfcfd] font-inter antialiased overflow-hidden">
-      <nav className="flex flex-col gap-3 shrink-0 shadow-xl z-20 border-r border-slate-700/30 bg-slate-800 text-white transition-all duration-300 w-full md:w-64 px-4 py-4">
+      <nav
+        onMouseEnter={() => setIsSidebarCollapsed(false)}
+        onMouseLeave={() => setIsSidebarCollapsed(true)}
+        className={`flex flex-col gap-3 shrink-0 shadow-xl z-20 border-r border-slate-700/30 bg-slate-800 text-white transition-all duration-300 ${isSidebarCollapsed ? "w-20 p-2 items-center" : "w-full md:w-64 px-4 py-4"}`}
+      >
         <div className="flex items-center justify-between">
-          <div className="flex items-center min-w-0 transition-all">
-            <img
-              src="/logo.png"
-              alt="Hotel Sathi"
-              className="w-40 object-contain"
-            />
+          <div
+            className={`flex items-center min-w-0 transition-all ${isSidebarCollapsed ? "justify-center" : ""}`}
+          >
+            {isSidebarCollapsed ? (
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                <span className="text-white font-black text-xl">H</span>
+              </div>
+            ) : (
+              <img
+                src="/logo.png"
+                alt="Hotel Sathi"
+                className="w-40 object-contain"
+              />
+            )}
           </div>
         </div>
 
         <div className="relative pt-2 w-full">
           <button
-            onClick={() => setIsHotelMenuOpen(!isHotelMenuOpen)}
-            className="w-full flex items-center justify-between p-3 bg-slate-700/40 hover:bg-slate-700 border border-slate-600/30 rounded-xl transition-all group"
+            onClick={() =>
+              !isSidebarCollapsed && setIsHotelMenuOpen(!isHotelMenuOpen)
+            }
+            className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-between"} p-3 bg-slate-700/40 hover:bg-slate-700 border border-slate-600/30 rounded-xl transition-all group`}
           >
             <div className="flex items-center gap-3 overflow-hidden">
               <div
@@ -1183,21 +1198,25 @@ const App: React.FC = () => {
               >
                 <Building2 className="w-4 h-4" />
               </div>
-              <div className="text-left overflow-hidden">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  Active Property
-                </p>
-                <p className="font-bold text-sm truncate">
-                  {selectedHotel.name}
-                </p>
-              </div>
+              {!isSidebarCollapsed && (
+                <div className="text-left overflow-hidden">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Active Property
+                  </p>
+                  <p className="font-bold text-sm truncate">
+                    {selectedHotel.name}
+                  </p>
+                </div>
+              )}
             </div>
-            <ChevronDown
-              className={`w-4 h-4 text-slate-400 transition-transform ${isHotelMenuOpen ? "rotate-180" : ""}`}
-            />
+            {!isSidebarCollapsed && (
+              <ChevronDown
+                className={`w-4 h-4 text-slate-400 transition-transform ${isHotelMenuOpen ? "rotate-180" : ""}`}
+              />
+            )}
           </button>
 
-          {isHotelMenuOpen && (
+          {isHotelMenuOpen && !isSidebarCollapsed && (
             <div className="absolute top-full left-0 w-full mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-30">
               {hotels.map((hotel) => (
                 <button
@@ -1246,7 +1265,7 @@ const App: React.FC = () => {
                     activeTab === item.id
                       ? "bg-indigo-600 text-white shadow-lg"
                       : "hover:bg-slate-700/50 text-slate-400"
-                  }`}
+                  } ${isSidebarCollapsed ? "justify-center" : ""}`}
                 >
                   <button
                     onClick={() =>
@@ -1254,19 +1273,27 @@ const App: React.FC = () => {
                     }
                     className={`flex flex-1 items-center gap-3 min-w-0 ${item.id === "flow" ? "cursor-not-allowed opacity-50" : ""}`}
                     title={
-                      item.id === "flow" ? "Temporarily Deactivated" : undefined
+                      isSidebarCollapsed
+                        ? item.label
+                        : item.id === "flow"
+                          ? "Temporarily Deactivated"
+                          : undefined
                     }
                     disabled={item.id === "flow"}
                   >
                     <item.icon
                       className={`w-5 h-5 shrink-0 ${activeTab === item.id ? item.color : item.id === "flow" ? "text-slate-500" : ""} ${item.id === "notifications" && unreadNotificationCount > 0 ? "animate-swing text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]" : ""}`}
                     />
-                    <span className="font-semibold text-sm whitespace-nowrap truncate flex-1 text-left">
-                      {item.label}
-                    </span>
+                    {!isSidebarCollapsed && (
+                      <span className="font-semibold text-sm whitespace-nowrap truncate flex-1 text-left">
+                        {item.label}
+                      </span>
+                    )}
                     {item.id === "notifications" &&
                       unreadNotificationCount > 0 && (
-                        <span className="absolute top-3 right-3 flex h-3 w-3">
+                        <span
+                          className={`absolute ${isSidebarCollapsed ? "top-2 right-2" : "top-3 right-3"} flex h-3 w-3`}
+                        >
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
                         </span>
@@ -1274,16 +1301,18 @@ const App: React.FC = () => {
                   </button>
 
                   {/* Drag handle - visible on hover, restricted to this element */}
-                  <div
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, item.id)}
-                    onDragEnd={handleDragEnd}
-                    className="cursor-grab active:cursor-grabbing p-1 -mr-1 hover:bg-white/10 rounded-md transition-all opacity-0 group-hover:opacity-100"
-                  >
-                    <GripVertical
-                      className={`w-4 h-4 shrink-0 ${activeTab === item.id ? "text-white/60" : "text-slate-500"}`}
-                    />
-                  </div>
+                  {!isSidebarCollapsed && (
+                    <div
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, item.id)}
+                      onDragEnd={handleDragEnd}
+                      className="cursor-grab active:cursor-grabbing p-1 -mr-1 hover:bg-white/10 rounded-md transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <GripVertical
+                        className={`w-4 h-4 shrink-0 ${activeTab === item.id ? "text-white/60" : "text-slate-500"}`}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -1297,10 +1326,13 @@ const App: React.FC = () => {
                 activeTab === "users"
                   ? "bg-indigo-600 text-white"
                   : "hover:bg-slate-700/50 text-slate-400"
-              } justify-start gap-3`}
+              } ${isSidebarCollapsed ? "justify-center" : "justify-start gap-3"}`}
+              title={isSidebarCollapsed ? "User Management" : undefined}
             >
               <Users className="w-5 h-5" />
-              <span className="font-semibold text-sm">User Management</span>
+              {!isSidebarCollapsed && (
+                <span className="font-semibold text-sm">User Management</span>
+              )}
             </button>
           </div>
         )}
@@ -1308,7 +1340,8 @@ const App: React.FC = () => {
         <div className="w-full px-2 mt-1 mb-2 shrink-0">
           <button
             onClick={handleLogout}
-            className="w-full flex items-center p-3 rounded-xl hover:bg-rose-900/20 text-slate-400 hover:text-rose-400 transition-all justify-start gap-3"
+            className={`w-full flex items-center p-3 rounded-xl hover:bg-rose-900/20 text-slate-400 hover:text-rose-400 transition-all ${isSidebarCollapsed ? "justify-center" : "justify-start gap-3"}`}
+            title={isSidebarCollapsed ? "Sign Out" : undefined}
           >
             <div className="w-5 h-5 flex items-center justify-center">
               <svg
@@ -1327,14 +1360,18 @@ const App: React.FC = () => {
                 <line x1="21" x2="9" y1="12" y2="12" />
               </svg>
             </div>
-            <span className="font-semibold text-sm">Sign Out</span>
+            {!isSidebarCollapsed && (
+              <span className="font-semibold text-sm">Sign Out</span>
+            )}
           </button>
         </div>
 
         <div className="mt-auto flex flex-col gap-2 pt-8 border-t border-slate-700/50 w-full">
-          <div className="flex items-center gap-3 p-3 text-slate-500 text-sm">
+          <div
+            className={`flex items-center gap-3 p-3 text-slate-500 text-sm ${isSidebarCollapsed ? "justify-center" : ""}`}
+          >
             <Database className="w-4 h-4 shrink-0" />
-            <span>Engine v2.6.0-pro</span>
+            {!isSidebarCollapsed && <span>Engine v2.6.0-pro</span>}
           </div>
         </div>
       </nav>
