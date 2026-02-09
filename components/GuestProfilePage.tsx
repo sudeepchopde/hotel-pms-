@@ -421,9 +421,10 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     const val = parseFloat(discountValue);
     if (isNaN(val) || val < 0) {
       // If empty or invalid, remove discount
-      onUpdateBooking(booking.id, { discount: undefined });
+      onUpdateBooking?.({ ...booking, discount: undefined });
     } else {
-      onUpdateBooking(booking.id, {
+      onUpdateBooking?.({
+        ...booking,
         discount: {
           type: discountType,
           value: val,
@@ -4699,7 +4700,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               <button
                 onClick={() => {
                   setDiscountValue("");
-                  onUpdateBooking(booking.id, { discount: undefined });
+                  onUpdateBooking?.({ ...booking, discount: undefined });
                   setShowDiscountModal(false);
                 }}
                 className="flex-1 py-4 text-xs font-black text-rose-600 uppercase tracking-widest hover:bg-rose-50 rounded-2xl transition-colors"

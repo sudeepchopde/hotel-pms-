@@ -27,6 +27,15 @@ def migrate(env_file):
         else:
             print("Column loyalty_tiers already exists.")
             
+        print("Checking for discount column in bookings...")
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='bookings' AND column_name='discount';")
+        if not cur.fetchone():
+            print("Adding discount column to bookings...")
+            cur.execute("ALTER TABLE bookings ADD COLUMN discount JSONB DEFAULT NULL;")
+            print("Done.")
+        else:
+            print("Discount column already exists.")
+
         print("Checking for auto-parsing columns in bookings...")
         cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='bookings' AND column_name='is_auto_generated';")
         if not cur.fetchone():
