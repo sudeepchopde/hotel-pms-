@@ -307,7 +307,7 @@ const App: React.FC = () => {
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
   const [roomStatuses, setRoomStatuses] = useState<RoomStatus[]>([]);
   const [syncEvents, setSyncEvents] = useState<SyncEvent[]>([]);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [propertySettings, setPropertySettings] =
     useState<PropertySettings | null>(null);
   const [user, setUser] = useState<UserResponse | null>(null);
@@ -1172,45 +1172,14 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col md:flex-row bg-[#fbfcfd] font-inter antialiased overflow-hidden">
-      <nav
-        onMouseEnter={() => setIsSidebarCollapsed(false)}
-        onMouseLeave={() => setIsSidebarCollapsed(true)}
-        className={`flex flex-col gap-3 shrink-0 shadow-xl z-20 border-r border-slate-700/30 bg-slate-800 text-white transition-all duration-300 ${isSidebarCollapsed ? "w-20 p-2 items-center" : "w-full md:w-64 px-4 py-4"}`}
-      >
-        <div
-          className={`flex items-center ${isSidebarCollapsed ? "justify-center flex-col gap-3" : "justify-between"}`}
-        >
-          <div
-            className={`flex items-center min-w-0 transition-all ${isSidebarCollapsed ? "justify-center" : ""}`}
-          >
-            {isSidebarCollapsed ? (
-              <div className="w-14 h-14 overflow-hidden rounded-lg shrink-0 relative bg-slate-900 flex items-center justify-center">
-                <img
-                  src="/logo.png"
-                  alt="Hotel Sathi"
-                  className="absolute h-full max-w-none object-cover"
-                  style={{ width: "180px", left: "-6px" }}
-                />
-              </div>
-            ) : (
-              <img
-                src="/logo.png"
-                alt="Hotel Sathi"
-                className="w-40 object-contain"
-              />
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-              className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors shrink-0"
-            >
-              {isSidebarCollapsed ? (
-                <PanelLeftOpen className="w-5 h-5" />
-              ) : (
-                <PanelLeftClose className="w-5 h-5" />
-              )}
-            </button>
+      <nav className="flex flex-col gap-3 shrink-0 shadow-xl z-20 border-r border-slate-700/30 bg-slate-800 text-white transition-all duration-300 w-full md:w-64 px-4 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center min-w-0 transition-all">
+            <img
+              src="/logo.png"
+              alt="Hotel Sathi"
+              className="w-40 object-contain"
+            />
           </div>
         </div>
 

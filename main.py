@@ -17,12 +17,6 @@ def normalize_phone(phone: str) -> str:
         return ""
     return re.sub(r'\D', '', phone)
 
-# ========== LAZY IMPORTS FOR VERCEL COMPATIBILITY ==========
-# These will be populated on first use
-_db_imports_loaded = False
-_USE_DATABASE = None
-_db_connection_error = None  # Store error message for debugging
-
 # Declare these at module level for DB models (still lazy)
 HotelDB = None
 RoomTypeDB = None
@@ -33,6 +27,20 @@ GuestProfileDB = None
 PropertySettingsDB = None
 NotificationDB = None
 RoomStatusDB = None
+
+def get_db_url():
+    """Robustly get the database URL from environment variables."""
+    import os
+    url = (
+        os.getenv("DATABASE_URL") or 
+        os.getenv("POSTGRES_URL") or 
+        os.getenv("POSTGRES_URL_NON_POOLING") or
+        os.getenv("NEON_DATABASE_URL")
+    )
+    # Normalize for SQLAlchemy if needed, but psycopg2 is usually fine with either
+    if url and url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return url
 
 # Import Pydantic models at top level for FastAPI type validation
 from backend.models import (
@@ -163,7 +171,7 @@ def login(user: UserLogin):
     import psycopg2
     from fastapi import HTTPException
     
-    db_url = os.getenv("DATABASE_URL")
+    db_url = get_db_url()
     if not db_url:
         # Fallback for demo/no-db mode
         if user.username == "admin" and user.password == "admin123":
@@ -231,7 +239,7 @@ def create_user(user: UserCreate):
     import psycopg2
     from fastapi import HTTPException
     
-    db_url = os.getenv("DATABASE_URL")
+    db_url = get_db_url()
     if not db_url:
         raise HTTPException(status_code=503, detail="Database URL not configured")
         
@@ -279,7 +287,7 @@ def list_users():
     import os
     import psycopg2
     try:
-        db_url = os.getenv("DATABASE_URL")
+        db_url = get_db_url()
         if not db_url:
             return []
             
@@ -321,7 +329,7 @@ def delete_user(user_id: int):
         if user_id == 1:
             raise HTTPException(status_code=400, detail="Cannot delete admin")
             
-        db_url = os.getenv("DATABASE_URL")
+        db_url = get_db_url()
         conn = psycopg2.connect(db_url)
         cur = conn.cursor()
         
@@ -361,13 +369,7 @@ def init_db():
     }
     
     # Try to get any database URL (synchronized with backend/database.py)
-    db_url = (
-        os.getenv("POSTGRES_URL") or 
-        os.getenv("POSTGRES_PRISMA_URL") or 
-        os.getenv("POSTGRES_URL_NON_POOLING") or
-        os.getenv("DATABASE_URL") or 
-        os.getenv("NEON_DATABASE_URL")
-    )
+    db_url = get_db_url()
     
     if not db_url:
         return {
