@@ -995,6 +995,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
       checkIn: string;
       checkOut: string;
       roomNumber?: string;
+      customRate?: number;
     }>;
     source?: "Direct" | "MMT" | "Booking.com" | "Expedia";
   }) => {
@@ -1064,8 +1065,11 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
         ),
       );
 
-      let rate = roomType?.basePrice || 0;
+      // Use custom rate if provided (Direct bookings), otherwise use room type base price
+      let rate = room.customRate ?? roomType?.basePrice ?? 0;
       if (data.source && data.source !== "Direct") {
+        // For OTA bookings, apply markup to base price (custom rate not applicable)
+        rate = roomType?.basePrice || 0;
         const conn = connections.find((c) => c.name === data.source);
         if (conn && conn.markupValue) {
           if (conn.markupType === "percentage") {

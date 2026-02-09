@@ -35,7 +35,12 @@ interface NewBookingModalProps {
     phoneNumber?: string;
     email?: string;
     guestDetails?: Partial<GuestDetails>;
-    rooms: Array<{ roomTypeId: string; checkIn: string; checkOut: string }>;
+    rooms: Array<{
+      roomTypeId: string;
+      checkIn: string;
+      checkOut: string;
+      customRate?: number;
+    }>;
     source?: "Direct" | "MMT" | "Booking.com" | "Expedia";
   }) => void;
   prefill?: { checkIn: string; roomTypeId: string; roomId?: string } | null;
@@ -61,6 +66,7 @@ export default function NewBookingModal({
       checkIn: string;
       checkOut: string;
       roomNumber?: string;
+      customRate?: number;
     }>
   >([]);
   const [foundGuest, setFoundGuest] = useState<any>(null);
@@ -365,11 +371,12 @@ export default function NewBookingModal({
       email,
       guestDetails: guestDetails || undefined,
       rooms: roomDetails.map(
-        ({ roomTypeId, checkIn, checkOut, roomNumber }) => ({
+        ({ roomTypeId, checkIn, checkOut, roomNumber, customRate }) => ({
           roomTypeId,
           checkIn,
           checkOut,
           roomNumber,
+          customRate,
         }),
       ),
       source,
@@ -682,6 +689,44 @@ export default function NewBookingModal({
                           )}
                       </select>
                     </div>
+                    {source === "Direct" && (
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          Room Rate (Per Night)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
+                            ₹
+                          </span>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder={String(
+                              roomTypes.find((rt) => rt.id === room.roomTypeId)
+                                ?.basePrice || 0,
+                            )}
+                            value={room.customRate ?? ""}
+                            onChange={(e) =>
+                              handleUpdateRoom(
+                                idx,
+                                "customRate",
+                                e.target.value
+                                  ? Number(e.target.value)
+                                  : undefined,
+                              )
+                            }
+                            className="w-full pl-8 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800 outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                        <p className="text-[9px] text-slate-400">
+                          Default: ₹
+                          {(
+                            roomTypes.find((rt) => rt.id === room.roomTypeId)
+                              ?.basePrice || 0
+                          ).toLocaleString()}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   {getRoomAvailability(
