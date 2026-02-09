@@ -28,6 +28,11 @@ PropertySettingsDB = None
 NotificationDB = None
 RoomStatusDB = None
 
+# ========== LAZY LOADING FLAGS ==========
+_db_imports_loaded = False
+_USE_DATABASE = None
+_db_connection_error = None
+
 def get_db_url():
     """Robustly get the database URL from environment variables."""
     import os
@@ -41,6 +46,11 @@ def get_db_url():
     if url and url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
     return url
+
+# Ensure DATABASE_URL is set in environment for manual psycopg2/os.getenv calls
+_current_url = get_db_url()
+if _current_url:
+    os.environ["DATABASE_URL"] = _current_url
 
 # Import Pydantic models at top level for FastAPI type validation
 from backend.models import (
