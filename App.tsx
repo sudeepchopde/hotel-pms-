@@ -1172,8 +1172,13 @@ const App: React.FC = () => {
             className={`flex items-center min-w-0 transition-all ${isSidebarCollapsed ? "justify-center" : ""}`}
           >
             {isSidebarCollapsed ? (
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                <span className="text-white font-black text-xl">H</span>
+              <div className="w-10 h-10 overflow-hidden relative rounded-lg bg-slate-800/50 shrink-0">
+                <img
+                  src="/logo.png"
+                  alt="Hotel Sathi"
+                  className="absolute top-0 left-0 h-full w-auto max-w-none"
+                  style={{ objectFit: "cover", objectPosition: "left" }}
+                />
               </div>
             ) : (
               <img
