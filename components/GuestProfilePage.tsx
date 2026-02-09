@@ -355,13 +355,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         (1000 * 3600 * 24),
     ),
   );
-  const roomRate =
-    booking.source === "Direct"
-      ? roomType?.basePrice || 0
-      : (booking.amount || 0) / nights;
+  // Room rate calculation - always use booking.amount which includes custom rates
+  const roomRate = (booking.amount || 0) / nights;
 
-  const roomBaseTotal =
-    booking.source === "Direct" ? roomRate * nights : booking.amount || 0;
+  // Room base total is the booking amount (already calculated with custom rate if applicable)
+  const roomBaseTotal = booking.amount || 0;
 
   // Calculate Bill Summary with Taxes to match Invoice
   const billSummary = useMemo(() => {
