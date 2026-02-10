@@ -183,3 +183,66 @@ class UserDB(Base):
     allowed_sections = Column(JSON, default=list)
 
 
+class SyncHistoryDB(Base):
+    """
+    Tracks all sync operations to OTA channels.
+    Used for debugging, analytics, and retry management.
+    """
+    __tablename__ = "sync_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    channel_id = Column(String, nullable=False, index=True)  # 'mmt', 'booking', etc.
+    sync_type = Column(String, nullable=False)  # 'rate', 'availability', 'booking'
+    room_type_id = Column(String, nullable=True)
+    date_range_start = Column(String, nullable=True)
+    date_range_end = Column(String, nullable=True)
+    status = Column(String, nullable=False)  # 'pending', 'success', 'failed', 'retrying'
+    message = Column(String, nullable=True)
+    error_code = Column(String, nullable=True)
+    retry_count = Column(Integer, default=0)
+    request_payload = Column(JSON, nullable=True)  # Store the request for debugging
+    response_payload = Column(String, nullable=True)  # Raw response from OTA
+    created_at = Column(String, nullable=False)
+    completed_at = Column(String, nullable=True)
+    
+
+class ChannelCredentialsDB(Base):
+    """
+    Stores encrypted API credentials for each OTA channel.
+    IMPORTANT: In production, encrypt the api_secret field!
+    """
+    __tablename__ = "channel_credentials"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    channel_id = Column(String, unique=True, index=True)  # 'mmt', 'booking', etc.
+    hotel_id = Column(String, nullable=False)  # Your property's ID on the OTA
+    api_key = Column(String, nullable=False)
+    api_secret = Column(String, nullable=True)  # Should be encrypted in production
+    username = Column(String, nullable=True)
+    password = Column(String, nullable=True)  # Should be encrypted in production
+    environment = Column(String, default="sandbox")  # 'sandbox' or 'production'
+    endpoint_url = Column(String, nullable=True)  # Custom endpoint if needed
+    is_active = Column(Boolean, default=True)
+    created_at = Column(String, nullable=True)
+    updated_at = Column(String, nullable=True)
+
+
+class RoomTypeMappingDB(Base):
+    """
+    Maps internal room type IDs to OTA-specific room codes.
+    Each OTA has its own room type codes assigned during onboarding.
+    """
+    __tablename__ = "room_type_mappings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    internal_room_type_id = Column(String, nullable=False, index=True)
+    internal_name = Column(String, nullable=False)
+    mmt_code = Column(String, nullable=True)
+    booking_com_code = Column(String, nullable=True)
+    expedia_code = Column(String, nullable=True)
+    goibibo_code = Column(String, nullable=True)
+    agoda_code = Column(String, nullable=True)
+    created_at = Column(String, nullable=True)
+    updated_at = Column(String, nullable=True)
+
+

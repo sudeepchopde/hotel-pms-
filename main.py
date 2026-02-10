@@ -87,6 +87,8 @@ def verify_password(plain_password, hashed_password):
 def get_password_hash(password):
     return pwd_context.hash(password)
 
+from backend.encryption import encrypt_field, decrypt_field, mask_secret
+
 get_db_real = None
 engine = None
 
@@ -170,9 +172,27 @@ try:
 except Exception:
     pass  # Skip on Vercel where filesystem is read-only
 
+# Include Channel Manager routes for OTA integrations
+try:
+    from backend.channel_manager.routes import router as channel_router
+    app.include_router(channel_router)
+    print("✓ Channel Manager routes loaded")
+except Exception as e:
+    print(f"⚠️ Channel Manager routes not loaded: {e}")
+
+# Include Payment Gateway routes
+try:
+    from backend.payment_gateway.routes import router as payment_router
+    app.include_router(payment_router)
+    print("✓ Payment Gateway routes loaded")
+except Exception as e:
+    print(f"⚠️ Payment Gateway routes not loaded: {e}")
+
+
 @app.get("/ping")
 def ping():
     return {"status": "ok", "version": "1.1", "database": "lazy"}
+
 
 @app.post("/api/login", response_model=UserResponse)
 def login(user: UserLogin):
@@ -1037,7 +1057,7 @@ def db_connection_to_pydantic(db_conn):
     return OTAConnection(
         id=db_conn.id,
         name=db_conn.name,
-        key=db_conn.key,
+        key=mask_secret(db_conn.key) if db_conn.key else "",  # Masked
         isVisible=db_conn.is_visible,
         status=db_conn.status,
         lastValidated=db_conn.last_validated,
@@ -1066,9 +1086,9 @@ def db_property_to_pydantic(db_prop):
         foodGstRate=db_prop.food_gst_rate if hasattr(db_prop, 'food_gst_rate') else 5.0,
         otherGstRate=db_prop.other_gst_rate if hasattr(db_prop, 'other_gst_rate') else 18.0,
         razorpayKeyId=db_prop.razorpay_key_id if hasattr(db_prop, 'razorpay_key_id') else None,
-        razorpayKeySecret=db_prop.razorpay_key_secret if hasattr(db_prop, 'razorpay_key_secret') else None,
+        razorpayKeySecret=mask_secret(db_prop.razorpay_key_secret) if hasattr(db_prop, 'razorpay_key_secret') and db_prop.razorpay_key_secret else None,
         publicBaseUrl=db_prop.public_base_url if hasattr(db_prop, 'public_base_url') else None,
-        geminiApiKey=db_prop.gemini_api_key if hasattr(db_prop, 'gemini_api_key') else None,
+        geminiApiKey=mask_secret(db_prop.gemini_api_key) if hasattr(db_prop, 'gemini_api_key') and db_prop.gemini_api_key else None,
         lastInvoiceNumber=db_prop.last_invoice_number if hasattr(db_prop, 'last_invoice_number') else 0,
         checkInTime=db_prop.check_in_time if hasattr(db_prop, 'check_in_time') else "12:00",
         checkOutTime=db_prop.check_out_time if hasattr(db_prop, 'check_out_time') else "11:00",
@@ -1118,17 +1138,17 @@ def _sync_guest_profile(gd, check_in_date, db):
     if existing_profile:
         # Update...
         if gd.idType: existing_profile.id_type = gd.idType
-        if gd.idNumber: existing_profile.id_number = gd.idNumber
+        if gd.idNumber: existing_profile.id_number = encrypt_field(gd.idNumber)
         if gd.address: existing_profile.address = gd.address
         if gd.dob: existing_profile.dob = gd.dob
         if gd.nationality: existing_profile.nationality = gd.nationality
         if gd.gender: existing_profile.gender = gd.gender
         if gd.email: existing_profile.email = gd.email
-        if gd.passportNumber: existing_profile.passport_number = gd.passportNumber
+        if gd.passportNumber: existing_profile.passport_number = encrypt_field(gd.passportNumber)
         if gd.passportPlaceIssue: existing_profile.passport_place_issue = gd.passportPlaceIssue
         if gd.passportIssueDate: existing_profile.passport_issue_date = gd.passportIssueDate
         if gd.passportExpiry: existing_profile.passport_expiry = gd.passportExpiry
-        if gd.visaNumber: existing_profile.visa_number = gd.visaNumber
+        if gd.visaNumber: existing_profile.visa_number = encrypt_field(gd.visaNumber)
         if gd.visaType: existing_profile.visa_type = gd.visaType
         if gd.visaPlaceIssue: existing_profile.visa_place_issue = gd.visaPlaceIssue
         if gd.visaIssueDate: existing_profile.visa_issue_date = gd.visaIssueDate
@@ -1162,17 +1182,17 @@ def _sync_guest_profile(gd, check_in_date, db):
             name=gd.name,
             phone_number=gd.phoneNumber or "",
             id_type=gd.idType,
-            id_number=gd.idNumber,
+            id_number=encrypt_field(gd.idNumber) if gd.idNumber else None,
             address=gd.address,
             dob=gd.dob,
             nationality=gd.nationality,
             gender=gd.gender,
             email=gd.email,
-            passport_number=gd.passportNumber,
+            passport_number=encrypt_field(gd.passportNumber) if gd.passportNumber else None,
             passport_place_issue=gd.passportPlaceIssue,
             passport_issue_date=gd.passportIssueDate,
             passport_expiry=gd.passportExpiry,
-            visa_number=gd.visaNumber,
+            visa_number=encrypt_field(gd.visaNumber) if gd.visaNumber else None,
             visa_type=gd.visaType,
             visa_place_issue=gd.visaPlaceIssue,
             visa_issue_date=gd.visaIssueDate,
@@ -1351,11 +1371,17 @@ def update_property_settings(settings: PropertySettings, db=Depends(get_db)):
         prop.gst_rate = settings.gstRate
         prop.food_gst_rate = settings.foodGstRate
         prop.other_gst_rate = settings.otherGstRate
+        
+        # Encrypt sensitive keys if they are not masked (showing they are newly input)
+        if settings.razorpayKeySecret and not settings.razorpayKeySecret.startswith('•'):
+            prop.razorpay_key_secret = encrypt_field(settings.razorpayKeySecret)
+            
+        if settings.geminiApiKey and not settings.geminiApiKey.startswith('•'):
+            prop.gemini_api_key = encrypt_field(settings.geminiApiKey)
+            
         prop.razorpay_key_id = settings.razorpayKeyId
-        prop.razorpay_key_secret = settings.razorpayKeySecret
         prop.last_invoice_number = settings.lastInvoiceNumber or 0
         prop.public_base_url = settings.publicBaseUrl
-        prop.gemini_api_key = settings.geminiApiKey
         prop.check_in_time = settings.checkInTime
         prop.check_out_time = settings.checkOutTime
         if settings.loyaltyTiers is not None:
@@ -1403,17 +1429,17 @@ def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, db=Dep
                     "phone_number": profile.phone_number,
                     "email": profile.email,
                     "idType": profile.id_type,
-                    "idNumber": profile.id_number,
+                    "idNumber": decrypt_field(profile.id_number) if profile.id_number else "",
                     "address": profile.address,
                     "dob": profile.dob,
                     "nationality": profile.nationality,
                     "preferences": profile.preferences,
                     "gender": profile.gender,
-                    "passportNumber": profile.passport_number,
+                    "passportNumber": decrypt_field(profile.passport_number) if profile.passport_number else "",
                     "passportPlaceIssue": profile.passport_place_issue,
                     "passportIssueDate": profile.passport_issue_date,
                     "passportExpiry": profile.passport_expiry,
-                    "visaNumber": profile.visa_number,
+                    "visaNumber": decrypt_field(profile.visa_number) if profile.visa_number else "",
                     "visaType": profile.visa_type,
                     "visaPlaceIssue": profile.visa_place_issue,
                     "visaIssueDate": profile.visa_issue_date,

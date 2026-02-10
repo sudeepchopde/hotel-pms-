@@ -5,6 +5,7 @@ import {
   TrendingUp,
   Settings as SettingsIcon,
   ChevronRight,
+  CreditCard,
 } from "lucide-react";
 import { UserResponse } from "../types";
 
@@ -39,6 +40,12 @@ const SettingsLayout: React.FC<SettingsLayoutProps> = ({
       label: "Revenue Rules",
       icon: TrendingUp,
       color: "text-orange-400",
+    },
+    {
+      id: "payments",
+      label: "Payment Gateway",
+      icon: CreditCard,
+      color: "text-purple-400",
     },
     {
       id: "settings",

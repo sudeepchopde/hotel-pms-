@@ -64,6 +64,13 @@ try:
     # Properly merge the main app into our wrapper app
     app.include_router(main_app.router)
     
+    # Import and include channel manager routes
+    try:
+        from backend.channel_manager.routes import router as channel_router
+        app.include_router(channel_router)
+    except Exception as channel_err:
+        print(f"Warning: Could not load channel manager routes: {channel_err}")
+    
     _full_app_loaded = True
     
 except Exception as e:
@@ -79,6 +86,7 @@ except Exception as e:
             "cwd": os.getcwd(),
             "files_in_root": os.listdir(project_root) if os.path.exists(project_root) else "not found"
         }
+
 
 # Always add debug endpoint
 @app.get("/api/status")

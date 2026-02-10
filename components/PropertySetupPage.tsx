@@ -920,96 +920,65 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
               </div>
             </section>
 
-            {/* Razorpay Payment Gateway Section */}
-            <section className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm space-y-8">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
-                  <IndianRupee className="w-6 h-6" />
+            {/* Payment Gateway Section - Links to dedicated settings */}
+            <section className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center text-purple-600">
+                    <IndianRupee className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900 tracking-tight">
+                      Payment Gateway
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Easebuzz & Razorpay integration for online payments.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">
-                    Payment Gateway
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium">
-                    Accept online payments via Razorpay (UPI, Cards, Netbanking,
-                    Wallets).
-                  </p>
+                <div
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+                    profileFormData.razorpayKeyId &&
+                    profileFormData.razorpayKeySecret
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-slate-100 text-slate-500"
+                  }`}
+                >
+                  {profileFormData.razorpayKeyId &&
+                  profileFormData.razorpayKeySecret
+                    ? "Configured"
+                    : "Not Configured"}
                 </div>
               </div>
 
-              <div className="space-y-6">
-                <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <ShieldAlert className="w-5 h-5 text-emerald-600" />
-                    <h5 className="font-black text-xs uppercase tracking-widest text-slate-700">
-                      Razorpay API Configuration
-                    </h5>
-                  </div>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Enable online payment collection at the front desk. Guests
-                    can scan a QR or click a link to pay instantly.
-                  </p>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
-                        Razorpay Key ID
-                      </label>
-                      <div className="relative group">
-                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
-                        <input
-                          type="text"
-                          value={profileFormData.razorpayKeyId || ""}
-                          onChange={(e) =>
-                            setProfileFormData({
-                              ...profileFormData,
-                              razorpayKeyId: e.target.value,
-                            })
-                          }
-                          placeholder="rzp_live_xxxxxxxxxxxxx"
-                          className="w-full pl-12 pr-5 py-4 bg-white border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-emerald-500 outline-none transition-all shadow-sm"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
-                        Razorpay Key Secret
-                      </label>
-                      <div className="relative group">
-                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
-                        <input
-                          type="password"
-                          value={profileFormData.razorpayKeySecret || ""}
-                          onChange={(e) =>
-                            setProfileFormData({
-                              ...profileFormData,
-                              razorpayKeySecret: e.target.value,
-                            })
-                          }
-                          placeholder="••••••••••••••••"
-                          className="w-full pl-12 pr-5 py-4 bg-white border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-emerald-500 outline-none transition-all shadow-sm"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3 mt-4">
-                    <div className="p-2 bg-white rounded-xl border border-emerald-200">
-                      <Info className="w-4 h-4 text-emerald-500" />
-                    </div>
-                    <div className="text-[10px] text-slate-500 leading-relaxed font-medium">
-                      Don't have an account?{" "}
-                      <a
-                        href="https://dashboard.razorpay.com/signup"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-emerald-600 font-bold hover:underline"
-                      >
-                        Sign up for Razorpay Business
-                      </a>
-                      . Go to Settings → API Keys to generate your credentials.
-                    </div>
-                  </div>
+              <div className="p-6 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-3xl border border-purple-100">
+                <p className="text-sm text-slate-600 mb-4">
+                  Configure your payment gateway credentials (Razorpay or
+                  Easebuzz) to accept online payments from guests via UPI,
+                  Cards, Netbanking, and Wallets.
+                </p>
+                <p className="text-xs text-slate-500 mb-4">
+                  Payments go directly to your account. Each hotel manages their
+                  own gateway credentials.
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      // Navigate to payments tab - this will be handled by parent
+                      (window as any).__navigateToPayments?.();
+                    }}
+                    className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-purple-200 hover:shadow-xl hover:-translate-y-0.5 transition-all"
+                  >
+                    Configure Payment Gateway →
+                  </button>
+                  <a
+                    href="https://razorpay.com/docs/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-2.5 bg-white text-slate-600 rounded-xl font-medium text-sm border border-slate-200 hover:bg-slate-50 transition-all"
+                  >
+                    Documentation
+                  </a>
                 </div>
               </div>
             </section>

@@ -9,3 +9,5 @@ fpdf2
 google-genai
 passlib
 bcrypt
+httpx
+cryptography

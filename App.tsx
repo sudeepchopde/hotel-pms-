@@ -21,6 +21,7 @@ import HousekeepingView from "./components/HousekeepingView";
 import LoginPage from "./components/LoginPage";
 import UserManagement from "./components/UserManagement";
 import SettingsLayout from "./components/SettingsLayout";
+import PaymentSettingsPanel from "./components/PaymentSettingsPanel";
 // import NotificationsPanel from './components/NotificationsPanel'; // Removed
 import {
   LayoutDashboard,
@@ -48,6 +49,7 @@ import {
   ChefHat,
   Brush,
   ChevronRight,
+  CreditCard,
 } from "lucide-react";
 import {
   Hotel,
@@ -340,6 +342,14 @@ const App: React.FC = () => {
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
+
+  // Register global navigation function for child components
+  useEffect(() => {
+    (window as any).__navigateToPayments = () => setActiveTab("payments");
+    return () => {
+      delete (window as any).__navigateToPayments;
+    };
+  }, []);
 
   // Auth Logic
 
@@ -1484,7 +1494,9 @@ const App: React.FC = () => {
             setRoomStatuses={setRoomStatuses}
           />
         )}
-        {["setup", "rules", "settings", "users"].includes(activeTab) && (
+        {["setup", "rules", "settings", "users", "payments"].includes(
+          activeTab,
+        ) && (
           <SettingsLayout
             activeTab={activeTab}
             setActiveTab={setActiveTab}
@@ -1578,6 +1590,11 @@ const App: React.FC = () => {
                 connections={connections}
                 setConnections={setConnections}
               />
+            )}
+            {activeTab === "payments" && (
+              <div className="p-8 animate-in fade-in duration-500">
+                <PaymentSettingsPanel />
+              </div>
             )}
           </SettingsLayout>
         )}

@@ -13,18 +13,22 @@ import { UserResponse } from "../types";
 
 // Navigation items for permission selection
 const NAV_SECTIONS = [
+  // Core Operational Sections
   { id: "frontdesk", label: "Front Desk" },
+  { id: "dashboard", label: "Dashboard" },
+  { id: "guests", label: "Guests" },
   { id: "kitchen", label: "Kitchen" },
   { id: "housekeeping", label: "Housekeeping" },
-  { id: "guests", label: "Guests" },
   { id: "compliance", label: "Compliance" },
   { id: "security", label: "Security" },
-  { id: "dashboard", label: "Dashboard" },
   { id: "analysis", label: "Analysis" },
   { id: "reports", label: "Reports" },
-  { id: "rules", label: "Revenue Rules" },
-  { id: "settings", label: "Settings" },
+
+  // Settings Hub Sections
+  { id: "users", label: "User Management" },
   { id: "setup", label: "Property Setup" },
+  { id: "rules", label: "Revenue Rules" },
+  { id: "settings", label: "Channel Settings" },
 ];
 
 const UserManagement: React.FC = () => {
