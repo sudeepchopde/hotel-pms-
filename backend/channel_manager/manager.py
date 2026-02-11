@@ -135,7 +135,8 @@ class ChannelSyncManager:
         end_date: str,
         single_rate: float,
         double_rate: float,
-        extra_bed_rate: float = 0,
+        extra_adult_rate: float = 0,
+        extra_child_rate: float = 0,
         target_channels: Optional[List[str]] = None
     ) -> Dict[str, SyncResult]:
         """
@@ -186,8 +187,8 @@ class ChannelSyncManager:
                 end_date=end_date,
                 single_rate=marked_single,
                 double_rate=marked_double,
-                extra_adult_rate=extra_bed_rate,
-                extra_child_rate=extra_bed_rate * 0.5  # Child rate at 50%
+                extra_adult_rate=extra_adult_rate,
+                extra_child_rate=extra_child_rate
             )
             
             tasks.append(self._sync_with_retry(channel_id, 'rate', request))

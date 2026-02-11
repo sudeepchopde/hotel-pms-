@@ -74,6 +74,7 @@ from backend.models import (
     RoomStatus,
     UserLogin,
     UserCreate,
+    UserUpdate,
     UserResponse,
 )
 from passlib.context import CryptContext
@@ -350,6 +351,96 @@ def list_users():
     except Exception as e:
         print(f"List users error: {e}")
         return []
+
+@app.put("/api/users/{user_id}", response_model=UserResponse)
+def update_user(user_id: int, user: UserUpdate):
+    import os
+    import json
+    import psycopg2
+    from fastapi import HTTPException
+    
+    db_url = get_db_url()
+    if not db_url:
+        raise HTTPException(status_code=503, detail="Database URL not configured")
+        
+    try:
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+        
+        # Check if user exists
+        cur.execute("SELECT username FROM users WHERE id = %s", (user_id,))
+        existing_user = cur.fetchone()
+        if not existing_user:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        update_fields = []
+        params = []
+        
+        if user.username is not None:
+            # Check if username exists for other users
+            cur.execute("SELECT id FROM users WHERE username = %s AND id != %s", (user.username, user_id))
+            if cur.fetchone():
+                cur.close()
+                conn.close()
+                raise HTTPException(status_code=400, detail="Username already registered")
+            update_fields.append("username = %s")
+            params.append(user.username)
+            
+        if user.password is not None:
+            hashed_password = get_password_hash(user.password)
+            update_fields.append("password_hash = %s")
+            params.append(hashed_password)
+            
+        if user.full_name is not None:
+            update_fields.append("full_name = %s")
+            params.append(user.full_name)
+            
+        if user.role is not None:
+            if existing_user[0] == 'admin' and user.role != 'admin':
+                # Optional: prevent demoting the root admin if needed
+                pass
+            update_fields.append("role = %s")
+            params.append(user.role)
+            
+        if user.allowed_sections is not None:
+            update_fields.append("allowed_sections = %s")
+            params.append(json.dumps(user.allowed_sections))
+            
+        if not update_fields:
+            cur.close()
+            conn.close()
+            return list_users()[0] # This is a bit hacky, but if nothing to update, just return current
+            
+        sql = f"UPDATE users SET {', '.join(update_fields)} WHERE id = %s RETURNING id, username, full_name, role, allowed_sections"
+        params.append(user_id)
+        
+        cur.execute(sql, tuple(params))
+        updated_row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        u_id, u_username, u_full_name, u_role, u_sections = updated_row
+        if isinstance(u_sections, str):
+            try: u_sections = json.loads(u_sections)
+            except: u_sections = []
+        elif u_sections is None:
+            u_sections = []
+            
+        return UserResponse(
+            id=u_id,
+            username=u_username,
+            full_name=u_full_name or "",
+            role=u_role,
+            allowed_sections=u_sections
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Update User error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/users/{user_id}")
 def delete_user(user_id: int):
@@ -1000,7 +1091,9 @@ def db_room_type_to_pydantic(db_room):
         baseOccupancy=db_room.base_occupancy,
         amenities=db_room.amenities or [],
         roomNumbers=db_room.room_numbers,
-        extraBedCharge=db_room.extra_bed_charge
+        extraBedCharge=db_room.extra_bed_charge,
+        extraAdultRate=db_room.extra_adult_rate if hasattr(db_room, 'extra_adult_rate') else 0,
+        extraChildRate=db_room.extra_child_rate if hasattr(db_room, 'extra_child_rate') else 0
     )
 
 def db_booking_to_pydantic(db_booking):
@@ -1253,7 +1346,9 @@ def create_room_type(room_type: RoomType, db=Depends(get_db)):
             base_occupancy=room_type.baseOccupancy,
             amenities=room_type.amenities or [],
             room_numbers=room_type.roomNumbers or [],
-            extra_bed_charge=room_type.extraBedCharge
+            extra_bed_charge=room_type.extraBedCharge,
+            extra_adult_rate=room_type.extraAdultRate,
+            extra_child_rate=room_type.extraChildRate
         )
         db.add(db_room)
         db.commit()
@@ -1295,6 +1390,8 @@ def update_room_type(rt_id: str, room_type: RoomType, db=Depends(get_db)):
         db_room.amenities = room_type.amenities or []
         db_room.room_numbers = room_type.roomNumbers or []
         db_room.extra_bed_charge = room_type.extraBedCharge
+        db_room.extra_adult_rate = room_type.extraAdultRate
+        db_room.extra_child_rate = room_type.extraChildRate
         
         db.commit()
         db.refresh(db_room)

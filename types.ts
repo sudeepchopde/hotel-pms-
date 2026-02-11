@@ -45,6 +45,8 @@ export interface RoomType {
   amenities: string[];
   roomNumbers?: string[];
   extraBedCharge?: number;
+  extraAdultRate?: number;
+  extraChildRate?: number;
 }
 
 export interface SpecialEvent {

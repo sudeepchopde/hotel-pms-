@@ -45,6 +45,8 @@ class RoomTypeDB(Base):
     amenities = Column(JSON, default=[])
     room_numbers = Column(JSON, default=[])
     extra_bed_charge = Column(Float, nullable=True)
+    extra_adult_rate = Column(Float, nullable=True, default=0)
+    extra_child_rate = Column(Float, nullable=True, default=0)
 
 class BookingDB(Base):
     __tablename__ = "bookings"

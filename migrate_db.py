@@ -1,4 +1,3 @@
-
 import os
 import psycopg2
 from dotenv import load_dotenv
@@ -60,6 +59,16 @@ def migrate(env_file):
                 print(f"Could not add metadata column (Table might not exist?): {e}")
         else:
             print("Column metadata already exists.")
+
+        print("Checking for extra rates in room_types...")
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='room_types' AND column_name='extra_adult_rate';")
+        if not cur.fetchone():
+            print("Adding extra_adult_rate and extra_child_rate to room_types...")
+            cur.execute("ALTER TABLE room_types ADD COLUMN extra_adult_rate FLOAT DEFAULT 0;")
+            cur.execute("ALTER TABLE room_types ADD COLUMN extra_child_rate FLOAT DEFAULT 0;")
+            print("Done.")
+        else:
+            print("Extra rates already exist.")
 
         cur.close()
         conn.close()

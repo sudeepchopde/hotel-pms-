@@ -148,6 +148,8 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
     amenities: [],
     roomNumbers: ["101"],
     extraBedCharge: 500,
+    extraAdultRate: 800,
+    extraChildRate: 400,
   });
 
   const resetForm = () => {
@@ -159,6 +161,8 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
       amenities: [],
       roomNumbers: ["101"],
       extraBedCharge: 500,
+      extraAdultRate: 800,
+      extraChildRate: 400,
     });
     setIsAdding(false);
     setEditingId(null);
@@ -1153,6 +1157,46 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                             })
                           }
                           className="w-full bg-transparent font-bold text-indigo-700 outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                        Extra Adult Rate (INR)
+                      </label>
+                      <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border-2 border-amber-100 rounded-2xl group focus-within:border-amber-500 transition-all">
+                        <Users className="w-4 h-4 text-amber-600" />
+                        <input
+                          type="number"
+                          value={formData.extraAdultRate}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              extraAdultRate: Number(e.target.value),
+                            })
+                          }
+                          className="w-full bg-transparent font-bold text-amber-700 outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                        Extra Child Rate (INR)
+                      </label>
+                      <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border-2 border-blue-100 rounded-2xl group focus-within:border-blue-500 transition-all">
+                        <Users className="w-4 h-4 text-blue-600" />
+                        <input
+                          type="number"
+                          value={formData.extraChildRate}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              extraChildRate: Number(e.target.value),
+                            })
+                          }
+                          className="w-full bg-transparent font-bold text-blue-700 outline-none"
                         />
                       </div>
                     </div>

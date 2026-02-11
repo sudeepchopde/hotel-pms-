@@ -65,6 +65,8 @@ class RoomType(BaseModel):
     amenities: List[str]
     roomNumbers: Optional[List[str]] = None
     extraBedCharge: Optional[float] = None
+    extraAdultRate: Optional[float] = 0
+    extraChildRate: Optional[float] = 0
 
 class Hotel(BaseModel):
     id: str
@@ -259,6 +261,13 @@ class UserCreate(BaseModel):
     full_name: str
     role: str = "staff"
     allowed_sections: List[str] = []
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    password: Optional[str] = None
+    full_name: Optional[str] = None
+    role: Optional[str] = None
+    allowed_sections: Optional[List[str]] = None
 
 class UserResponse(BaseModel):
     id: int

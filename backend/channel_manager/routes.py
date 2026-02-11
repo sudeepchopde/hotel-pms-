@@ -79,7 +79,8 @@ async def sync_rates_to_channels(
     end_date = body.get("end_date")
     single_rate = body.get("single_rate", body.get("double_rate", 0) * 0.85)
     double_rate = body.get("double_rate", 0)
-    extra_bed_rate = body.get("extra_bed_rate", 0)
+    extra_adult_rate = body.get("extra_adult_rate", body.get("extra_bed_rate", 0))
+    extra_child_rate = body.get("extra_child_rate", 0)
     target_channels = body.get("channels")
     
     if not all([room_type_id, start_date, end_date, double_rate]):
@@ -110,7 +111,8 @@ async def sync_rates_to_channels(
             end_date=end_date,
             single_rate=single_rate,
             double_rate=double_rate,
-            extra_bed_rate=extra_bed_rate,
+            extra_adult_rate=extra_adult_rate,
+            extra_child_rate=extra_child_rate,
             target_channels=target_channels
         )
         

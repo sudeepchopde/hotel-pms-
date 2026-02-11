@@ -8,6 +8,7 @@ import {
   Check,
   X,
   Loader2,
+  Pencil,
 } from "lucide-react";
 import { UserResponse } from "../types";
 
@@ -35,6 +36,7 @@ const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<UserResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserResponse | null>(null);
 
   // Form State
   const [username, setUsername] = useState("");
@@ -68,36 +70,72 @@ const UserManagement: React.FC = () => {
     e.preventDefault();
     setFormError(null);
 
+    const payload: any = {
+      username,
+      full_name: fullName,
+      role,
+      allowed_sections: role === "admin" ? [] : allowedSections,
+    };
+
+    // Only include password if it's a new user or if password field is filled for an existing user
+    if (!editingUser || password) {
+      payload.password = password;
+    }
+
     try {
-      const res = await fetch("/api/users", {
-        method: "POST",
+      const url = editingUser ? `/api/users/${editingUser.id}` : "/api/users";
+      const method = editingUser ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username,
-          password,
-          full_name: fullName,
-          role,
-          allowed_sections: role === "admin" ? [] : allowedSections,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.detail || "Failed to create user");
+        throw new Error(
+          data.detail || `Failed to ${editingUser ? "update" : "create"} user`,
+        );
       }
 
-      const newUser = await res.json();
-      setUsers([...users, newUser]);
-      setIsAdding(false);
-      // Reset form
-      setUsername("");
-      setPassword("");
-      setFullName("");
-      setRole("staff");
-      setAllowedSections(["frontdesk"]);
+      const returnedUser = await res.json();
+
+      if (editingUser) {
+        setUsers(
+          users.map((u) => (u.id === editingUser.id ? returnedUser : u)),
+        );
+      } else {
+        setUsers([...users, returnedUser]);
+      }
+
+      resetForm();
     } catch (err: any) {
       setFormError(err.message);
     }
+  };
+
+  const resetForm = () => {
+    setIsAdding(false);
+    setEditingUser(null);
+    setUsername("");
+    setPassword("");
+    setFullName("");
+    setRole("staff");
+    setAllowedSections(["frontdesk"]);
+    setFormError(null);
+  };
+
+  const handleEditClick = (user: UserResponse) => {
+    setEditingUser(user);
+    setUsername(user.username);
+    setFullName(user.full_name);
+    setRole(user.role);
+    setAllowedSections(user.allowed_sections || []);
+    setPassword(""); // Clear password field for security
+    setIsAdding(true);
+    // Scroll to form
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const toggleSection = (id: string) => {
@@ -135,7 +173,7 @@ const UserManagement: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={() => setIsAdding(!isAdding)}
+          onClick={() => (isAdding ? resetForm() : setIsAdding(true))}
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition"
         >
           {isAdding ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
@@ -146,7 +184,7 @@ const UserManagement: React.FC = () => {
       {isAdding && (
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xl animate-in slide-in-from-top-4">
           <h3 className="text-lg font-bold text-slate-800 mb-6">
-            New User Details
+            {editingUser ? "Edit User Details" : "New User Details"}
           </h3>
           <form onSubmit={handleAddUser} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -176,10 +214,10 @@ const UserManagement: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-500 uppercase">
-                  Password
+                  Password {editingUser && "(Leave blank to keep current)"}
                 </label>
                 <input
-                  required
+                  required={!editingUser}
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -242,7 +280,7 @@ const UserManagement: React.FC = () => {
                 type="submit"
                 className="px-8 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition shadow-lg"
               >
-                Create User
+                {editingUser ? "Update User" : "Create User"}
               </button>
             </div>
           </form>
@@ -279,19 +317,30 @@ const UserManagement: React.FC = () => {
                     <h3 className="font-bold text-slate-800">
                       {user.full_name || user.username}
                     </h3>
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500"></p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      @{user.username}
+                    </p>
                   </div>
                 </div>
 
-                {user.username !== "admin" && (
+                <div className="flex gap-1">
                   <button
-                    onClick={() => handleDeleteUser(user.id)}
-                    className="text-slate-400 hover:text-rose-500 transition-colors p-2 hover:bg-rose-50 rounded-lg"
-                    title="Remove User"
+                    onClick={() => handleEditClick(user)}
+                    className="text-slate-400 hover:text-indigo-600 transition-colors p-2 hover:bg-indigo-50 rounded-lg"
+                    title="Edit User"
                   >
-                    <Trash2 className="w-5 h-5" />
+                    <Pencil className="w-5 h-5" />
                   </button>
-                )}
+                  {user.username !== "admin" && (
+                    <button
+                      onClick={() => handleDeleteUser(user.id)}
+                      className="text-slate-400 hover:text-rose-500 transition-colors p-2 hover:bg-rose-50 rounded-lg"
+                      title="Remove User"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="mt-4 pt-4 border-t border-slate-100">
