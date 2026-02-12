@@ -3,7 +3,7 @@ services:
     name: hotel-sathi-pms
     env: python
     buildCommand: "npm install && npm run build && pip install -r requirements.txt"
-    startCommand: "gunicorn -k uvicorn.workers.UvicornWorker main:app"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: NODE_VERSION
         value: 18.0.0
