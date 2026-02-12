@@ -1015,6 +1015,7 @@ const App: React.FC = () => {
       description,
       amount: totalAmount,
       category: "F&B",
+      isInclusive: true,
       timestamp: new Date().toISOString(),
       isPaid: false,
       metadata: { items },
@@ -1070,6 +1071,7 @@ const App: React.FC = () => {
         description: `Extra Bed Setup x${count}`,
         amount: totalExtraCharge,
         category: "Other",
+        isInclusive: true,
         timestamp: new Date().toISOString(),
       };
 
