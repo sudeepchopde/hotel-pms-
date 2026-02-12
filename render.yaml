@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: hotel-sathi-pms
+    env: python
+    buildCommand: "npm install && npm run build && pip install -r requirements.txt"
+    startCommand: "gunicorn -k uvicorn.workers.UvicornWorker main:app"
+    envVars:
+      - key: NODE_VERSION
+        value: 18.0.0
+      - key: DATABASE_URL
+        sync: false # Set this in the Render dashboard
+      - key: GEMINI_API_KEY
+        sync: false # Set this in the Render dashboard

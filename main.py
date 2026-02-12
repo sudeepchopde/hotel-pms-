@@ -166,12 +166,20 @@ def get_db():
 
 app = FastAPI(title="Hotel Sathi API")
 
-# Mount Billing folder for PDF access (only if directory can be created)
+# Mount Billing folder for PDF access
 try:
     os.makedirs("Billing", exist_ok=True)
     app.mount("/billing", StaticFiles(directory="Billing"), name="billing")
 except Exception:
-    pass  # Skip on Vercel where filesystem is read-only
+    pass
+
+# Mount Frontend Assets (Vite build output)
+try:
+    if os.path.exists("dist"):
+        app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+        print("✓ Frontend assets mounted")
+except Exception as e:
+    print(f"⚠️ Could not mount assets: {e}")
 
 # Include Channel Manager routes for OTA integrations
 try:
@@ -2829,7 +2837,20 @@ def update_room_status_endpoint(status_data: RoomStatus):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# SPA Catch-all: Redirect all non-API routes to index.html
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    if full_path.startswith("api"):
+        raise HTTPException(status_code=404)
+    
+    index_path = os.path.join("dist", "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"message": "Backend is running. Frontend build (dist/) not found. Build the frontend to see the UI."}
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # Use PORT env var for Render compat
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
 
