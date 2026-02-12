@@ -2837,15 +2837,23 @@ def update_room_status_endpoint(status_data: RoomStatus):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# SPA Catch-all: Redirect all non-API routes to index.html
+# SPA Catch-all: Handled by checking file existence first, otherwise serving index.html
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
+    # Skip API routes entirely
     if full_path.startswith("api"):
         raise HTTPException(status_code=404)
     
+    # 1. Check if the path exists directly in the dist folder (for logo.png, robots.txt, etc)
+    dist_file_path = os.path.join("dist", full_path)
+    if os.path.exists(dist_file_path) and os.path.isfile(dist_file_path):
+        return FileResponse(dist_file_path)
+    
+    # 2. Otherwise, serve index.html for SPA routing
     index_path = os.path.join("dist", "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
+    
     return {"message": "Backend is running. Frontend build (dist/) not found. Build the frontend to see the UI."}
 
 if __name__ == "__main__":
