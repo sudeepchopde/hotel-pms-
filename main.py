@@ -1323,9 +1323,9 @@ def _sync_guest_profile(gd, check_in_date, db):
         db.flush()
         return new_profile.id
 
-@app.get("/")
-def read_root():
-    return {"message": "SyncGuard PMS API", "database": "connected" if USE_DATABASE() else "fallback"}
+# @app.get("/")
+# def read_root():
+#     return {"message": "SyncGuard PMS API", "database": "connected" if USE_DATABASE() else "fallback"}
 
 @app.get("/api/hotels")
 def get_hotels(db=Depends(get_db)):
