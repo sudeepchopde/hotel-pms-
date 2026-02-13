@@ -50,6 +50,8 @@ import {
   PointerSensor,
   KeyboardSensor,
 } from "@dnd-kit/core";
+import { hasPermission } from "../utils";
+import { PERMISSIONS } from "./permissions";
 import { formatDate } from "../utils";
 import {
   RoomType,
@@ -63,6 +65,7 @@ import {
   Payment,
   PropertySettings,
   RoomStatus,
+  UserResponse,
 } from "../types";
 import GuestProfilePage from "./GuestProfilePage";
 import NewBookingModal from "./NewBookingModal";
@@ -84,6 +87,7 @@ interface FrontDeskViewProps {
   roomSecurity?: RoomSecurityStatus[];
   propertySettings: PropertySettings | null;
   roomStatuses?: RoomStatus[];
+  user: UserResponse | null;
 }
 
 const CELL_WIDTH = 140;
@@ -133,6 +137,7 @@ interface DraggableBookingProps {
   onResize?: (newDuration: number) => void;
   onSelect?: (booking: Booking) => void;
   isJustMoved?: boolean;
+  canEdit?: boolean;
 }
 
 const DraggableBooking = ({
@@ -143,11 +148,12 @@ const DraggableBooking = ({
   onResize,
   onSelect,
   isJustMoved,
+  canEdit = true,
 }: DraggableBookingProps) => {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: booking.id,
     data: { ...booking, duration },
-    disabled: false,
+    disabled: !canEdit,
   });
 
   const [localDuration, setLocalDuration] = useState(duration);
@@ -237,7 +243,7 @@ const DraggableBooking = ({
           </div>
         </div>
       </div>
-      {!isOverlay && onResize && (
+      {!isOverlay && onResize && canEdit && (
         <div
           className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize hover:bg-white/10 flex items-center justify-center transition-colors z-20 opacity-0 group-hover:opacity-100"
           onPointerDown={handleResizeStart}
@@ -294,7 +300,10 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
   roomSecurity = [],
   propertySettings,
   roomStatuses = [],
+  user,
 }) => {
+  const canCreate = hasPermission(user, PERMISSIONS.FRONT_DESK.CREATE_BOOKING);
+  const canEdit = hasPermission(user, PERMISSIONS.FRONT_DESK.EDIT_BOOKING);
   const [viewMode, setViewMode] = useState<"day" | "week" | "month">("week");
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
@@ -1635,7 +1644,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                                       </span>
                                     )}
                                   </div>
-                                  <div className="flex-1 space-y-0.5 overflow-hidden">
+                                  <div className="flex-1 space-y-1 overflow-hidden">
                                     {dayBookings.slice(0, 4).map((b) => (
                                       <div
                                         key={b.id}
@@ -1643,13 +1652,13 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                                           e.stopPropagation();
                                           setSelectedBooking(b);
                                         }}
-                                        className={`px-1.5 py-0.5 rounded text-[7px] font-black text-white truncate uppercase tracking-tighter cursor-pointer hover:brightness-110 shadow-sm ${STATUS_STYLES[b.status] || "bg-indigo-600"}`}
+                                        className={`px-2 py-1 rounded-md text-[10px] font-black text-white truncate uppercase tracking-tight cursor-pointer hover:brightness-110 shadow-sm ${STATUS_STYLES[b.status] || "bg-indigo-600"}`}
                                       >
                                         {b.guestName}
                                       </div>
                                     ))}
                                     {dayBookings.length > 4 && (
-                                      <div className="text-[7px] font-black text-indigo-500 text-center uppercase tracking-widest">
+                                      <div className="text-[9px] font-black text-indigo-500 text-center uppercase tracking-widest">
                                         + {dayBookings.length - 4}
                                       </div>
                                     )}
@@ -1663,17 +1672,50 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                           <div className="flex-1 flex flex-col gap-6 animate-in slide-in-from-left-4 duration-500 min-h-0 overflow-y-auto pt-4">
                             <div className="grid grid-cols-1 gap-4">
                               {gridRows.map((row) => {
-                                if (row.type === "header")
+                                if (row.type === "header") {
+                                  const categoryIndex = roomTypes.findIndex(
+                                    (rt) => rt.id === row.id,
+                                  );
+                                  const gradientStyle =
+                                    CATEGORY_GRADIENTS[
+                                      categoryIndex >= 0
+                                        ? categoryIndex %
+                                          CATEGORY_GRADIENTS.length
+                                        : 0
+                                    ];
+                                  const isExpanded =
+                                    effectiveExpandedTypes[row.id];
                                   return (
                                     <div
                                       key={row.id}
-                                      className="pt-4 border-b border-slate-200 pb-2"
+                                      onClick={() => toggleExpand(row.id)}
+                                      className="mt-6 first:mt-0 rounded-2xl shadow-xl px-5 py-3 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] border border-white/20 relative overflow-hidden group"
+                                      style={gradientStyle}
                                     >
-                                      <h3 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em]">
-                                        {row.name}
-                                      </h3>
+                                      <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent pointer-events-none"></div>
+                                      <div className="flex items-center gap-3 relative z-10">
+                                        <div className="p-2 bg-black/20 rounded-lg text-white shadow-inner">
+                                          <Bed className="w-5 h-5" />
+                                        </div>
+                                        <div className="flex flex-col">
+                                          <span className="text-sm font-black text-white uppercase tracking-tight shadow-sm">
+                                            {row.name}
+                                          </span>
+                                          <span className="text-[10px] font-bold text-white/80 uppercase tracking-widest border-l-2 border-white/30 pl-2 mt-0.5">
+                                            {row.capacity || 0} Units
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="p-2 bg-white/20 rounded-lg text-white hover:bg-white/30 transition-colors shadow-sm relative z-10">
+                                        {isExpanded ? (
+                                          <Minimize2 className="w-4 h-4" />
+                                        ) : (
+                                          <Maximize2 className="w-4 h-4" />
+                                        )}
+                                      </div>
                                     </div>
                                   );
+                                }
                                 const dayBooking = getBookingForCell(
                                   row.id,
                                   timelineDates[0],
@@ -1694,13 +1736,13 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                                           onClick={() =>
                                             setSelectedBooking(dayBooking)
                                           }
-                                          className={`w-full h-full flex items-center justify-between px-6 rounded-lg text-white cursor-pointer shadow-lg animate-in fade-in zoom-in-95 ${STATUS_STYLES[dayBooking.status] || "bg-indigo-600"}`}
+                                          className={`w-full h-[60px] flex items-center justify-between px-6 rounded-lg text-white cursor-pointer shadow-lg animate-in fade-in zoom-in-95 ${STATUS_STYLES[dayBooking.status] || "bg-indigo-600"}`}
                                         >
-                                          <div className="flex flex-col">
-                                            <span className="text-sm font-black uppercase tracking-tight">
+                                          <div className="flex flex-col gap-0.5">
+                                            <span className="text-lg font-black uppercase tracking-tight leading-none">
                                               {dayBooking.guestName}
                                             </span>
-                                            <span className="text-[9px] font-bold opacity-80 uppercase tracking-widest">
+                                            <span className="text-[10px] font-bold opacity-80 uppercase tracking-widest leading-tight">
                                               {dayBooking.source} •{" "}
                                               {dayBooking.checkIn} to{" "}
                                               {dayBooking.checkOut}
@@ -2010,7 +2052,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                                             d.toDateString()
                                           }
                                           onClick={() => {
-                                            if (!booking) {
+                                            if (!booking && canCreate) {
                                               setBookingPrefill({
                                                 checkIn: date,
                                                 roomTypeId: row.parentId || "",
@@ -2056,6 +2098,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                                                     booking.id ===
                                                     lastMovedBookingId
                                                   }
+                                                  canEdit={canEdit}
                                                 />
                                               );
                                             })()}
@@ -2315,6 +2358,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
               }
             }}
             onSwitchBooking={(booking) => setSelectedBooking(booking)}
+            user={user}
           />
         )}
 
@@ -2363,6 +2407,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
           syncEvents={syncEvents}
           onCreateBookings={handleCreateBookings}
           prefill={bookingPrefill}
+          user={user}
         />
       </div>
     </DndContext>

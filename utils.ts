@@ -18,3 +18,27 @@ export const formatTime = (timeString: string | undefined): string => {
   if (!timeString) return "";
   return timeString; // Currently just returns as is, can be enhanced if needed
 };
+
+import { UserResponse } from "./types";
+
+export const hasPermission = (
+  user: UserResponse | null,
+  requiredAction: string,
+): boolean => {
+  if (!user) return false;
+  if (user.role === "admin") return true;
+
+  // Check for exact permission match
+  if (user.allowed_sections && user.allowed_sections.includes(requiredAction)) {
+    return true;
+  }
+
+  // Check for legacy Section-based access
+  // e.g. if requiredAction is 'frontdesk:view', and user has 'frontdesk', allow it.
+  const sectionName = requiredAction.split(":")[0];
+  if (user.allowed_sections && user.allowed_sections.includes(sectionName)) {
+    return true;
+  }
+
+  return false;
+};

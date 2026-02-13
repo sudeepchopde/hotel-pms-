@@ -22,7 +22,13 @@ import {
   RotateCcw,
   Globe,
 } from "lucide-react";
-import { RoomType, Booking, SyncEvent, GuestDetails } from "../types";
+import {
+  RoomType,
+  Booking,
+  SyncEvent,
+  GuestDetails,
+  UserResponse,
+} from "../types";
 import { lookupGuest } from "../api";
 
 interface NewBookingModalProps {
@@ -44,6 +50,7 @@ interface NewBookingModalProps {
     source?: "Direct" | "MMT" | "Booking.com" | "Expedia";
   }) => void;
   prefill?: { checkIn: string; roomTypeId: string; roomId?: string } | null;
+  user?: UserResponse | null;
 }
 
 export default function NewBookingModal({

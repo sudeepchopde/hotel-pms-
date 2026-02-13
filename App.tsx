@@ -1475,6 +1475,7 @@ const App: React.FC = () => {
             roomSecurity={roomSecurity}
             propertySettings={propertySettings}
             roomStatuses={roomStatuses}
+            user={user}
           />
         )}
         {activeTab === "guests" && (

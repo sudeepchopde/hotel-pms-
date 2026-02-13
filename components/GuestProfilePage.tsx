@@ -63,7 +63,10 @@ import {
   GuestDetails,
   Payment,
   PropertySettings,
+  UserResponse,
 } from "../types";
+import { hasPermission } from "../utils";
+import { PERMISSIONS } from "./permissions";
 import { formatDate } from "../utils";
 import { fetchGuestHistory, updateBooking, lookupGuest } from "../api";
 import { NATIONALITIES } from "../constants";
@@ -99,6 +102,7 @@ interface GuestProfilePageProps {
   onUpdatePayments?: (bookingId: string, payments: Payment[]) => void;
   onUpdateBooking?: (booking: Booking) => void;
   propertySettings: PropertySettings | null;
+  user?: UserResponse | null;
 }
 
 const STATUS_OPTIONS = [
@@ -157,10 +161,18 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   onUpdatePayments,
   onUpdateBooking,
   propertySettings,
+  user,
 }) => {
   const [activeSide, setActiveSide] = useState<
     "front" | "back" | "visa" | "additional"
   >("front");
+
+  const canEdit = hasPermission(user, PERMISSIONS.FRONT_DESK.EDIT_BOOKING);
+  const canDelete = hasPermission(user, PERMISSIONS.FRONT_DESK.DELETE_BOOKING);
+  const canCheckIn = hasPermission(user, PERMISSIONS.FRONT_DESK.CHECK_IN);
+  const canCheckOut = hasPermission(user, PERMISSIONS.FRONT_DESK.CHECK_OUT);
+  const canRefund = hasPermission(user, PERMISSIONS.FRONT_DESK.PROCESS_REFUND);
+
   const [activeAdditionalIndex, setActiveAdditionalIndex] = useState<number>(0);
   const [isUpdatingBeds, setIsUpdatingBeds] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -1995,6 +2007,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           onChange={(e) =>
                             handleInputChange("name", e.target.value)
                           }
+                          disabled={!canEdit}
                           placeholder="Guest Name"
                           className={`text-4xl font-black text-slate-900 tracking-tight leading-tight bg-transparent border-b-2 transition-all px-2 flex-1 outline-none ring-offset-4 rounded-lg ${validationErrors.includes("Full Name") ? "border-rose-300 bg-rose-50 ring-2 ring-rose-200" : "border-transparent hover:border-indigo-300 focus:border-indigo-600"}`}
                         />
@@ -2032,11 +2045,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         {!isAddingAccessory && (
                           <button
                             onClick={() => onToggleVIP?.(booking.id)}
+                            disabled={!canEdit}
                             className={`p-1.5 rounded-lg transition-all shadow-sm border ${
                               booking.isVIP
                                 ? "bg-violet-100 border-violet-200 text-violet-600"
                                 : "bg-white border-slate-200 text-slate-400 hover:text-slate-600"
-                            }`}
+                            } ${!canEdit ? "opacity-50 cursor-not-allowed" : ""}`}
                           >
                             <Star
                               className={`w-4 h-4 ${booking.isVIP ? "fill-current" : ""}`}
@@ -2070,6 +2084,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           onChange={(e) =>
                             handleInputChange("phoneNumber", e.target.value)
                           }
+                          disabled={!canEdit}
                           onBlur={() =>
                             setTimeout(() => setShowLookupDropdown(false), 200)
                           }
@@ -2141,6 +2156,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                             e.target.value,
                           )
                         }
+                        disabled={!canEdit}
                         placeholder="Full Name"
                         className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
                       />
@@ -2161,6 +2177,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         onChange={(e) =>
                           handleInputChange("nationality", e.target.value)
                         }
+                        disabled={!canEdit}
                         className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0 appearance-none cursor-pointer"
                       >
                         <option value="Indian">Indian</option>
@@ -2198,6 +2215,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         onChange={(e) =>
                           handleInputChange("email", e.target.value)
                         }
+                        disabled={!canEdit}
                         placeholder="Optional"
                         className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
                       />
@@ -2219,6 +2237,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         onChange={(e) =>
                           handleInputChange("dob", e.target.value)
                         }
+                        disabled={!canEdit}
                         className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0"
                       />
                     </div>
@@ -2238,6 +2257,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         onChange={(e) =>
                           handleInputChange("gender", e.target.value)
                         }
+                        disabled={!canEdit}
                         className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 tabular-nums focus:ring-0 appearance-none cursor-pointer"
                       >
                         <option>Male</option>
@@ -2262,6 +2282,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           onChange={(e) =>
                             handleInputChange("idType", e.target.value)
                           }
+                          disabled={!canEdit}
                           className={`bg-transparent border-none p-0 text-[10px] font-black uppercase tracking-widest focus:ring-0 appearance-none cursor-pointer transition-colors ${validationErrors.includes("ID Type") ? "text-rose-600" : "text-slate-600"}`}
                         >
                           <option value="">Select ID Type</option>
@@ -2282,6 +2303,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         onChange={(e) =>
                           handleInputChange("idNumber", e.target.value)
                         }
+                        disabled={!canEdit}
                         placeholder="Document #"
                         className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-700 tabular-nums focus:ring-0 placeholder:text-slate-300"
                       />
@@ -2297,6 +2319,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       className="hidden"
                       accept="image/*"
                       onChange={handleFileUpload}
+                      disabled={!canEdit}
                     />
 
                     {isCameraActive ? (
@@ -2503,31 +2526,37 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
                   {/* ACTION BUTTONS - Below ID Image */}
                   <div className="flex flex-col gap-3 mt-4">
-                    <button
-                      onClick={() => startCamera("scan_front")}
-                      className="w-full py-3 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-lg"
-                    >
-                      <Camera className="w-4 h-4" />
-                      Scan ID
-                    </button>
-                    <button
-                      onClick={() => startCamera("scan_form")}
-                      className="w-full py-3 bg-slate-700 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-600 transition-all flex items-center justify-center gap-2 shadow-lg"
-                    >
-                      <ScanLine className="w-4 h-4" />
-                      Scan Doc
-                    </button>
+                    {canEdit && (
+                      <button
+                        onClick={() => startCamera("scan_front")}
+                        className="w-full py-3 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-lg"
+                      >
+                        <Camera className="w-4 h-4" />
+                        Scan ID
+                      </button>
+                    )}
+                    {canEdit && (
+                      <button
+                        onClick={() => startCamera("scan_form")}
+                        className="w-full py-3 bg-slate-700 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-600 transition-all flex items-center justify-center gap-2 shadow-lg"
+                      >
+                        <ScanLine className="w-4 h-4" />
+                        Scan Doc
+                      </button>
+                    )}
                     {isAddingAccessory && (
                       <>
-                        <button
-                          onClick={handleCheckInNow}
-                          className="w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white"
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                          {editingAccessoryIndex !== null
-                            ? "Save Changes"
-                            : "Save Co-Guest"}
-                        </button>
+                        {canEdit && (
+                          <button
+                            onClick={handleCheckInNow}
+                            className="w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                            {editingAccessoryIndex !== null
+                              ? "Save Changes"
+                              : "Save Co-Guest"}
+                          </button>
+                        )}
                         <button
                           onClick={resetToPrimaryGuest}
                           className="w-full py-3 bg-slate-100 text-slate-500 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-200 transition-all border border-slate-200"
@@ -3305,7 +3334,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         <Receipt className="w-4 h-4" /> Receipt PDF
                       </a>
                     )}
-                    {booking.status === "CheckedIn" && (
+                    {booking.status === "CheckedIn" && canCheckOut && (
                       <button
                         onClick={handleCheckout}
                         className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-emerald-900/40"
@@ -3315,13 +3344,15 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     )}
                     <button
                       onClick={() => setShowDiscountModal(true)}
-                      className="px-5 py-2.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 rounded-xl text-[10px] font-black uppercase tracking-widest border border-rose-500/30 transition-all flex items-center gap-2"
+                      disabled={!canEdit}
+                      className={`px-5 py-2.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 rounded-xl text-[10px] font-black uppercase tracking-widest border border-rose-500/30 transition-all flex items-center gap-2 ${!canEdit ? "opacity-50 cursor-not-allowed" : ""}`}
                     >
                       <Tag className="w-4 h-4" /> Discount
                     </button>
                     <button
                       onClick={() => setShowAddChargeModal(true)}
-                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-indigo-900/40"
+                      disabled={!canEdit}
+                      className={`px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-indigo-900/40 ${!canEdit ? "opacity-50 cursor-not-allowed" : ""}`}
                     >
                       <Plus className="w-4 h-4" /> Add Charge
                     </button>
@@ -3372,7 +3403,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                               setPaymentCategory("Partial");
                               setShowPaymentModal(true);
                             }}
-                            className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-xl shadow-indigo-900/40 transition-all active:scale-95"
+                            disabled={!canEdit}
+                            className={`flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-xl shadow-indigo-900/40 transition-all active:scale-95 ${!canEdit ? "opacity-50 cursor-not-allowed" : ""}`}
                           >
                             Pay Full Balance
                           </button>
@@ -3384,7 +3416,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                             setPaymentCategory("Partial");
                             setShowPaymentModal(true);
                           }}
-                          className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white text-[10px] font-black uppercase tracking-widest rounded-xl border border-white/10 transition-all"
+                          disabled={!canEdit}
+                          className={`flex-1 py-3 bg-white/10 hover:bg-white/20 text-white text-[10px] font-black uppercase tracking-widest rounded-xl border border-white/10 transition-all ${!canEdit ? "opacity-50 cursor-not-allowed" : ""}`}
                         >
                           Partial Pay
                         </button>
@@ -3550,7 +3583,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                           setPaymentCategory(p.category);
                                           setShowPaymentModal(true);
                                         }}
-                                        className="p-1 hover:bg-white/10 rounded"
+                                        disabled={!canEdit}
+                                        className={`p-1 hover:bg-white/10 rounded ${!canEdit ? "opacity-50 cursor-not-allowed" : ""}`}
                                         title="Edit Payment"
                                       >
                                         <Edit3 className="w-2.5 h-2.5 text-slate-500" />
@@ -3665,8 +3699,10 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                     </p>
                                   )}
                                   <button
-                                    className={`text-[8px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5 transition-all px-2 py-1 rounded-md mt-1.5 ${item.isPaid ? "text-emerald-400 bg-emerald-400/10 border border-emerald-400/30" : "text-rose-400 bg-rose-400/10 border border-rose-400/30 animate-pulse"} `}
+                                    className={`text-[8px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5 transition-all px-2 py-1 rounded-md mt-1.5 ${item.isPaid ? "text-emerald-400 bg-emerald-400/10 border border-emerald-400/30" : "text-rose-400 bg-rose-400/10 border border-rose-400/30 animate-pulse"} ${!canEdit ? "opacity-50 cursor-not-allowed" : ""}`}
+                                    disabled={!canEdit}
                                     onClick={() => {
+                                      if (!canEdit) return;
                                       if (item.isPaid) {
                                         const newFolio = (
                                           booking.folio || []
@@ -3729,7 +3765,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                       onUpdateFolio?.(booking.id, newFolio);
                                     }
                                   }}
-                                  className="p-2 text-white/10 hover:text-rose-400 hover:bg-white/5 rounded-xl transition-all opacity-0 group-hover/item:opacity-100"
+                                  disabled={!canDelete}
+                                  className={`p-2 text-white/10 hover:text-rose-400 hover:bg-white/5 rounded-xl transition-all opacity-0 group-hover/item:opacity-100 ${!canDelete ? "hidden" : ""}`}
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>

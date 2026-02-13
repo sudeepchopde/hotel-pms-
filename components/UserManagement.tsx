@@ -9,25 +9,10 @@ import {
   X,
   Loader2,
   Pencil,
+  ChevronDown,
 } from "lucide-react";
 import { UserResponse } from "../types";
-
-// Navigation items for permission selection
-const NAV_SECTIONS = [
-  // Core Operational Sections
-  { id: "frontdesk", label: "Front Desk" },
-  { id: "dashboard", label: "Dashboard" },
-  { id: "guests", label: "Guests" },
-  { id: "kitchen", label: "Kitchen" },
-  { id: "housekeeping", label: "Housekeeping" },
-  { id: "compliance", label: "Compliance" },
-  { id: "security", label: "Security" },
-  { id: "analysis", label: "Analysis" },
-  { id: "reports", label: "Reports" },
-
-  // Settings Hub Sections
-  { id: "settings_hub", label: "Settings" },
-];
+import { PERMISSION_GROUPS } from "./permissions";
 
 const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<UserResponse[]>([]);
@@ -40,10 +25,9 @@ const UserManagement: React.FC = () => {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState("staff");
-  const [allowedSections, setAllowedSections] = useState<string[]>([
-    "frontdesk",
-  ]);
+  const [allowedSections, setAllowedSections] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
 
   useEffect(() => {
     fetchUsers();
@@ -74,7 +58,6 @@ const UserManagement: React.FC = () => {
       allowed_sections: role === "admin" ? [] : allowedSections,
     };
 
-    // Only include password if it's a new user or if password field is filled for an existing user
     if (!editingUser || password) {
       payload.password = password;
     }
@@ -119,8 +102,9 @@ const UserManagement: React.FC = () => {
     setPassword("");
     setFullName("");
     setRole("staff");
-    setAllowedSections(["frontdesk"]);
+    setAllowedSections([]);
     setFormError(null);
+    setExpandedGroups([]);
   };
 
   const handleEditClick = (user: UserResponse) => {
@@ -128,28 +112,50 @@ const UserManagement: React.FC = () => {
     setUsername(user.username);
     setFullName(user.full_name);
     setRole(user.role);
+
+    // Flatten permissions - handle legacy "section-only" permissions if needed
+    // In a real migration, we might map 'frontdesk' to all frontdesk permissions
+    // For now, we assume user.allowed_sections contains granular permissions or section IDs
     setAllowedSections(user.allowed_sections || []);
-    setPassword(""); // Clear password field for security
+
+    setPassword("");
     setIsAdding(true);
-    // Scroll to form
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const toggleSection = (id: string) => {
-    if (allowedSections.includes(id)) {
-      setAllowedSections(allowedSections.filter((s) => s !== id));
+  const togglePermission = (permId: string) => {
+    if (allowedSections.includes(permId)) {
+      setAllowedSections(allowedSections.filter((s) => s !== permId));
     } else {
-      // If adding settings_hub, we can cleanup old individual permissions if they exist
-      if (id === "settings_hub") {
-        setAllowedSections([
-          ...allowedSections.filter(
-            (s) => !["users", "setup", "rules", "settings"].includes(s),
-          ),
-          id,
-        ]);
-      } else {
-        setAllowedSections([...allowedSections, id]);
-      }
+      setAllowedSections([...allowedSections, permId]);
+    }
+  };
+
+  const toggleGroup = (groupId: string) => {
+    // Determine if we are selecting all or deselecting all
+    const group = PERMISSION_GROUPS.find((g) => g.id === groupId);
+    if (!group) return;
+
+    const allPermissionIds = group.actions.map((a) => a.id);
+    const hasAll = allPermissionIds.every((id) => allowedSections.includes(id));
+
+    if (hasAll) {
+      // Deselect all
+      setAllowedSections(
+        allowedSections.filter((s) => !allPermissionIds.includes(s)),
+      );
+    } else {
+      // Select all (merge checking for duplicates)
+      const newSections = new Set([...allowedSections, ...allPermissionIds]);
+      setAllowedSections(Array.from(newSections));
+    }
+  };
+
+  const toggleGroupExpand = (groupId: string) => {
+    if (expandedGroups.includes(groupId)) {
+      setExpandedGroups(expandedGroups.filter((id) => id !== groupId));
+    } else {
+      setExpandedGroups([...expandedGroups, groupId]);
     }
   };
 
@@ -248,30 +254,85 @@ const UserManagement: React.FC = () => {
             </div>
 
             {role === "staff" && (
-              <div className="space-y-3">
-                <label className="text-xs font-bold text-slate-500 uppercase">
-                  Allowed Sections
+              <div className="space-y-4 pt-4 border-t border-slate-100">
+                <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">
+                  Permissions & Access Control
                 </label>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {NAV_SECTIONS.map((section) => (
-                    <button
-                      type="button"
-                      key={section.id}
-                      onClick={() => toggleSection(section.id)}
-                      className={`p-3 rounded-xl border text-left transition-all ${
-                        allowedSections.includes(section.id)
-                          ? "bg-indigo-50 border-indigo-500 text-indigo-700 font-bold"
-                          : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm">{section.label}</span>
-                        {allowedSections.includes(section.id) && (
-                          <Check className="w-4 h-4" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {PERMISSION_GROUPS.map((group) => {
+                    const allActionIds = group.actions.map((a) => a.id);
+                    const selectedCount = allActionIds.filter((id) =>
+                      allowedSections.includes(id),
+                    ).length;
+                    const isAllSelected = selectedCount === allActionIds.length;
+                    const isExpanded = expandedGroups.includes(group.id);
+
+                    return (
+                      <div
+                        key={group.id}
+                        className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50"
+                      >
+                        <div className="p-3 bg-white border-b border-slate-100 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={isAllSelected}
+                              ref={(input) => {
+                                if (input) {
+                                  input.indeterminate =
+                                    selectedCount > 0 &&
+                                    selectedCount < allActionIds.length;
+                                }
+                              }}
+                              onChange={() => toggleGroup(group.id)}
+                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            />
+                            <div
+                              className="cursor-pointer"
+                              onClick={() => toggleGroupExpand(group.id)}
+                            >
+                              <h4 className="font-bold text-slate-700 text-sm">
+                                {group.label}
+                              </h4>
+                              <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">
+                                {group.description}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleGroupExpand(group.id)}
+                            className="p-1 hover:bg-slate-100 rounded text-slate-400"
+                          >
+                            <ChevronDown
+                              className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                            />
+                          </button>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="p-3 bg-slate-50 grid gap-2 animate-in slide-in-from-top-1">
+                            {group.actions.map((action) => (
+                              <label
+                                key={action.id}
+                                className="flex items-center gap-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer border border-transparent hover:border-slate-100"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={allowedSections.includes(action.id)}
+                                  onChange={() => togglePermission(action.id)}
+                                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <span className="text-xs font-bold text-slate-600">
+                                  {action.label}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
                         )}
                       </div>
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -352,29 +413,51 @@ const UserManagement: React.FC = () => {
 
               <div className="mt-4 pt-4 border-t border-slate-100">
                 <p className="text-xs text-slate-400 font-bold uppercase mb-2">
-                  Access
+                  Access & Permissions
                 </p>
                 {user.role === "admin" ? (
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    Full Access
+                    Full Admin Access
                   </span>
                 ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {user.allowed_sections &&
-                    user.allowed_sections.length > 0 ? (
-                      user.allowed_sections.map((sec) => (
-                        <span
-                          key={sec}
-                          className="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 uppercase"
-                        >
-                          {NAV_SECTIONS.find((n) => n.id === sec)?.label || sec}
-                        </span>
-                      ))
-                    ) : (
+                  <div className="space-y-2">
+                    {(!user.allowed_sections ||
+                      user.allowed_sections.length === 0) && (
                       <span className="text-xs text-slate-400 italic">
-                        No sections assigned
+                        No permissions assigned
                       </span>
                     )}
+                    {PERMISSION_GROUPS.map((group) => {
+                      const groupActions = group.actions.map((a) => a.id);
+                      const userActions =
+                        user.allowed_sections?.filter((s) =>
+                          groupActions.includes(s),
+                        ) || [];
+                      if (userActions.length === 0) return null;
+
+                      return (
+                        <div key={group.id} className="flex items-start gap-2">
+                          <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded uppercase shrink-0 min-w-[80px] text-center">
+                            {group.label}
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {userActions.map((actionId) => {
+                              const actionLabel = group.actions.find(
+                                (a) => a.id === actionId,
+                              )?.label;
+                              return (
+                                <span
+                                  key={actionId}
+                                  className="text-[10px] text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded"
+                                >
+                                  {actionLabel || actionId}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
