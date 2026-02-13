@@ -1974,16 +1974,17 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   <div className="flex-1 flex flex-col md:flex-row md:items-end justify-between gap-6">
                     <div className="flex flex-col gap-3">
                       {isAddingAccessory && (
-                        <div className="flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full w-fit mb-2 border border-indigo-100 animate-in fade-in slide-in-from-left-2 transition-all">
-                          <Users className="w-3 h-3" />
-                          <span className="text-[9px] font-black uppercase tracking-[0.2em]">
-                            Editing Co-Guest Mode
+                        <div className="flex items-center gap-3 px-5 py-2.5 bg-indigo-600 text-white rounded-full w-fit mb-4 border-2 border-indigo-400 shadow-xl shadow-indigo-500/20 animate-in fade-in slide-in-from-left-4 transition-all group/badge">
+                          <Users className="w-4 h-4 animate-pulse" />
+                          <span className="text-[10px] font-black uppercase tracking-[0.2em]">
+                            Active: Editing Co-Guest Mode
                           </span>
                           <button
                             onClick={resetToPrimaryGuest}
-                            className="ml-2 hover:text-indigo-800"
+                            className="ml-2 p-1.5 bg-white/20 hover:bg-white text-indigo-600 rounded-full transition-all hover:rotate-90"
+                            title="Exit Editing Mode"
                           >
-                            <X className="w-3 h-3" />
+                            <X className="w-4 h-4" />
                           </button>
                         </div>
                       )}
