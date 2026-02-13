@@ -49,6 +49,7 @@ import {
   PointerSensor,
   KeyboardSensor,
 } from "@dnd-kit/core";
+import { formatDate } from "../utils";
 import {
   RoomType,
   SyncEvent,
@@ -745,6 +746,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
 
     try {
       await updateBooking(updated);
+      (window as any).__refreshDashboardData?.();
     } catch (err: any) {
       console.error("Failed to persist status update", err);
       setToastMessage(`Persistence Error: ${err.message}`);
@@ -841,6 +843,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
       await updateBooking(updated);
       setToastMessage("Folio updated successfully");
       setTimeout(() => setToastMessage(null), 3000);
+      (window as any).__refreshDashboardData?.();
     } catch (err: any) {
       console.error("Failed to update folio", err);
       setToastMessage(`Persistence Error: ${err.message}`);
@@ -1125,6 +1128,9 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
       setToastMessage(`Successfully booked ${savedBookings.length} rooms!`);
       setTimeout(() => setToastMessage(null), 3000);
 
+      // Trigger immediate notification check for better UX
+      (window as any).__refreshDashboardData?.();
+
       // Trigger Fan-Out for each booking in the multi-room set
       savedBookings.forEach((booking) => {
         simulateFanOut(
@@ -1370,15 +1376,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                           </p>
                           <div className="flex items-center justify-between">
                             <p className="text-[10px] font-bold text-slate-500">
-                              {new Date(b.checkIn).toLocaleDateString([], {
-                                month: "short",
-                                day: "numeric",
-                              })}{" "}
-                              -{" "}
-                              {new Date(b.checkOut).toLocaleDateString([], {
-                                month: "short",
-                                day: "numeric",
-                              })}
+                              {formatDate(b.checkIn)} - {formatDate(b.checkOut)}
                             </p>
                             <div className="flex items-center gap-1 text-[9px] font-black text-indigo-400 opacity-0 group-hover:opacity-100 transition-all">
                               MAPPING <ArrowRightCircle className="w-3 h-3" />

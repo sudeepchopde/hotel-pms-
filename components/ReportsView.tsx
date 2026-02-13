@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Booking, RoomType } from "../types";
 import { API_BASE_URL } from "../api";
+import { formatDate } from "../utils";
 
 const CHANNELS = ["All", "Booking.com", "MMT", "Expedia", "Direct"];
 
@@ -192,15 +193,7 @@ const ReportsView: React.FC = () => {
     }, 0);
   }, [filteredData]);
 
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return "-";
-    try {
-      const [year, month, day] = dateStr.split("T")[0].split("-");
-      return `${day}/${month}/${year.slice(2)}`;
-    } catch (e) {
-      return dateStr;
-    }
-  };
+  // Removed internal formatDate function and using the imported utility instead.
 
   if (loading) {
     return (

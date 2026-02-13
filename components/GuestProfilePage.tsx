@@ -64,6 +64,7 @@ import {
   Payment,
   PropertySettings,
 } from "../types";
+import { formatDate } from "../utils";
 import { fetchGuestHistory, updateBooking, lookupGuest } from "../api";
 import { NATIONALITIES } from "../constants";
 
@@ -1696,8 +1697,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       id: booking.id,
       roomNumber: booking.roomNumber || "Unassigned",
       nationality: details?.nationality || "________________",
-      checkIn: booking.checkIn,
-      checkOut: booking.checkOut,
+      checkIn: formatDate(booking.checkIn),
+      checkOut: formatDate(booking.checkOut),
       phone: details?.phoneNumber || "________________",
       email: details?.email || "________________",
       address:
@@ -1959,8 +1960,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       >
         <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 pb-24">
           <div className="lg:col-span-2 space-y-8">
-            <section className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
-              <div className="flex items-start justify-between mb-8">
+            <section className="bg-white rounded-[2.5rem] border border-slate-200 p-6 shadow-sm">
+              <div className="flex items-start justify-between mb-5">
                 <div className="flex items-center gap-6">
                   <div className="w-20 h-20 bg-indigo-50 rounded-3xl flex items-center justify-center text-indigo-600 shadow-inner relative overflow-hidden">
                     <User className="w-10 h-10" />
@@ -2007,32 +2008,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       <div className="flex items-center gap-4 text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50/50 px-3 py-1.5 rounded-xl border border-indigo-100/50 w-fit">
                         <div className="flex items-center gap-1.5">
                           <Clock className="w-3 h-3" />
-                          <span>
-                            In:{" "}
-                            {new Date(booking.checkIn).toLocaleDateString(
-                              "en-US",
-                              {
-                                day: "numeric",
-                                month: "short",
-                                year: "numeric",
-                              },
-                            )}
-                          </span>
+                          <span>In: {formatDate(booking.checkIn)}</span>
                         </div>
                         <div className="w-1 h-1 rounded-full bg-indigo-200" />
                         <div className="flex items-center gap-1.5">
                           <LogOut className="w-3 h-3" />
-                          <span>
-                            Out:{" "}
-                            {new Date(booking.checkOut).toLocaleDateString(
-                              "en-US",
-                              {
-                                day: "numeric",
-                                month: "short",
-                                year: "numeric",
-                              },
-                            )}
-                          </span>
+                          <span>Out: {formatDate(booking.checkOut)}</span>
                         </div>
                       </div>
 
@@ -2067,18 +2048,18 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                <div className="space-y-2">
                   {/* Row 1: Mobile and Father's Name side by side */}
                   {/* Mobile Number Field */}
                   <div
-                    className={`flex items-center gap-3 group p-4 rounded-2xl transition-all ${validationErrors.includes("Mobile Number") ? "bg-rose-50 ring-2 ring-rose-200" : ""}`}
+                    className={`flex items-center gap-3 group py-2.5 px-4 rounded-2xl transition-all ${validationErrors.includes("Mobile Number") ? "bg-rose-50 ring-2 ring-rose-200" : ""}`}
                   >
-                    <div className="p-2.5 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors">
+                    <div className="p-2 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors">
                       <Smartphone className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0 relative">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
                         Mobile Number
                       </p>
                       <div className="flex items-center gap-2">
@@ -2142,12 +2123,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   </div>
 
                   {/* Father's/Husband's Name Field */}
-                  <div className="flex items-center gap-3 group p-4 rounded-2xl transition-all">
-                    <div className="p-2.5 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors">
+                  <div className="flex items-center gap-3 group py-2.5 px-4 rounded-2xl transition-all">
+                    <div className="p-2 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors">
                       <Users className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
                         Father's/Husband's Name
                       </p>
                       <input
@@ -2166,12 +2147,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   </div>
 
                   {/* Nationality Field */}
-                  <div className="flex items-center gap-3 group p-4 rounded-2xl transition-all">
-                    <div className="p-2.5 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors">
+                  <div className="flex items-center gap-3 group py-2.5 px-4 rounded-2xl transition-all">
+                    <div className="p-2 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors">
                       <Globe className="w-4 h-4" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
                         Nationality
                       </p>
                       <select
@@ -2202,12 +2183,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   </div>
 
                   {/* Email Field */}
-                  <div className="flex items-center gap-3 group p-4 rounded-2xl transition-all">
-                    <div className="p-2.5 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors">
+                  <div className="flex items-center gap-3 group py-2.5 px-4 rounded-2xl transition-all">
+                    <div className="p-2 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors">
                       <Mail className="w-4 h-4" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
                         Email Address
                       </p>
                       <input
@@ -2223,12 +2204,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   </div>
 
                   {/* Date of Birth Field */}
-                  <div className="flex items-center gap-3 group p-4 rounded-2xl transition-all">
-                    <div className="p-2.5 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors">
+                  <div className="flex items-center gap-3 group py-2.5 px-4 rounded-2xl transition-all">
+                    <div className="p-2 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors">
                       <Calendar className="w-4 h-4" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
                         Date of Birth
                       </p>
                       <input
@@ -2243,12 +2224,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   </div>
 
                   {/* Gender Field */}
-                  <div className="flex items-center gap-3 group p-4 rounded-2xl transition-all">
-                    <div className="p-2.5 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors">
+                  <div className="flex items-center gap-3 group py-2.5 px-4 rounded-2xl transition-all">
+                    <div className="p-2 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors">
                       <User className="w-4 h-4" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
                         Gender
                       </p>
                       <select
@@ -2266,9 +2247,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-6">
+                <div className="space-y-3">
                   <div
-                    className={`flex items-center gap-4 group p-4 rounded-2xl transition-all ${validationErrors.includes("ID Number") || validationErrors.includes("ID Type") ? "bg-rose-50 ring-2 ring-rose-200" : ""}`}
+                    className={`flex items-center gap-4 group py-2.5 px-4 rounded-2xl transition-all ${validationErrors.includes("ID Number") || validationErrors.includes("ID Type") ? "bg-rose-50 ring-2 ring-rose-200" : ""}`}
                   >
                     <div className="p-3 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-colors">
                       <FileBadge className="w-5 h-5" />
@@ -2280,7 +2261,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           onChange={(e) =>
                             handleInputChange("idType", e.target.value)
                           }
-                          className={`bg-transparent border-none p-0 text-[10px] font-black uppercase tracking-widest focus:ring-0 appearance-none cursor-pointer transition-colors ${validationErrors.includes("ID Type") ? "text-rose-600" : "text-slate-400"}`}
+                          className={`bg-transparent border-none p-0 text-[10px] font-black uppercase tracking-widest focus:ring-0 appearance-none cursor-pointer transition-colors ${validationErrors.includes("ID Type") ? "text-rose-600" : "text-slate-600"}`}
                         >
                           <option value="">Select ID Type</option>
                           <option>Aadhar</option>
@@ -2566,10 +2547,10 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               </div>
 
               {/* Consolidated Stay Details & Address */}
-              <div className="mt-6">
+              <div className="mt-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
+                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1">
                       Purpose of Visit
                     </p>
                     <select
@@ -2586,8 +2567,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       <option>Transit</option>
                     </select>
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
+                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1">
                       Arrived From
                     </p>
                     <input
@@ -2600,8 +2581,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
                     />
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
+                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1">
                       Arrival Time
                     </p>
                     <input
@@ -2613,8 +2594,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
                     />
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
+                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1">
                       Next Destination
                     </p>
                     <input
@@ -2627,8 +2608,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-700 focus:ring-0"
                     />
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col">
+                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1">
                       Departure Date
                     </p>
                     <input
@@ -2638,9 +2619,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-400 focus:ring-0"
                     />
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
                     <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1">
                         Digital Signature
                       </p>
                       {editableDetails.signature ? (
@@ -2657,9 +2638,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     </div>
                   </div>
                   <div
-                    className={`p-4 bg-slate-50 rounded-2xl border border-slate-100 md:col-span-3 transition-all ${validationErrors.includes("Address") ? "bg-rose-50 ring-2 ring-rose-200" : ""}`}
+                    className={`p-3 bg-slate-50 rounded-2xl border border-slate-100 md:col-span-3 transition-all ${validationErrors.includes("Address") ? "bg-rose-50 ring-2 ring-rose-200" : ""}`}
                   >
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2">
                       Permanent Residential Address
                     </p>
                     <textarea
@@ -3187,19 +3168,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                               <div className="space-y-2">
                                 <div className="flex items-center gap-3">
                                   <p className="text-base font-black text-slate-800 tracking-tight">
-                                    {checkIn.toLocaleDateString(undefined, {
-                                      day: "numeric",
-                                      month: "long",
-                                      year: "numeric",
-                                    })}
+                                    {formatDate(past.checkIn)}
                                   </p>
                                   <ArrowRightCircle className="w-4 h-4 text-slate-300" />
                                   <p className="text-sm font-bold text-slate-400">
-                                    {checkOut.toLocaleDateString(undefined, {
-                                      day: "numeric",
-                                      month: "long",
-                                      year: "numeric",
-                                    })}
+                                    {formatDate(past.checkOut)}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-4">
@@ -4092,8 +4065,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
             </section>
 
             {/* EXTRA BED MANAGEMENT */}
-            <section className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
-              <div className="flex items-center justify-between mb-6">
+            <section className="bg-white rounded-[2.5rem] border border-slate-200 p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3">
                   <Sofa className="w-5 h-5 text-indigo-500" />
                   Extra Bedding
@@ -4109,7 +4082,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     <Bed className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
                       Stay Units
                     </p>
                     <p
@@ -4154,7 +4127,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 <h3 className="text-lg font-black text-slate-900 tracking-tight">
                   Transfer Room
                 </h3>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                <p className="text-xs text-slate-600 font-bold uppercase tracking-widest mt-0.5">
                   Move guest or switch room mid-stay
                 </p>
               </div>
@@ -4180,7 +4153,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     Stay Duration
                   </p>
                   <p className="text-sm font-bold text-slate-700 uppercase">
-                    {booking.checkIn} → {booking.checkOut}
+                    {formatDate(booking.checkIn)} →{" "}
+                    {formatDate(booking.checkOut)}
                   </p>
                 </div>
               </div>

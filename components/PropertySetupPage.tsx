@@ -923,69 +923,6 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                 </div>
               </div>
             </section>
-
-            {/* Payment Gateway Section - Links to dedicated settings */}
-            <section className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center text-purple-600">
-                    <IndianRupee className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-black text-slate-900 tracking-tight">
-                      Payment Gateway
-                    </h3>
-                    <p className="text-xs text-slate-500 font-medium">
-                      Easebuzz & Razorpay integration for online payments.
-                    </p>
-                  </div>
-                </div>
-                <div
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold ${
-                    profileFormData.razorpayKeyId &&
-                    profileFormData.razorpayKeySecret
-                      ? "bg-emerald-100 text-emerald-700"
-                      : "bg-slate-100 text-slate-500"
-                  }`}
-                >
-                  {profileFormData.razorpayKeyId &&
-                  profileFormData.razorpayKeySecret
-                    ? "Configured"
-                    : "Not Configured"}
-                </div>
-              </div>
-
-              <div className="p-6 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-3xl border border-purple-100">
-                <p className="text-sm text-slate-600 mb-4">
-                  Configure your payment gateway credentials (Razorpay or
-                  Easebuzz) to accept online payments from guests via UPI,
-                  Cards, Netbanking, and Wallets.
-                </p>
-                <p className="text-xs text-slate-500 mb-4">
-                  Payments go directly to your account. Each hotel manages their
-                  own gateway credentials.
-                </p>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => {
-                      // Navigate to payments tab - this will be handled by parent
-                      (window as any).__navigateToPayments?.();
-                    }}
-                    className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-purple-200 hover:shadow-xl hover:-translate-y-0.5 transition-all"
-                  >
-                    Configure Payment Gateway →
-                  </button>
-                  <a
-                    href="https://razorpay.com/docs/"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-4 py-2.5 bg-white text-slate-600 rounded-xl font-medium text-sm border border-slate-200 hover:bg-slate-50 transition-all"
-                  >
-                    Documentation
-                  </a>
-                </div>
-              </div>
-            </section>
           </div>
 
           <div className="space-y-6">
@@ -1012,30 +949,6 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                       {profileFormData.geminiApiKey
                         ? "Connected & Secure"
                         : "API Key Missing"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center ${profileFormData.razorpayKeyId && profileFormData.razorpayKeySecret ? "bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.3)]" : "bg-white/10"}`}
-                  >
-                    {profileFormData.razorpayKeyId &&
-                    profileFormData.razorpayKeySecret ? (
-                      <Check className="w-5 h-5 text-white" />
-                    ) : (
-                      <IndianRupee className="w-5 h-5 text-white/50" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-widest">
-                      Payment Gateway
-                    </p>
-                    <p className="text-[10px] text-indigo-200/70">
-                      {profileFormData.razorpayKeyId &&
-                      profileFormData.razorpayKeySecret
-                        ? "Razorpay Connected"
-                        : "Credentials Missing"}
                     </p>
                   </div>
                 </div>

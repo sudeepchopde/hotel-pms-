@@ -658,8 +658,8 @@ const App: React.FC = () => {
     };
     loadData();
 
-    // Poll for notifications and data every 5 seconds
-    const pollNotifications = setInterval(async () => {
+    // Unified function to refresh notifications and data
+    const refreshDashboardData = async () => {
       try {
         const {
           fetchNotifications,
@@ -717,9 +717,15 @@ const App: React.FC = () => {
           }
         }
       } catch (e) {
-        console.error("Polling notifications failed", e);
+        console.error("Polling/Refreshing data failed", e);
       }
-    }, 5000);
+    };
+
+    // Expose to window for immediate refreshes from other components
+    (window as any).__refreshDashboardData = refreshDashboardData;
+
+    // Poll for notifications and data every 5 seconds
+    const pollNotifications = setInterval(refreshDashboardData, 5000);
 
     // Complementary periodic poll for bookings every 20 seconds (independent of notifications)
     const pollBookings = setInterval(async () => {
