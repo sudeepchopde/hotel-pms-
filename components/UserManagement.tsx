@@ -26,10 +26,7 @@ const NAV_SECTIONS = [
   { id: "reports", label: "Reports" },
 
   // Settings Hub Sections
-  { id: "users", label: "User Management" },
-  { id: "setup", label: "Property Setup" },
-  { id: "rules", label: "Revenue Rules" },
-  { id: "settings", label: "Channel Settings" },
+  { id: "settings_hub", label: "Settings" },
 ];
 
 const UserManagement: React.FC = () => {
@@ -142,7 +139,17 @@ const UserManagement: React.FC = () => {
     if (allowedSections.includes(id)) {
       setAllowedSections(allowedSections.filter((s) => s !== id));
     } else {
-      setAllowedSections([...allowedSections, id]);
+      // If adding settings_hub, we can cleanup old individual permissions if they exist
+      if (id === "settings_hub") {
+        setAllowedSections([
+          ...allowedSections.filter(
+            (s) => !["users", "setup", "rules", "settings"].includes(s),
+          ),
+          id,
+        ]);
+      } else {
+        setAllowedSections([...allowedSections, id]);
+      }
     }
   };
 

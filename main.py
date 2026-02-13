@@ -1451,6 +1451,22 @@ def get_rules(db=Depends(get_db)):
         return db_rules_to_pydantic(rules)
     return get_fallback_rules()
 
+@app.put("/api/rules")
+def update_rules(rules: RateRulesConfig, db=Depends(get_db)):
+    _load_db_imports()
+    if USE_DATABASE() and db:
+        db_rules = db.query(RateRulesDB).filter(RateRulesDB.id == "default").first()
+        if not db_rules:
+            db_rules = RateRulesDB(id="default")
+            db.add(db_rules)
+        
+        db_rules.weekly_rules = rules.weeklyRules.dict()
+        db_rules.special_events = [e.dict() for e in rules.specialEvents]
+        db.commit()
+        db.refresh(db_rules)
+        return db_rules_to_pydantic(db_rules)
+    return rules
+
 @app.get("/api/property")
 def get_property_settings(db=Depends(get_db)):
     if USE_DATABASE() and db:

@@ -58,7 +58,10 @@ const SettingsLayout: React.FC<SettingsLayoutProps> = ({
   const allowedTabs = settingsTabs.filter((tab) => {
     if (!user) return false;
     if (user.role === "admin") return true;
-    return user.allowed_sections.includes(tab.id);
+    return (
+      user.allowed_sections.includes(tab.id) ||
+      user.allowed_sections.includes("settings_hub")
+    );
   });
 
   return (

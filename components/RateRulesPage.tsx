@@ -18,8 +18,10 @@ import {
   ChevronDown,
   Edit,
   Share2,
+  Save,
 } from "lucide-react";
 import { RateRulesConfig, SpecialEvent } from "../types";
+import { updateRules, syncStrategy } from "../api";
 
 interface RateRulesPageProps {
   rules: RateRulesConfig;
@@ -131,11 +133,38 @@ const RateRulesPage: React.FC<RateRulesPageProps> = ({
   });
   const [formErrors, setFormErrors] = useState<Record<string, boolean>>({});
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleGlobalSync = () => {
+  const handleSaveOnly = async () => {
+    setIsSaving(true);
+    try {
+      await updateRules(rules);
+      onStrategySync?.("Rules Saved Successfully");
+    } catch (err) {
+      console.error(err);
+      onStrategySync?.("Failed to Save Rules");
+    } finally {
+      setTimeout(() => setIsSaving(false), 800);
+    }
+  };
+
+  const handleGlobalSync = async () => {
     setIsSyncing(true);
-    onStrategySync?.("Strategic Yield Update");
-    setTimeout(() => setIsSyncing(false), 3000);
+    try {
+      // 1. Perspective: Save everything first so calculation uses latest data
+      await updateRules(rules);
+
+      // 2. Execution: Fire the global signal
+      const result = await syncStrategy();
+
+      // 3. Feedback: Notify the parent/logs
+      onStrategySync?.(result.message);
+    } catch (err) {
+      console.error(err);
+      onStrategySync?.("Strategy Sync Initiation Failed");
+    } finally {
+      setTimeout(() => setIsSyncing(false), 3000);
+    }
   };
 
   // --- Logic Handlers ---
@@ -224,26 +253,48 @@ const RateRulesPage: React.FC<RateRulesPageProps> = ({
             network.
           </h3>
         </div>
-        <button
-          onClick={handleGlobalSync}
-          disabled={isSyncing}
-          className={`
-            px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all flex items-center gap-3 shadow-xl
-            ${isSyncing ? "bg-slate-100 text-slate-400" : "bg-slate-900 text-white hover:bg-black hover:-translate-y-1 active:scale-95 shadow-indigo-500/10"}
-          `}
-        >
-          {isSyncing ? (
-            <>
-              <Zap className="w-4 h-4 animate-pulse fill-amber-400 text-amber-400" />
-              Syncing Signals...
-            </>
-          ) : (
-            <>
-              <Share2 className="w-4 h-4" />
-              Sync to All Channels
-            </>
-          )}
-        </button>
+        <div className="flex gap-4">
+          <button
+            onClick={handleSaveOnly}
+            disabled={isSaving || isSyncing}
+            className={`
+              px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all flex items-center gap-3 border-2
+              ${isSaving ? "bg-slate-50 border-slate-200 text-slate-400" : "bg-white border-slate-100 text-slate-600 hover:border-indigo-200 hover:text-indigo-600 active:scale-95"}
+            `}
+          >
+            {isSaving ? (
+              <>
+                <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                Save Rules
+              </>
+            )}
+          </button>
+          <button
+            onClick={handleGlobalSync}
+            disabled={isSyncing}
+            className={`
+              px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all flex items-center gap-3 shadow-xl
+              ${isSyncing ? "bg-slate-100 text-slate-400" : "bg-slate-900 text-white hover:bg-black hover:-translate-y-1 active:scale-95 shadow-indigo-500/10"}
+            `}
+          >
+            {isSyncing ? (
+              <>
+                <Zap className="w-4 h-4 animate-pulse fill-amber-400 text-amber-400" />
+                Syncing Signals...
+              </>
+            ) : (
+              <>
+                <Share2 className="w-4 h-4" />
+                Sync to All Channels
+              </>
+            )}
+          </button>
+        </div>
       </header>
 
       {/* 1. Recurring Weekly Strategy */}

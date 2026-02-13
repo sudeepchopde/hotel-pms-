@@ -20,7 +20,6 @@ import {
   QrCode,
   Printer,
   Download,
-  Terminal,
   ExternalLink,
   Globe,
   Settings2,
@@ -50,45 +49,6 @@ interface PropertySetupPageProps {
   >;
 }
 
-const PYTHON_SCRIPT = `
-import qrcode
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import cm
-import os
-
-def generate_hotel_qrs(room_list):
-    os.makedirs('temp_qrs', exist_ok=True)
-    c = canvas.Canvas("Hotel_Room_QRs.pdf", pagesize=A4)
-    width, height = A4
-    margin = 1 * cm
-    grid_w = (width - 2*margin) / 3
-    grid_h = (height - 2*margin) / 3
-    
-    for i, room_id in enumerate(room_list):
-        if i > 0 and i % 9 == 0: c.showPage()
-        row = (i % 9) // 3
-        col = (i % 9) % 3
-        x = margin + col * grid_w
-        y = height - margin - (row + 1) * grid_h
-        
-        url = f"https://hotelsatsangi.com/order?room={room_id}"
-        img = qrcode.make(url)
-        qr_path = f"temp_qrs/room_{room_id}.png"
-        img.save(qr_path)
-        
-        qr_size = grid_w * 0.8
-        c.drawImage(qr_path, x + (grid_w - qr_size)/2, y + (grid_h - qr_size)/2 + 1*cm, width=qr_size, height=qr_size)
-        c.setFont("Helvetica-Bold", 14)
-        c.drawCentredString(x + grid_w/2, y + 1*cm, f"ROOM {room_id}")
-        c.setFont("Helvetica", 8)
-        c.drawCentredString(x + grid_w/2, y + 0.5*cm, "Scan to Order Room Service")
-    c.save()
-
-if __name__ == "__main__":
-    generate_hotel_qrs(["101", "102", "103", "104", "105"])
-`;
-
 const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
   roomTypes,
   setRoomTypes,
@@ -108,7 +68,6 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
   } | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [showQRPreview, setShowQRPreview] = useState(false);
-  const [showCodeSnippet, setShowCodeSnippet] = useState(false);
   const [activeTab, setActiveTab] = useState<
     "inventory" | "profile" | "integrations"
   >("profile");
@@ -143,7 +102,8 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
   const [formData, setFormData] = useState<Partial<RoomType>>({
     name: "",
     totalCapacity: 1,
-    basePrice: 1000,
+    floorPrice: 700,
+    ceilingPrice: 2500,
     baseOccupancy: 2,
     amenities: [],
     roomNumbers: ["101"],
@@ -157,6 +117,8 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
       name: "",
       totalCapacity: 1,
       basePrice: 1000,
+      floorPrice: 700,
+      ceilingPrice: 2500,
       baseOccupancy: 2,
       amenities: [],
       roomNumbers: ["101"],
@@ -403,450 +365,360 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
       </header>
 
       {activeTab === "profile" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="lg:col-span-2 space-y-8">
-            <section className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm space-y-8">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
-                  <Building2 className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">
-                    Public Identity
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium">
-                    This information appears on bills, receipts, and government
-                    forms.
-                  </p>
+        <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <section className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm space-y-8">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                <Building2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">
+                  Public Identity
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  This information appears on bills, receipts, and government
+                  forms.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                  Property Name
+                </label>
+                <input
+                  type="text"
+                  value={profileFormData.name}
+                  onChange={(e) =>
+                    setProfileFormData({
+                      ...profileFormData,
+                      name: e.target.value,
+                    })
+                  }
+                  placeholder="e.g. Grand Palace Hotel"
+                  className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-base font-bold text-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all"
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                  Business Address
+                </label>
+                <textarea
+                  value={profileFormData.address}
+                  onChange={(e) =>
+                    setProfileFormData({
+                      ...profileFormData,
+                      address: e.target.value,
+                    })
+                  }
+                  placeholder="Full postal address..."
+                  rows={3}
+                  className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all resize-none"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                  Contact Phone
+                </label>
+                <input
+                  type="text"
+                  value={profileFormData.phone || ""}
+                  onChange={(e) =>
+                    setProfileFormData({
+                      ...profileFormData,
+                      phone: e.target.value,
+                    })
+                  }
+                  placeholder="+91 XXXXX XXXXX"
+                  className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                  Official Email
+                </label>
+                <input
+                  type="email"
+                  value={profileFormData.email || ""}
+                  onChange={(e) =>
+                    setProfileFormData({
+                      ...profileFormData,
+                      email: e.target.value,
+                    })
+                  }
+                  placeholder="contact@property.com"
+                  className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all"
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm space-y-8">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
+                <IndianRupee className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">
+                  Taxation & Invoicing
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  Configure GST settings for automated tax calculation.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                  GST Registration Number
+                </label>
+                <input
+                  type="text"
+                  value={profileFormData.gstNumber || ""}
+                  onChange={(e) =>
+                    setProfileFormData({
+                      ...profileFormData,
+                      gstNumber: e.target.value,
+                    })
+                  }
+                  placeholder="e.g. 29ABCDE1234F1Z5"
+                  className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                  Default GST Rate (%)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={profileFormData.gstRate}
+                    onChange={(e) =>
+                      setProfileFormData({
+                        ...profileFormData,
+                        gstRate: Number(e.target.value),
+                      })
+                    }
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-black text-emerald-700 focus:border-emerald-500 focus:bg-white outline-none transition-all"
+                  />
+                  <span className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 font-black">
+                    %
+                  </span>
                 </div>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
-                    Property Name
-                  </label>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                  Food GST Rate (%)
+                </label>
+                <div className="relative">
                   <input
-                    type="text"
-                    value={profileFormData.name}
+                    type="number"
+                    value={profileFormData.foodGstRate || 5.0}
                     onChange={(e) =>
                       setProfileFormData({
                         ...profileFormData,
-                        name: e.target.value,
+                        foodGstRate: Number(e.target.value),
                       })
                     }
-                    placeholder="e.g. Grand Palace Hotel"
-                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-base font-bold text-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all"
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-black text-orange-700 focus:border-orange-500 focus:bg-white outline-none transition-all"
                   />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
-                    Business Address
-                  </label>
-                  <textarea
-                    value={profileFormData.address}
-                    onChange={(e) =>
-                      setProfileFormData({
-                        ...profileFormData,
-                        address: e.target.value,
-                      })
-                    }
-                    placeholder="Full postal address..."
-                    rows={3}
-                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all resize-none"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
-                    Contact Phone
-                  </label>
-                  <input
-                    type="text"
-                    value={profileFormData.phone || ""}
-                    onChange={(e) =>
-                      setProfileFormData({
-                        ...profileFormData,
-                        phone: e.target.value,
-                      })
-                    }
-                    placeholder="+91 XXXXX XXXXX"
-                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
-                    Official Email
-                  </label>
-                  <input
-                    type="email"
-                    value={profileFormData.email || ""}
-                    onChange={(e) =>
-                      setProfileFormData({
-                        ...profileFormData,
-                        email: e.target.value,
-                      })
-                    }
-                    placeholder="contact@property.com"
-                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all"
-                  />
+                  <span className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 font-black">
+                    %
+                  </span>
                 </div>
               </div>
-            </section>
-
-            <section className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm space-y-8">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
-                  <IndianRupee className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">
-                    Taxation & Invoicing
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium">
-                    Configure GST settings for automated tax calculation.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
-                    GST Registration Number
-                  </label>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                  Other Services GST (%)
+                </label>
+                <div className="relative">
                   <input
-                    type="text"
-                    value={profileFormData.gstNumber || ""}
+                    type="number"
+                    value={profileFormData.otherGstRate || 18.0}
                     onChange={(e) =>
                       setProfileFormData({
                         ...profileFormData,
-                        gstNumber: e.target.value,
+                        otherGstRate: Number(e.target.value),
                       })
                     }
-                    placeholder="e.g. 29ABCDE1234F1Z5"
-                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all"
+                    className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-black text-blue-700 focus:border-blue-500 focus:bg-white outline-none transition-all"
                   />
+                  <span className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 font-black">
+                    %
+                  </span>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
-                    Default GST Rate (%)
-                  </label>
-                  <div className="relative">
+              </div>
+            </div>
+          </section>
+
+          <section className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm space-y-8">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600">
+                <Star className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">
+                  Loyalty Program
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  Configure membership tiers based on nights stayed.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {(profileFormData.loyaltyTiers || []).map((tier, idx) => (
+                <div
+                  key={idx}
+                  className="flex flex-wrap items-end gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 relative group transition-all hover:bg-white hover:shadow-md"
+                >
+                  <div className="flex-1 min-w-[200px] space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                      Tier Name
+                    </label>
                     <input
-                      type="number"
-                      value={profileFormData.gstRate}
-                      onChange={(e) =>
-                        setProfileFormData({
-                          ...profileFormData,
-                          gstRate: Number(e.target.value),
-                        })
-                      }
-                      className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-black text-emerald-700 focus:border-emerald-500 focus:bg-white outline-none transition-all"
-                    />
-                    <span className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 font-black">
-                      %
-                    </span>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
-                    Food GST Rate (%)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={profileFormData.foodGstRate || 5.0}
-                      onChange={(e) =>
-                        setProfileFormData({
-                          ...profileFormData,
-                          foodGstRate: Number(e.target.value),
-                        })
-                      }
-                      className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-black text-orange-700 focus:border-orange-500 focus:bg-white outline-none transition-all"
-                    />
-                    <span className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 font-black">
-                      %
-                    </span>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
-                    Other Services GST (%)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={profileFormData.otherGstRate || 18.0}
-                      onChange={(e) =>
-                        setProfileFormData({
-                          ...profileFormData,
-                          otherGstRate: Number(e.target.value),
-                        })
-                      }
-                      className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-black text-blue-700 focus:border-blue-500 focus:bg-white outline-none transition-all"
-                    />
-                    <span className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 font-black">
-                      %
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm space-y-8">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600">
-                  <Star className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">
-                    Loyalty Program
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium">
-                    Configure membership tiers based on nights stayed.
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                {(profileFormData.loyaltyTiers || []).map((tier, idx) => (
-                  <div
-                    key={idx}
-                    className="flex flex-wrap items-end gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 relative group transition-all hover:bg-white hover:shadow-md"
-                  >
-                    <div className="flex-1 min-w-[200px] space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
-                        Tier Name
-                      </label>
-                      <input
-                        type="text"
-                        value={tier.name}
-                        onChange={(e) => {
-                          const newTiers = [
-                            ...(profileFormData.loyaltyTiers || []),
-                          ];
-                          newTiers[idx] = {
-                            ...newTiers[idx],
-                            name: e.target.value.toUpperCase(),
-                          };
-                          setProfileFormData({
-                            ...profileFormData,
-                            loyaltyTiers: newTiers,
-                          });
-                        }}
-                        className="w-full px-4 py-3 bg-white border-2 border-slate-100 rounded-xl text-sm font-bold text-slate-900 outline-none focus:border-indigo-500"
-                        placeholder="e.g. PLATINUM"
-                      />
-                    </div>
-                    <div className="w-40 space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
-                        Min. Nights
-                      </label>
-                      <input
-                        type="number"
-                        value={tier.minNights}
-                        onChange={(e) => {
-                          const newTiers = [
-                            ...(profileFormData.loyaltyTiers || []),
-                          ];
-                          newTiers[idx] = {
-                            ...newTiers[idx],
-                            minNights: Number(e.target.value),
-                          };
-                          setProfileFormData({
-                            ...profileFormData,
-                            loyaltyTiers: newTiers,
-                          });
-                        }}
-                        className="w-full px-4 py-3 bg-white border-2 border-slate-100 rounded-xl text-sm font-black text-indigo-600 outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                    <button
-                      onClick={() => {
-                        const newTiers = (
-                          profileFormData.loyaltyTiers || []
-                        ).filter((_, i) => i !== idx);
+                      type="text"
+                      value={tier.name}
+                      onChange={(e) => {
+                        const newTiers = [
+                          ...(profileFormData.loyaltyTiers || []),
+                        ];
+                        newTiers[idx] = {
+                          ...newTiers[idx],
+                          name: e.target.value.toUpperCase(),
+                        };
                         setProfileFormData({
                           ...profileFormData,
                           loyaltyTiers: newTiers,
                         });
                       }}
-                      className="p-3 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors mb-0.5"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                      className="w-full px-4 py-3 bg-white border-2 border-slate-100 rounded-xl text-sm font-bold text-slate-900 outline-none focus:border-indigo-500"
+                      placeholder="e.g. PLATINUM"
+                    />
                   </div>
-                ))}
-
-                <button
-                  onClick={() => {
-                    const newTiers = [
-                      ...(profileFormData.loyaltyTiers || []),
-                      { name: "NEW TIER", minNights: 1 },
-                    ];
-                    setProfileFormData({
-                      ...profileFormData,
-                      loyaltyTiers: newTiers,
-                    });
-                  }}
-                  className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] hover:border-indigo-300 hover:text-indigo-500 hover:bg-indigo-50/30 transition-all flex items-center justify-center gap-2"
-                >
-                  <Plus className="w-4 h-4" /> Add New Tier
-                </button>
-              </div>
-            </section>
-
-            <section className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm space-y-8">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
-                  <Globe className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">
-                    Deployment & Access
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium">
-                    Configure how guests will access your PMS from their
-                    devices.
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <ExternalLink className="w-5 h-5 text-indigo-600" />
-                    <h5 className="font-black text-xs uppercase tracking-widest text-slate-700">
-                      Public Base URL
-                    </h5>
-                  </div>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Set the address that guests' phones will use to access the
-                    system (e.g., your local IP for WiFi access or a custom
-                    domain).
-                  </p>
-
-                  <div className="space-y-2">
+                  <div className="w-40 space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
-                      Server Access URL
+                      Min. Nights
                     </label>
-                    <div className="relative group">
-                      <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
-                      <input
-                        type="text"
-                        value={profileFormData.publicBaseUrl || ""}
-                        onChange={(e) =>
-                          setProfileFormData({
-                            ...profileFormData,
-                            publicBaseUrl: e.target.value,
-                          })
-                        }
-                        placeholder="http://192.168.1.XX:3000"
-                        className="w-full pl-12 pr-5 py-4 bg-white border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-500 outline-none transition-all shadow-sm"
-                      />
-                    </div>
+                    <input
+                      type="number"
+                      value={tier.minNights}
+                      onChange={(e) => {
+                        const newTiers = [
+                          ...(profileFormData.loyaltyTiers || []),
+                        ];
+                        newTiers[idx] = {
+                          ...newTiers[idx],
+                          minNights: Number(e.target.value),
+                        };
+                        setProfileFormData({
+                          ...profileFormData,
+                          loyaltyTiers: newTiers,
+                        });
+                      }}
+                      className="w-full px-4 py-3 bg-white border-2 border-slate-100 rounded-xl text-sm font-black text-indigo-600 outline-none focus:border-indigo-500"
+                    />
                   </div>
+                  <button
+                    onClick={() => {
+                      const newTiers = (
+                        profileFormData.loyaltyTiers || []
+                      ).filter((_, i) => i !== idx);
+                      setProfileFormData({
+                        ...profileFormData,
+                        loyaltyTiers: newTiers,
+                      });
+                    }}
+                    className="p-3 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors mb-0.5"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
+              ))}
 
-                  <div className="flex items-start gap-3 mt-4">
-                    <div className="p-2 bg-white rounded-xl border border-slate-200">
-                      <Terminal className="w-4 h-4 text-slate-400" />
-                    </div>
-                    <div className="text-[10px] text-slate-500 leading-relaxed font-medium">
-                      If running on a hotel network, use your server's **Local
-                      IP address**. If using a domain like `hotel.com`, enter
-                      that here. This URL will be used in all generated QR
-                      codes.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
+              <button
+                onClick={() => {
+                  const newTiers = [
+                    ...(profileFormData.loyaltyTiers || []),
+                    { name: "NEW TIER", minNights: 1 },
+                  ];
+                  setProfileFormData({
+                    ...profileFormData,
+                    loyaltyTiers: newTiers,
+                  });
+                }}
+                className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] hover:border-indigo-300 hover:text-indigo-500 hover:bg-indigo-50/30 transition-all flex items-center justify-center gap-2"
+              >
+                <Plus className="w-4 h-4" /> Add New Tier
+              </button>
+            </div>
+          </section>
 
-          <div className="space-y-6">
-            <div className="bg-slate-900 rounded-[2rem] p-8 text-white shadow-2xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
-              <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400 mb-6">
-                Live Invoice Preview
-              </h4>
-              <div className="space-y-4 font-mono text-[10px] text-slate-300">
-                <div className="border-b border-white/10 pb-4">
-                  <p className="font-black text-white text-xs mb-1 uppercase tracking-tight">
-                    {profileFormData.name || "Your Property Name"}
-                  </p>
-                  <p className="leading-relaxed opacity-60">
-                    {profileFormData.address || "Address not set"}
-                  </p>
-                  <p className="mt-1 opacity-60">
-                    GSTIN: {profileFormData.gstNumber || "Not provided"}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span>Room Charges (2n)</span>
-                    <span>₹9,000.00</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Food & Bev</span>
-                    <span>₹1,250.00</span>
-                  </div>
-                  <div className="flex justify-between text-[8px] text-indigo-300 font-bold">
-                    <span>GST - Room ({profileFormData.gstRate}%)</span>
-                    <span>
-                      ₹
-                      {((9000 * profileFormData.gstRate) / 100).toLocaleString(
-                        undefined,
-                        { minimumFractionDigits: 2 },
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-[8px] text-orange-300 font-bold">
-                    <span>
-                      GST - Food ({profileFormData.foodGstRate || 5}%)
-                    </span>
-                    <span>
-                      ₹
-                      {(
-                        (1250 * (profileFormData.foodGstRate || 5)) /
-                        100
-                      ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-                <div className="border-t border-white/20 pt-4 flex justify-between text-white font-black text-sm">
-                  <span>GRAND TOTAL</span>
-                  <span>
-                    ₹
-                    {(
-                      9000 * (1 + profileFormData.gstRate / 100) +
-                      1250 * (1 + (profileFormData.foodGstRate || 5) / 100)
-                    ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
+          <section className="bg-white rounded-[2.5rem] border border-slate-100 p-10 shadow-sm space-y-8">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                <Globe className="w-6 h-6" />
               </div>
-              <div className="mt-8 p-4 bg-white/5 rounded-xl border border-white/10">
-                <p className="text-[9px] text-slate-400 leading-relaxed italic">
-                  Changes to these settings will follow through to all generated
-                  PDFs and reports instantly.
+              <div>
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">
+                  Deployment & Access
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  Configure how guests will access your PMS from their devices.
                 </p>
               </div>
             </div>
 
-            <div className="bg-indigo-50 border-2 border-indigo-100 rounded-[2rem] p-8 space-y-4">
-              <div className="flex items-center gap-3 text-indigo-600">
-                <ExternalLink className="w-5 h-5" />
-                <h5 className="font-black text-xs uppercase tracking-widest">
-                  Compliance Help
-                </h5>
+            <div className="space-y-6">
+              <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                <div className="flex items-center gap-3">
+                  <ExternalLink className="w-5 h-5 text-indigo-600" />
+                  <h5 className="font-black text-xs uppercase tracking-widest text-slate-700">
+                    Public Base URL
+                  </h5>
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Set the address that guests' phones will use to access the
+                  system (e.g., your local IP for WiFi access or a custom
+                  domain).
+                </p>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                    Server Access URL
+                  </label>
+                  <div className="relative group">
+                    <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                    <input
+                      type="text"
+                      value={profileFormData.publicBaseUrl || ""}
+                      onChange={(e) =>
+                        setProfileFormData({
+                          ...profileFormData,
+                          publicBaseUrl: e.target.value,
+                        })
+                      }
+                      placeholder="http://192.168.1.XX:3000"
+                      className="w-full pl-12 pr-5 py-4 bg-white border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-500 outline-none transition-all shadow-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 mt-4">
+                  <div className="p-2 bg-white rounded-xl border border-slate-200">
+                    <Globe className="w-4 h-4 text-slate-400" />
+                  </div>
+                  <div className="text-[10px] text-slate-500 leading-relaxed font-medium">
+                    If running on a hotel network, use your server's **Local IP
+                    address**. If using a domain like `hotel.com`, enter that
+                    here. This URL will be used in all generated QR codes.
+                  </div>
+                </div>
               </div>
-              <p className="text-xs text-indigo-900/70 leading-relaxed font-medium">
-                Ensure your GST details match your GST portal records precisely
-                to avoid reconciliation errors in GSTR-1 filings.
-              </p>
-              <button className="text-[10px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2 hover:gap-3 transition-all">
-                Learn more about GST rules <ArrowRight className="w-3 h-3" />
-              </button>
             </div>
-          </div>
+          </section>
         </div>
       )}
 
@@ -1044,16 +916,65 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                         <input
                           type="number"
                           value={formData.basePrice}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const newBase = Number(e.target.value);
                             setFormData({
                               ...formData,
-                              basePrice: Number(e.target.value),
-                            })
-                          }
+                              basePrice: newBase,
+                              // Suggest new guardrails if creating or if they seem stale
+                              floorPrice:
+                                formData.floorPrice ||
+                                Math.round(newBase * 0.7),
+                              ceilingPrice:
+                                formData.ceilingPrice ||
+                                Math.round(newBase * 2.5),
+                            });
+                          }}
                           className="w-full bg-transparent font-bold text-emerald-700 outline-none"
                         />
                       </div>
                     </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                        Revenue Shield (Max / Min)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 flex items-center gap-2 px-3 py-3 bg-amber-50 border-2 border-amber-100 rounded-2xl focus-within:border-amber-500 transition-all">
+                          <span className="text-[10px] font-black text-amber-600">
+                            MIN
+                          </span>
+                          <input
+                            type="number"
+                            value={formData.floorPrice}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                floorPrice: Number(e.target.value),
+                              })
+                            }
+                            className="w-full bg-transparent text-xs font-bold text-amber-700 outline-none"
+                          />
+                        </div>
+                        <div className="flex-1 flex items-center gap-2 px-3 py-3 bg-indigo-50 border-2 border-indigo-100 rounded-2xl focus-within:border-indigo-500 transition-all">
+                          <span className="text-[10px] font-black text-indigo-600">
+                            MAX
+                          </span>
+                          <input
+                            type="number"
+                            value={formData.ceilingPrice}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                ceilingPrice: Number(e.target.value),
+                              })
+                            }
+                            className="w-full bg-transparent text-xs font-bold text-indigo-700 outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
                         Extra Bed Charge (INR)
@@ -1073,8 +994,6 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                         />
                       </div>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
                         Extra Adult Rate (INR)
@@ -1094,6 +1013,8 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                         />
                       </div>
                     </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
                         Extra Child Rate (INR)
@@ -1188,12 +1109,6 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                   </div>
                   <div className="flex gap-3">
                     <button
-                      onClick={() => setShowCodeSnippet(!showCodeSnippet)}
-                      className="flex items-center gap-2 px-5 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-bold text-xs"
-                    >
-                      <Terminal className="w-4 h-4" /> Python Tool
-                    </button>
-                    <button
                       onClick={() => window.print()}
                       className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-xl"
                     >
@@ -1202,7 +1117,6 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                     <button
                       onClick={() => {
                         setShowQRPreview(false);
-                        setShowCodeSnippet(false);
                       }}
                       className="p-3 hover:bg-slate-100 rounded-full text-slate-400"
                     >
@@ -1212,190 +1126,158 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                 </header>
 
                 <div className="flex-1 overflow-y-auto p-12 bg-slate-50">
-                  {showCodeSnippet ? (
-                    <div className="bg-slate-900 rounded-3xl p-8 border border-slate-800 animate-in fade-in duration-300">
-                      <div className="flex items-center justify-between mb-4">
-                        <h4 className="text-indigo-400 font-bold text-xs uppercase tracking-widest">
-                          bulk_qr_gen.py (Standalone Utility)
-                        </h4>
-                        <button
-                          onClick={() =>
-                            navigator.clipboard.writeText(PYTHON_SCRIPT)
-                          }
-                          className="text-[10px] bg-slate-800 text-slate-400 px-3 py-1 rounded-lg hover:text-white transition-colors"
-                        >
-                          Copy to Clipboard
-                        </button>
-                      </div>
-                      <pre className="text-indigo-300/80 font-mono text-[11px] overflow-x-auto p-4 bg-black/30 rounded-xl">
-                        {PYTHON_SCRIPT}
-                      </pre>
-                    </div>
-                  ) : (
-                    <div className="space-y-10">
-                      <div className="bg-white border-2 border-indigo-100 p-8 rounded-[3rem] shadow-sm space-y-8 relative overflow-hidden">
-                        {/* Subtle background decoration */}
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50/50 rounded-full -mr-32 -mt-32 blur-3xl pointer-events-none"></div>
+                  <div className="space-y-10">
+                    <div className="bg-white border-2 border-indigo-100 p-8 rounded-[3rem] shadow-sm space-y-8 relative overflow-hidden">
+                      {/* Subtle background decoration */}
+                      <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50/50 rounded-full -mr-32 -mt-32 blur-3xl pointer-events-none"></div>
 
-                        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-8 relative">
-                          <div className="flex gap-4 max-w-xl">
-                            <div className="p-4 bg-indigo-600 rounded-2xl h-fit text-white shadow-lg shadow-indigo-200">
-                              <Smartphone className="w-6 h-6" />
-                            </div>
-                            <div>
-                              <h4 className="font-black text-slate-900 flex items-center gap-2 uppercase tracking-wider text-sm">
-                                Mobile Access Configuration
-                              </h4>
-                              <p className="text-xs text-slate-500 leading-relaxed mt-1.5 font-medium">
-                                Define the base URL for your guest menu. If
-                                testing on a local WiFi network, use your
-                                computer's <strong>Local IP</strong> (e.g.,
-                                http://192.168.1.15:3000). For production, use
-                                your <strong>Vercel or Custom Domain</strong>.
-                              </p>
-                            </div>
+                      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-8 relative">
+                        <div className="flex gap-4 max-w-xl">
+                          <div className="p-4 bg-indigo-600 rounded-2xl h-fit text-white shadow-lg shadow-indigo-200">
+                            <Smartphone className="w-6 h-6" />
                           </div>
-
-                          <div className="flex-1 max-w-2xl w-full">
-                            <div className="space-y-3">
-                              <div className="flex items-center justify-between px-1">
-                                <label className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em]">
-                                  Target Base URL
-                                </label>
-                                <span className="text-[9px] font-bold text-slate-400 uppercase">
-                                  Updates all QR codes
-                                </span>
-                              </div>
-                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                                <div className="relative flex-1 group">
-                                  <div className="absolute left-4 top-1/2 -translate-y-1/2 p-1.5 bg-indigo-50 rounded-lg text-indigo-600 group-focus-within:bg-indigo-600 group-focus-within:text-white transition-all">
-                                    <Globe className="w-3.5 h-3.5" />
-                                  </div>
-                                  <input
-                                    type="text"
-                                    value={testBaseUrl}
-                                    onChange={(e) =>
-                                      setTestBaseUrl(e.target.value)
-                                    }
-                                    placeholder="https://your-app.vercel.app"
-                                    className="w-full pl-14 pr-4 py-4 bg-slate-50 border-2 border-indigo-100 rounded-2xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-sm"
-                                  />
-                                </div>
-                                <button
-                                  onClick={async () => {
-                                    const newSettings = {
-                                      ...profileFormData,
-                                      publicBaseUrl: testBaseUrl,
-                                    };
-                                    setProfileFormData(newSettings);
-                                    try {
-                                      const updated =
-                                        await updatePropertySettings(
-                                          newSettings,
-                                        );
-                                      setPropertySettings(updated);
-                                      alert(
-                                        "✅ URL saved! All QR codes will now use: " +
-                                          testBaseUrl,
-                                      );
-                                    } catch (err) {
-                                      console.error("Failed to save URL:", err);
-                                      alert(
-                                        "❌ Failed to save URL. Please try again.",
-                                      );
-                                    }
-                                  }}
-                                  className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-200 flex items-center justify-center gap-2 whitespace-nowrap"
-                                >
-                                  <Save className="w-4 h-4" />
-                                  Save Config
-                                </button>
-                              </div>
-
-                              {profileFormData.publicBaseUrl && (
-                                <div className="flex items-center justify-between gap-4 mt-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-2xl animate-in fade-in slide-in-from-top-2">
-                                  <div className="flex items-center gap-3 overflow-hidden">
-                                    <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center shrink-0">
-                                      <Check className="w-3.5 h-3.5 text-white" />
-                                    </div>
-                                    <span className="text-[10px] font-bold text-emerald-800 truncate">
-                                      Active URL:{" "}
-                                      <span className="font-mono bg-white/50 px-2 py-0.5 rounded ml-1 border border-emerald-100">
-                                        {profileFormData.publicBaseUrl}
-                                      </span>
-                                    </span>
-                                  </div>
-                                  <button
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(
-                                        profileFormData.publicBaseUrl || "",
-                                      );
-                                      alert("Copied to clipboard!");
-                                    }}
-                                    className="p-2 hover:bg-emerald-100 rounded-lg text-emerald-600 transition-colors"
-                                    title="Copy URL"
-                                  >
-                                    <Copy className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              )}
-                            </div>
+                          <div>
+                            <h4 className="font-black text-slate-900 flex items-center gap-2 uppercase tracking-wider text-sm">
+                              Mobile Access Configuration
+                            </h4>
+                            <p className="text-xs text-slate-500 leading-relaxed mt-1.5 font-medium">
+                              Define the base URL for your guest menu. If
+                              testing on a local WiFi network, use your
+                              computer's <strong>Local IP</strong> (e.g.,
+                              http://192.168.1.15:3000). For production, use
+                              your <strong>Vercel or Custom Domain</strong>.
+                            </p>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-4 p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100/50">
-                          <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm text-indigo-500 shrink-0">
-                            <Info className="w-4 h-4" />
-                          </div>
-                          <p className="text-[10px] font-bold text-indigo-700/80 leading-relaxed">
-                            Tip: Your Vercel URL ensures global access. Use
-                            local IP only for offline WiFi testing environments.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-8 max-w-4xl mx-auto print:grid print:gap-4">
-                        {allRooms.map((room) => {
-                          const baseUrl =
-                            profileFormData.publicBaseUrl ||
-                            testBaseUrl ||
-                            window.location.origin;
-                          const qrValue = `${baseUrl}/?room=${room}`;
-                          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrValue)}`;
-
-                          return (
-                            <div
-                              key={room}
-                              className="bg-white aspect-square border-2 border-slate-100 rounded-[2.5rem] flex flex-col items-center justify-center p-8 shadow-sm hover:border-indigo-400 transition-all group relative overflow-hidden"
-                            >
-                              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                <Globe className="w-16 h-16 text-indigo-600" />
-                              </div>
-                              <div className="w-40 h-40 bg-white rounded-2xl mb-4 flex items-center justify-center relative group-hover:scale-110 transition-transform duration-500">
-                                <img
-                                  src={qrUrl}
-                                  alt={`QR Code for Room ${room}`}
-                                  className="w-full h-full object-contain"
+                        <div className="flex-1 max-w-2xl w-full">
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between px-1">
+                              <label className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em]">
+                                Target Base URL
+                              </label>
+                              <span className="text-[9px] font-bold text-slate-400 uppercase">
+                                Updates all QR codes
+                              </span>
+                            </div>
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                              <div className="relative flex-1 group">
+                                <div className="absolute left-4 top-1/2 -translate-y-1/2 p-1.5 bg-indigo-50 rounded-lg text-indigo-600 group-focus-within:bg-indigo-600 group-focus-within:text-white transition-all">
+                                  <Globe className="w-3.5 h-3.5" />
+                                </div>
+                                <input
+                                  type="text"
+                                  value={testBaseUrl}
+                                  onChange={(e) =>
+                                    setTestBaseUrl(e.target.value)
+                                  }
+                                  placeholder="https://your-app.vercel.app"
+                                  className="w-full pl-14 pr-4 py-4 bg-slate-50 border-2 border-indigo-100 rounded-2xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-sm"
                                 />
-                                <div className="absolute inset-0 flex items-center justify-center bg-white/40 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                  <span className="text-[10px] font-black text-slate-900 bg-white px-3 py-1 rounded-full shadow-lg uppercase flex items-center gap-1.5">
-                                    <LinkIcon className="w-3 h-3" /> Connect
-                                    Room {room}
+                              </div>
+                              <button
+                                onClick={async () => {
+                                  const newSettings = {
+                                    ...profileFormData,
+                                    publicBaseUrl: testBaseUrl,
+                                  };
+                                  setProfileFormData(newSettings);
+                                  try {
+                                    const updated =
+                                      await updatePropertySettings(newSettings);
+                                    setPropertySettings(updated);
+                                    alert(
+                                      "✅ URL saved! All QR codes will now use: " +
+                                        testBaseUrl,
+                                    );
+                                  } catch (err) {
+                                    console.error("Failed to save URL:", err);
+                                    alert(
+                                      "❌ Failed to save URL. Please try again.",
+                                    );
+                                  }
+                                }}
+                                className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-200 flex items-center justify-center gap-2 whitespace-nowrap"
+                              >
+                                <Save className="w-4 h-4" />
+                                Save Config
+                              </button>
+                            </div>
+
+                            {profileFormData.publicBaseUrl && (
+                              <div className="flex items-center justify-between gap-4 mt-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-2xl animate-in fade-in slide-in-from-top-2">
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                  <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center shrink-0">
+                                    <Check className="w-3.5 h-3.5 text-white" />
+                                  </div>
+                                  <span className="text-[10px] font-bold text-emerald-800 truncate">
+                                    Active URL:{" "}
+                                    <span className="font-mono bg-white/50 px-2 py-0.5 rounded ml-1 border border-emerald-100">
+                                      {profileFormData.publicBaseUrl}
+                                    </span>
                                   </span>
                                 </div>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(
+                                      profileFormData.publicBaseUrl || "",
+                                    );
+                                    alert("Copied to clipboard!");
+                                  }}
+                                  className="p-2 hover:bg-emerald-100 rounded-lg text-emerald-600 transition-colors"
+                                  title="Copy URL"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </button>
                               </div>
-                              <h4 className="text-2xl font-black text-slate-900 tabular-nums tracking-tighter">
-                                ROOM {room}
-                              </h4>
-                              <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mt-1">
-                                Scan to Order Menu
-                              </p>
-                            </div>
-                          );
-                        })}
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  )}
+                    {/* Missing closing div for space-y-10 */}
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-8 max-w-4xl mx-auto print:grid print:gap-4">
+                    {allRooms.map((room) => {
+                      const baseUrl =
+                        profileFormData.publicBaseUrl ||
+                        testBaseUrl ||
+                        window.location.origin;
+                      const qrValue = `${baseUrl}/?room=${room}`;
+                      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrValue)}`;
+
+                      return (
+                        <div
+                          key={room}
+                          className="bg-white aspect-square border-2 border-slate-100 rounded-[2.5rem] flex flex-col items-center justify-center p-8 shadow-sm hover:border-indigo-400 transition-all group relative overflow-hidden"
+                        >
+                          <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                            <Globe className="w-16 h-16 text-indigo-600" />
+                          </div>
+                          <div className="w-40 h-40 bg-white rounded-2xl mb-4 flex items-center justify-center relative group-hover:scale-110 transition-transform duration-500">
+                            <img
+                              src={qrUrl}
+                              alt={`QR Code for Room ${room}`}
+                              className="w-full h-full object-contain"
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center bg-white/40 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                              <span className="text-[10px] font-black text-slate-900 bg-white px-3 py-1 rounded-full shadow-lg uppercase flex items-center gap-1.5">
+                                <LinkIcon className="w-3 h-3" /> Connect Room{" "}
+                                {room}
+                              </span>
+                            </div>
+                          </div>
+                          <h4 className="text-2xl font-black text-slate-900 tabular-nums tracking-tighter">
+                            ROOM {room}
+                          </h4>
+                          <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mt-1">
+                            Scan to Order Menu
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>

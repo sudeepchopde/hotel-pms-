@@ -364,7 +364,11 @@ const App: React.FC = () => {
       if (loggedInUser.allowed_sections.includes("frontdesk")) {
         setActiveTab("frontdesk");
       } else if (loggedInUser.allowed_sections.length > 0) {
-        setActiveTab(loggedInUser.allowed_sections[0] as any);
+        let initialTab = loggedInUser.allowed_sections[0];
+        if (initialTab === "settings_hub") {
+          initialTab = "users"; // Default sub-tab within settings
+        }
+        setActiveTab(initialTab as any);
       }
     }
   };
@@ -401,7 +405,9 @@ const App: React.FC = () => {
               const settingsItems = ["users", "setup", "rules", "settings"];
               const firstAllowed = settingsItems.find(
                 (id) =>
-                  user?.role === "admin" || user?.allowed_sections.includes(id),
+                  user?.role === "admin" ||
+                  user?.allowed_sections.includes(id) ||
+                  user?.allowed_sections.includes("settings_hub"),
               );
               if (firstAllowed) setActiveTab(firstAllowed as any);
             } else {
@@ -1502,9 +1508,14 @@ const App: React.FC = () => {
             setRoomStatuses={setRoomStatuses}
           />
         )}
-        {["setup", "rules", "settings", "users", "payments"].includes(
-          activeTab,
-        ) && (
+        {[
+          "setup",
+          "rules",
+          "settings",
+          "users",
+          "payments",
+          "settings_hub",
+        ].includes(activeTab) && (
           <SettingsLayout
             activeTab={activeTab}
             setActiveTab={setActiveTab}

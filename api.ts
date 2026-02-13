@@ -91,6 +91,29 @@ export const fetchRules = async (): Promise<RateRulesConfig> => {
   return response.json();
 };
 
+export const updateRules = async (
+  rules: RateRulesConfig,
+): Promise<RateRulesConfig> => {
+  const response = await fetch(`${API_BASE_URL}/rules`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rules),
+  });
+  if (!response.ok) throw new Error("Failed to update rules");
+  return response.json();
+};
+
+export const syncStrategy = async (): Promise<{
+  success: boolean;
+  message: string;
+}> => {
+  const response = await fetch(`${API_BASE_URL}/channels/sync/strategy`, {
+    method: "POST",
+  });
+  if (!response.ok) throw new Error("Failed to initiate strategy sync");
+  return response.json();
+};
+
 export const fetchBookings = async (): Promise<Booking[]> => {
   const response = await fetch(`${API_BASE_URL}/bookings`);
   if (!response.ok) throw new Error("Failed to fetch bookings");

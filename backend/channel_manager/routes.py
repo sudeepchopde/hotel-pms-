@@ -10,7 +10,7 @@ Endpoints for:
 from fastapi import APIRouter, Request, Response, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import json
 
@@ -19,13 +19,15 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.database import get_db
+from backend.database import get_db, SessionLocal
 from backend.db_models import (
     SyncHistoryDB, 
     ChannelCredentialsDB, 
     RoomTypeMappingDB,
     BookingDB,
-    NotificationDB
+    NotificationDB,
+    RoomTypeDB,
+    RateRulesDB
 )
 
 # Import directly from modules to avoid circular imports
@@ -227,6 +229,224 @@ async def sync_availability_to_channels(
         sync_record.message = str(e)
         db.commit()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/sync/strategy")
+async def sync_strategy_to_channels(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Initiates a background task to recalculate rates for all room types 
+    over the next 30 days based on active Yield Rules and push them to OTAs.
+    """
+    rules = db.query(RateRulesDB).filter(RateRulesDB.id == "default").first()
+    if not rules:
+        raise HTTPException(status_code=404, detail="No active rate rules found")
+    
+    room_types = db.query(RoomTypeDB).all()
+    if not room_types:
+        raise HTTPException(status_code=404, detail="No room types configured")
+
+    # Initializing sync manager
+    sync_manager = await _initialize_sync_manager(db)
+    
+    # Prepare data for background task by converting to dicts
+    room_types_data = [
+        {
+            "id": rt.id,
+            "base_price": rt.base_price,
+            "floor_price": rt.floor_price,
+            "ceiling_price": rt.ceiling_price
+        }
+        for rt in room_types
+    ]
+    rules_data = {
+        "weeklyRules": rules.weekly_rules,
+        "specialEvents": rules.special_events
+    }
+
+    # We use a 30-day window for strategy enforcement
+    start_date_env = datetime.now()
+    end_date_env = start_date_env + timedelta(days=30)
+    
+    background_tasks.add_task(
+        run_bulk_strategy_sync,
+        room_types_data,
+        rules_data,
+        start_date_env,
+        end_date_env
+    )
+    
+    return {
+        "success": True, 
+        "message": f"Strategy sync initiated for {len(room_types)} room categories over 30 days."
+    }
+
+async def run_bulk_strategy_sync(room_types_data, rules_data, start_date, end_date):
+    """
+    Worker function to calculate and push rates in batches.
+    Uses its own DB session to ensure persistence and logs each batch.
+    """
+    db = SessionLocal()
+    try:
+        # Re-initialize sync manager inside the background task if needed,
+        # or we could have passed it, but it might have closed connections.
+        # Actually, let's just initialize it here.
+        sync_manager = await _initialize_sync_manager(db)
+        
+        for rt in room_types_data:
+            current_date = start_date
+            range_start = current_date
+            last_rate = None
+            
+            while current_date <= end_date:
+                rate = calculate_resolved_rate_from_data(rt, current_date, rules_data)
+                
+                if last_rate is not None and rate != last_rate:
+                    s_date = range_start.strftime('%Y-%m-%d')
+                    e_date = (current_date - timedelta(days=1)).strftime('%Y-%m-%d')
+                    
+                    results = await sync_manager.sync_rates(
+                        room_type_id=rt['id'],
+                        start_date=s_date,
+                        end_date=e_date,
+                        double_rate=last_rate,
+                        single_rate=round(last_rate * 0.85)
+                    )
+                    
+                    # Log to DB
+                    _log_batch_sync(db, rt['id'], s_date, e_date, results)
+                    range_start = current_date
+                
+                last_rate = rate
+                current_date += timedelta(days=1)
+            
+            # Final range
+            if last_rate is not None:
+                s_date = range_start.strftime('%Y-%m-%d')
+                e_date = end_date.strftime('%Y-%m-%d')
+                results = await sync_manager.sync_rates(
+                    room_type_id=rt['id'],
+                    start_date=s_date,
+                    end_date=e_date,
+                    double_rate=last_rate,
+                    single_rate=round(last_rate * 0.85)
+                )
+                _log_batch_sync(db, rt['id'], s_date, e_date, results)
+
+    except Exception as e:
+        logger.error(f"Strategy sync background task failed: {e}")
+    finally:
+        db.close()
+
+def _log_batch_sync(db, room_type_id, start_date, end_date, results):
+    """Helper to log batch results to SyncHistoryDB"""
+    try:
+        all_success = all(r.success for r in results.values())
+        sync_record = SyncHistoryDB(
+            channel_id="all" if len(results) > 1 else list(results.keys())[0] if results else "none",
+            sync_type="rate",
+            room_type_id=room_type_id,
+            date_range_start=start_date,
+            date_range_end=end_date,
+            status="success" if all_success else "partial_failure",
+            message=f"Strategy Sync: Batch {start_date} to {end_date}",
+            response_payload=json.dumps({
+                ch: {"success": r.success, "message": r.message}
+                for ch, r in results.items()
+            }),
+            created_at=datetime.utcnow().isoformat(),
+            completed_at=datetime.utcnow().isoformat()
+        )
+        db.add(sync_record)
+        db.commit()
+    except Exception as e:
+        logger.error(f"Failed to log batch sync: {e}")
+
+def calculate_resolved_rate_from_data(room_type, date, rules):
+    """Calculates the rate using raw data dictionaries from room_type and rules."""
+    base_price = room_type['base_price']
+    floor_price = room_type['floor_price']
+    ceiling_price = room_type['ceiling_price']
+    
+    applied_modifier = None
+    
+    # 1. Special Events
+    special_events = rules.get('specialEvents', [])
+    for event in special_events:
+        try:
+            e_start = datetime.strptime(event['startDate'], '%Y-%m-%d')
+            e_end = datetime.strptime(event['endDate'], '%Y-%m-%d')
+            target = date.replace(hour=0, minute=0, second=0, microsecond=0)
+            if e_start <= target <= e_end:
+                applied_modifier = event
+                break
+        except Exception:
+            continue
+            
+    # 2. Weekly Baseline
+    weekly = rules.get('weeklyRules', {})
+    if not applied_modifier and weekly.get('isActive'):
+        js_weekday = (date.weekday() + 1) % 7
+        if js_weekday in weekly.get('activeDays', []):
+            applied_modifier = weekly
+            
+    # 3. Apply Multiplier
+    resolved_price = base_price
+    if applied_modifier:
+        mod_type = applied_modifier.get('modifierType')
+        mod_val = applied_modifier.get('modifierValue')
+        if mod_type == 'percentage':
+            resolved_price = base_price * mod_val
+        elif mod_type == 'fixed':
+            resolved_price = base_price + mod_val
+            
+    return round(max(floor_price, min(ceiling_price, resolved_price)))
+
+def calculate_resolved_rate(room_type, date, rules):
+    """Calculates the rate for a specific date considering yield rules and safety guardrails."""
+    base_price = room_type.base_price
+    applied_modifier = None
+    
+    # 1. Check Special Events (Highest Priority)
+    special_events = rules.special_events or []
+    for event in special_events:
+        try:
+            e_start = datetime.strptime(event['startDate'], '%Y-%m-%d')
+            e_end = datetime.strptime(event['endDate'], '%Y-%m-%d')
+            # Normalize dates for comparison
+            target = date.replace(hour=0, minute=0, second=0, microsecond=0)
+            if e_start <= target <= e_end:
+                applied_modifier = event
+                break
+        except Exception:
+            continue
+            
+    # 2. Check Weekly Baseline (Lower Priority)
+    if not applied_modifier and rules.weekly_rules and rules.weekly_rules.get('isActive'):
+        weekly = rules.weekly_rules
+        # Convert Python weekday (0-6, Mon-Sun) to JS/Rules weekday (0-6, Sun-Sat)
+        js_weekday = (date.weekday() + 1) % 7
+        if js_weekday in weekly.get('activeDays', []):
+            applied_modifier = weekly
+            
+    # 3. Apply Multiplier/Fixed Adjustment
+    resolved_price = base_price
+    if applied_modifier:
+        mod_type = applied_modifier.get('modifierType')
+        mod_val = applied_modifier.get('modifierValue')
+        
+        if mod_type == 'percentage':
+            # Note: in rules, 1.2 represents +20%
+            resolved_price = base_price * mod_val
+        elif mod_type == 'fixed':
+            resolved_price = base_price + mod_val
+            
+    # 4. Safety Guardrails (Unbreakable Floor/Ceiling)
+    resolved_price = max(room_type.floor_price, min(room_type.ceiling_price, resolved_price))
+    
+    return round(resolved_price)
 
 
 # ============================================================================
