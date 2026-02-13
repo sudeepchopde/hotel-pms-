@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Calendar,
   User,
   Bed,
@@ -294,6 +295,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
   propertySettings,
   roomStatuses = [],
 }) => {
+  const [viewMode, setViewMode] = useState<"day" | "week" | "month">("week");
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -387,17 +389,45 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
 
   const timelineDates = useMemo(() => {
     const dates: string[] = [];
+    if (viewMode === "day") {
+      const d = new Date(startDate);
+      dates.push(d.toISOString().split("T")[0]);
+      return dates;
+    }
+
+    if (viewMode === "month") {
+      const startOfMonth = new Date(
+        startDate.getFullYear(),
+        startDate.getMonth(),
+        1,
+      );
+      const endOfMonth = new Date(
+        startDate.getFullYear(),
+        startDate.getMonth() + 1,
+        0,
+      );
+      const firstDay = new Date(startOfMonth);
+      firstDay.setDate(firstDay.getDate() - (firstDay.getDay() || 0));
+      const lastDay = new Date(endOfMonth);
+      if (lastDay.getDay() < 6)
+        lastDay.setDate(lastDay.getDate() + (6 - lastDay.getDay()));
+
+      const current = new Date(firstDay);
+      while (current <= lastDay) {
+        dates.push(current.toISOString().split("T")[0]);
+        current.setDate(current.getDate() + 1);
+      }
+      return dates;
+    }
+
+    // Default: 14-day Week/Timeline view
     for (let i = 0; i < 14; i++) {
       const d = new Date(startDate);
       d.setDate(d.getDate() + i);
-      // Use local date part to avoid UTC shifts
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      dates.push(`${year}-${month}-${day}`);
+      dates.push(d.toISOString().split("T")[0]);
     }
     return dates;
-  }, [startDate]);
+  }, [startDate, viewMode]);
 
   const monthSpans = useMemo(() => {
     const spans: { name: string; count: number }[] = [];
@@ -1247,67 +1277,92 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                 </div>
               </div>
               <div className="h-8 w-px bg-slate-100 mx-2"></div>
-              <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-100">
+              <div className="flex bg-white rounded-xl border border-slate-200 p-1 shadow-sm h-12">
+                <button
+                  onClick={() => {
+                    const d = new Date();
+                    d.setHours(0, 0, 0, 0);
+                    if (viewMode === "week") d.setDate(d.getDate() - 1);
+                    setStartDate(d);
+                  }}
+                  className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-all"
+                >
+                  Today
+                </button>
+                <div className="w-px h-4 bg-slate-200 self-center mx-1"></div>
                 <button
                   onClick={() => {
                     const d = new Date(startDate);
-                    d.setDate(d.getDate() - 7);
+                    if (viewMode === "day") d.setDate(d.getDate() - 1);
+                    else if (viewMode === "month") d.setMonth(d.getMonth() - 1);
+                    else d.setDate(d.getDate() - 7);
                     setStartDate(d);
                   }}
-                  className="p-2 hover:bg-white rounded-lg shadow-sm transition-all"
+                  className="p-2 text-slate-400 hover:text-indigo-600 rounded-lg"
                 >
-                  <ChevronLeft className="w-4 h-4 text-slate-500" />
+                  <ChevronLeft className="w-4 h-4" />
                 </button>
-                <div className="px-4 text-center min-w-[140px]">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
-                    Current View
-                  </span>
-                  <span className="text-sm font-bold text-slate-800 tabular-nums">
-                    {startDate.toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                    })}{" "}
-                    -{" "}
-                    {new Date(
-                      new Date(startDate).setDate(startDate.getDate() + 13),
-                    ).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </span>
-                </div>
                 <button
                   onClick={() => {
                     const d = new Date(startDate);
-                    d.setDate(d.getDate() + 7);
+                    if (viewMode === "day") d.setDate(d.getDate() + 1);
+                    else if (viewMode === "month") d.setMonth(d.getMonth() + 1);
+                    else d.setDate(d.getDate() + 7);
                     setStartDate(d);
                   }}
-                  className="p-2 hover:bg-white rounded-lg shadow-sm transition-all"
+                  className="p-2 text-slate-400 hover:text-indigo-600 rounded-lg"
                 >
-                  <ChevronRight className="w-4 h-4 text-slate-500" />
+                  <ChevronRight className="w-4 h-4" />
                 </button>
-              </div>
-              <div className="h-8 w-px bg-slate-100 mx-1"></div>
-              <div
-                onClick={() => jumpDateRef.current?.showPicker()}
-                className="h-12 w-12 flex items-center justify-center bg-white rounded-xl border-2 border-slate-100 hover:border-indigo-300 transition-all cursor-pointer relative group shadow-sm active:scale-95"
-                title="Jump to Date"
-              >
-                <div className="p-1.5 bg-indigo-50 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-all">
-                  <Calendar className="w-4 h-4 text-indigo-600 group-hover:text-white" />
+
+                <div className="w-px h-4 bg-slate-200 self-center mx-1"></div>
+
+                <div className="relative group">
+                  <button className="h-full px-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-50 rounded-lg transition-all">
+                    {viewMode} View
+                    <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                  </button>
+                  <div className="absolute top-full right-0 mt-1 w-32 bg-white rounded-xl shadow-xl border border-slate-100 py-1 z-[100] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
+                    {(["day", "week", "month"] as const).map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setViewMode(v)}
+                        className={`w-full text-left px-4 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-indigo-50 transition-colors ${viewMode === v ? "text-indigo-600 bg-indigo-50/50" : "text-slate-500"}`}
+                      >
+                        {v.charAt(0).toUpperCase() + v.slice(1)}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <input
-                  ref={jumpDateRef}
-                  type="date"
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      const selected = new Date(e.target.value);
-                      selected.setHours(0, 0, 0, 0);
-                      setStartDate(selected);
-                    }
-                  }}
-                  className="absolute inset-0 opacity-0 pointer-events-none"
-                />
+
+                <div
+                  className="relative flex items-center px-4 hover:bg-slate-50 transition-all rounded-lg cursor-pointer"
+                  onClick={() => jumpDateRef.current?.showPicker()}
+                >
+                  <Calendar className="w-4 h-4 text-slate-400" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 ml-2 min-w-[120px] text-center">
+                    {viewMode === "month"
+                      ? startDate.toLocaleDateString("en-US", {
+                          month: "long",
+                          year: "numeric",
+                        })
+                      : viewMode === "day"
+                        ? formatDate(startDate.toISOString().split("T")[0])
+                        : `${formatDate(startDate.toISOString().split("T")[0])} - 14 Days`}
+                  </span>
+                  <input
+                    ref={jumpDateRef}
+                    type="date"
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const selected = new Date(e.target.value);
+                        selected.setHours(0, 0, 0, 0);
+                        setStartDate(selected);
+                      }
+                    }}
+                    className="absolute inset-0 opacity-0 cursor-pointer pointer-events-none"
+                  />
+                </div>
               </div>
             </div>
             {connections.filter((c) => c.isStopped).length > 0 && (
@@ -1416,82 +1471,88 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
             onMouseLeave={handleMouseUpOrLeave}
             className={`flex-1 overflow-auto custom-scrollbar bg-slate-50/50 ${isPanning ? "cursor-grabbing select-none" : ""}`}
           >
-            <div className="min-w-max pb-24">
-              {/* FROZEN DATES PANE (VERTICAL STICKY) */}
-              <div
-                className={`sticky top-0 z-[55] flex gap-3 px-6 py-4 bg-[#f8fafc]/95 backdrop-blur-sm border-b border-slate-200/50 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.1)] cursor-grab ${isPanning ? "cursor-grabbing" : ""}`}
-                style={{ height: STICKY_HEADER_TOTAL_HEIGHT }}
-                onMouseDown={handleMouseDown}
-              >
-                {/* Left Card - Matches Room Rows */}
-                <div className="w-44 h-[72px] shrink-0 bg-white rounded-2xl shadow-xl border border-slate-300/30 px-6 flex flex-col justify-center sticky left-0 z-[56]">
-                  <span className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-1">
-                    Grid Context
-                  </span>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xl font-black text-slate-800 tracking-tighter">
-                      Inventory
+            <div
+              className={`${viewMode === "week" ? "min-w-max pb-24" : "h-full flex flex-col pt-4"}`}
+            >
+              {/* FROZEN DATES PANE (VERTICAL STICKY) - Only for Week/Timeline view */}
+              {viewMode === "week" && (
+                <div
+                  className={`sticky top-0 z-[55] flex gap-3 px-6 py-4 bg-[#f8fafc]/95 backdrop-blur-sm border-b border-slate-200/50 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.1)] cursor-grab ${isPanning ? "cursor-grabbing" : ""}`}
+                  style={{ height: STICKY_HEADER_TOTAL_HEIGHT }}
+                  onMouseDown={handleMouseDown}
+                >
+                  {/* Left Card - Matches Room Rows */}
+                  <div className="w-44 h-[72px] shrink-0 bg-white rounded-2xl shadow-xl border border-slate-300/30 px-6 flex flex-col justify-center sticky left-0 z-[56]">
+                    <span className="text-[9px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-1">
+                      Grid Context
                     </span>
-                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 shadow-inner">
-                      <LayoutGrid className="w-5 h-5" />
+                    <div className="flex items-center justify-between">
+                      <span className="text-xl font-black text-slate-800 tracking-tighter">
+                        Inventory
+                      </span>
+                      <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 shadow-inner">
+                        <LayoutGrid className="w-5 h-5" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Card - Date Timeline Segments */}
+                  <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-2xl border border-black/10 overflow-hidden relative">
+                    {/* Month Heading Row */}
+                    <div className="flex h-[24px] border-b border-slate-100 bg-slate-50/50 backdrop-blur-md">
+                      {monthSpans.map((span, idx) => (
+                        <div
+                          key={idx}
+                          style={{ width: span.count * CELL_WIDTH }}
+                          className="flex items-center px-5 border-r border-slate-100 last:border-0 shrink-0"
+                        >
+                          <span className="text-[9px] font-black uppercase tracking-[0.25em] text-slate-400 flex items-center gap-2">
+                            <Calendar className="w-3 h-3 text-indigo-400" />
+                            {span.name}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Date Timeline Row */}
+                    <div className="flex h-[48px]">
+                      {timelineDates.map((date) => {
+                        const d = new Date(date);
+                        const isToday =
+                          new Date().toDateString() === d.toDateString();
+                        const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                        return (
+                          <div
+                            key={date}
+                            className={`flex flex-col items-center justify-center border-r border-slate-100 last:border-0 shrink-0 overflow-hidden relative ${isWeekend ? "bg-slate-50/50" : ""} ${isToday ? "bg-cyan-400/10 ring-2 ring-inset ring-cyan-400/40 z-10" : ""}`}
+                            style={{ width: CELL_WIDTH }}
+                          >
+                            {isToday && (
+                              <div className="absolute inset-x-0 top-0 h-full border-x-2 border-cyan-400/30 pointer-events-none"></div>
+                            )}
+                            <span
+                              className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${isToday ? "text-cyan-600" : "text-slate-400"}`}
+                            >
+                              {d.toLocaleDateString("en-US", {
+                                weekday: "short",
+                              })}
+                            </span>
+                            <div
+                              className={`w-7 h-7 flex items-center justify-center rounded-full text-sm font-black transition-all tabular-nums ${isToday ? "bg-cyan-600 text-white shadow-lg shadow-cyan-200" : "text-slate-800"}`}
+                            >
+                              {d.getDate()}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
+              )}
 
-                {/* Right Card - Date Timeline Segments */}
-                <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-2xl border border-black/10 overflow-hidden relative">
-                  {/* Month Heading Row */}
-                  <div className="flex h-[24px] border-b border-slate-100 bg-slate-50/50 backdrop-blur-md">
-                    {monthSpans.map((span, idx) => (
-                      <div
-                        key={idx}
-                        style={{ width: span.count * CELL_WIDTH }}
-                        className="flex items-center px-5 border-r border-slate-100 last:border-0 shrink-0"
-                      >
-                        <span className="text-[9px] font-black uppercase tracking-[0.25em] text-slate-400 flex items-center gap-2">
-                          <Calendar className="w-3 h-3 text-indigo-400" />
-                          {span.name}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Date Timeline Row */}
-                  <div className="flex h-[48px]">
-                    {timelineDates.map((date) => {
-                      const d = new Date(date);
-                      const isToday =
-                        new Date().toDateString() === d.toDateString();
-                      const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                      return (
-                        <div
-                          key={date}
-                          className={`flex flex-col items-center justify-center border-r border-slate-100 last:border-0 shrink-0 overflow-hidden relative ${isWeekend ? "bg-slate-50/50" : ""} ${isToday ? "bg-cyan-400/10 ring-2 ring-inset ring-cyan-400/40 z-10" : ""}`}
-                          style={{ width: CELL_WIDTH }}
-                        >
-                          {isToday && (
-                            <div className="absolute inset-x-0 top-0 h-full border-x-2 border-cyan-400/30 pointer-events-none"></div>
-                          )}
-                          <span
-                            className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${isToday ? "text-cyan-600" : "text-slate-400"}`}
-                          >
-                            {d.toLocaleDateString("en-US", {
-                              weekday: "short",
-                            })}
-                          </span>
-                          <div
-                            className={`w-7 h-7 flex items-center justify-center rounded-full text-sm font-black transition-all tabular-nums ${isToday ? "bg-cyan-600 text-white shadow-lg shadow-cyan-200" : "text-slate-800"}`}
-                          >
-                            {d.getDate()}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <div className="px-6 space-y-3 pt-6">
+              <div
+                className={`${viewMode === "week" ? "px-6 space-y-3 pt-6" : "px-6 flex-1 flex flex-col"}`}
+              >
                 {isLoading ? (
                   <div className="space-y-4 animate-pulse">
                     {[1, 2, 3, 4].map((i) => (
@@ -1510,326 +1571,503 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
 
                     return (
                       <>
-                        {/* Daily Occupancy Summary Row */}
-                        <div className="flex flex-col md:flex-row gap-3 items-center mb-1 animate-in fade-in slide-in-from-top-2 duration-500">
+                        {viewMode === "month" ? (
                           <div
-                            className="w-full md:w-44 shrink-0 px-4 flex items-center h-[32px] sticky left-0 z-40 bg-white/80 backdrop-blur-md rounded-xl border border-slate-200/50 shadow-sm"
+                            className="grid grid-cols-7 bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-500 flex-1 min-h-0"
                             style={{
-                              background:
-                                "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+                              gridTemplateRows: `auto repeat(${Math.ceil(timelineDates.length / 7)}, 1fr)`,
                             }}
                           >
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                              <Zap className="w-3 h-3 text-amber-500 animate-pulse" />
-                              Total Booked
-                            </span>
-                          </div>
-                          <div className="flex-1 flex overflow-hidden rounded-xl bg-white border border-slate-200/50 h-[32px] items-center shadow-sm">
-                            {timelineDates.map((date, idx) => {
+                            {[
+                              "Sun",
+                              "Mon",
+                              "Tue",
+                              "Wed",
+                              "Thu",
+                              "Fri",
+                              "Sat",
+                            ].map((day) => (
+                              <div
+                                key={day}
+                                className="py-2.5 bg-slate-50 border-b border-r border-slate-100 last:border-r-0 text-center flex items-center justify-center"
+                              >
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                                  {day}
+                                </span>
+                              </div>
+                            ))}
+                            {timelineDates.map((date) => {
+                              const d = new Date(date);
                               const isToday =
-                                new Date().toDateString() ===
-                                new Date(date).toDateString();
+                                d.toDateString() === new Date().toDateString();
+                              const isCurrentMonth =
+                                d.getMonth() === startDate.getMonth();
+                              const dayBookings = assignedBookings.filter(
+                                (b) =>
+                                  b.checkIn <= date &&
+                                  b.checkOut > date &&
+                                  (b.status === "Confirmed" ||
+                                    b.status === "CheckedIn" ||
+                                    b.status === "CheckedOut"),
+                              );
+
                               return (
                                 <div
                                   key={date}
-                                  style={{ width: CELL_WIDTH }}
-                                  className={`shrink-0 flex items-center justify-center border-r border-slate-100 last:border-0 h-full transition-colors ${isToday ? "bg-cyan-50/50" : "hover:bg-slate-50"}`}
+                                  className={`p-2 border-b border-r border-slate-100 last:border-r-0 transition-all hover:bg-slate-50/50 relative group flex flex-col min-h-0 ${!isCurrentMonth ? "bg-slate-50/30 opacity-40 text-slate-300" : "bg-white"}`}
+                                  onClick={() => {
+                                    setBookingPrefill({
+                                      checkIn: date,
+                                      roomTypeId: roomTypes[0]?.id || "",
+                                    });
+                                    setIsNewBookingModalOpen(true);
+                                  }}
                                 >
-                                  <div
-                                    className={`px-2 py-0.5 rounded-md text-[11px] font-black tabular-nums transition-all ${dailyOccupancy[idx] > 0 ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100 scale-110" : "text-slate-300"}`}
-                                  >
-                                    {dailyOccupancy[idx]}
+                                  <div className="flex justify-between items-start mb-0.5">
+                                    <span
+                                      className={`w-5 h-5 flex items-center justify-center rounded-full text-[9px] font-black tabular-nums transition-all ${isToday ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" : "text-slate-800"}`}
+                                    >
+                                      {d.getDate()}
+                                    </span>
+                                    {dayBookings.length > 0 && (
+                                      <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest bg-slate-100 px-1.5 py-0.5 rounded-md">
+                                        {dayBookings.length}
+                                      </span>
+                                    )}
                                   </div>
+                                  <div className="flex-1 space-y-0.5 overflow-hidden">
+                                    {dayBookings.slice(0, 4).map((b) => (
+                                      <div
+                                        key={b.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedBooking(b);
+                                        }}
+                                        className={`px-1.5 py-0.5 rounded text-[7px] font-black text-white truncate uppercase tracking-tighter cursor-pointer hover:brightness-110 shadow-sm ${STATUS_STYLES[b.status] || "bg-indigo-600"}`}
+                                      >
+                                        {b.guestName}
+                                      </div>
+                                    ))}
+                                    {dayBookings.length > 4 && (
+                                      <div className="text-[7px] font-black text-indigo-500 text-center uppercase tracking-widest">
+                                        + {dayBookings.length - 4}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="absolute inset-0 border-2 border-indigo-500 opacity-0 group-hover:opacity-10 transition-opacity pointer-events-none rounded-lg"></div>
                                 </div>
                               );
                             })}
                           </div>
-                        </div>
-
-                        {gridRows.map((row, index) => {
-                          const isHeader = row.type === "header";
-                          if (isHeader) {
-                            const occupiedCount = assignedBookings.filter(
-                              (b) =>
-                                b.roomTypeId === row.id &&
-                                b.status !== "Cancelled" &&
-                                b.status !== "Rejected" &&
-                                b.checkIn <= todayStrLocal &&
-                                b.checkOut > todayStrLocal,
-                            ).length;
-                            const categoryIndex = roomTypes.findIndex(
-                              (rt) => rt.id === row.id,
-                            );
-                            const gradientStyle =
-                              CATEGORY_GRADIENTS[
-                                categoryIndex >= 0
-                                  ? categoryIndex % CATEGORY_GRADIENTS.length
-                                  : 0
-                              ];
-                            return (
-                              <div
-                                key={row.id}
-                                className="sticky top-[72px] z-30 flex flex-col md:flex-row gap-3 pt-3"
-                              >
-                                <div
-                                  onClick={() => toggleExpand(row.id)}
-                                  className="h-[48px] w-full md:w-44 shrink-0 rounded-xl shadow-xl px-3 py-1 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] border border-white/20 backdrop-blur-lg relative overflow-hidden group sticky left-0 z-40"
-                                  style={gradientStyle}
-                                >
-                                  <div
-                                    className="absolute inset-0 pointer-events-none"
-                                    style={{
-                                      background:
-                                        "linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 100%)",
-                                    }}
-                                  ></div>
-                                  <div className="flex items-center gap-2 relative z-10">
-                                    <div className="p-1.5 bg-black/30 rounded-lg text-white shadow-inner shrink-0">
-                                      <Bed className="w-3.5 h-3.5" />
+                        ) : viewMode === "day" ? (
+                          <div className="flex-1 flex flex-col gap-6 animate-in slide-in-from-left-4 duration-500 min-h-0 overflow-y-auto pt-4">
+                            <div className="grid grid-cols-1 gap-4">
+                              {gridRows.map((row) => {
+                                if (row.type === "header")
+                                  return (
+                                    <div
+                                      key={row.id}
+                                      className="pt-4 border-b border-slate-200 pb-2"
+                                    >
+                                      <h3 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em]">
+                                        {row.name}
+                                      </h3>
                                     </div>
-                                    <div className="flex flex-col justify-center min-w-0">
-                                      <span className="font-black text-[10px] text-white block tracking-tight leading-none truncate uppercase">
+                                  );
+                                const dayBooking = getBookingForCell(
+                                  row.id,
+                                  timelineDates[0],
+                                );
+                                return (
+                                  <div
+                                    key={row.id}
+                                    className="flex items-center gap-4 bg-white p-4 rounded-xl shadow-lg border border-slate-200 group hover:border-indigo-400 transition-all"
+                                  >
+                                    <div className="w-32 shrink-0">
+                                      <span className="text-xl font-black text-slate-900">
                                         {row.name}
                                       </span>
-                                      <span className="text-[7px] text-white/80 font-bold uppercase tracking-widest leading-none mt-1">
-                                        {row.capacity} Units
-                                      </span>
                                     </div>
-                                  </div>
-                                  <div className="flex items-center gap-2 relative z-10">
-                                    <div className="p-1 bg-white/20 rounded-md text-white hover:bg-white/30 transition-colors shadow-sm shrink-0">
-                                      {effectiveExpandedTypes[row.id] ? (
-                                        <Minimize2 className="w-3 h-3" />
+                                    <div className="flex-1 min-h-[60px] relative rounded-lg bg-slate-50 border-2 border-dashed border-slate-200 flex items-center justify-center">
+                                      {dayBooking ? (
+                                        <div
+                                          onClick={() =>
+                                            setSelectedBooking(dayBooking)
+                                          }
+                                          className={`w-full h-full flex items-center justify-between px-6 rounded-lg text-white cursor-pointer shadow-lg animate-in fade-in zoom-in-95 ${STATUS_STYLES[dayBooking.status] || "bg-indigo-600"}`}
+                                        >
+                                          <div className="flex flex-col">
+                                            <span className="text-sm font-black uppercase tracking-tight">
+                                              {dayBooking.guestName}
+                                            </span>
+                                            <span className="text-[9px] font-bold opacity-80 uppercase tracking-widest">
+                                              {dayBooking.source} •{" "}
+                                              {dayBooking.checkIn} to{" "}
+                                              {dayBooking.checkOut}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-4">
+                                            {dayBooking.isVIP && (
+                                              <Star className="w-5 h-5 text-amber-300 fill-amber-300" />
+                                            )}
+                                            <div className="px-3 py-1 bg-white/20 rounded-full text-[10px] font-black uppercase tracking-widest">
+                                              View Details
+                                            </div>
+                                          </div>
+                                        </div>
                                       ) : (
-                                        <Maximize2 className="w-3 h-3" />
+                                        <button
+                                          onClick={() => {
+                                            setBookingPrefill({
+                                              checkIn: timelineDates[0],
+                                              roomTypeId: row.parentId || "",
+                                              roomId: row.id,
+                                            });
+                                            setIsNewBookingModalOpen(true);
+                                          }}
+                                          className="flex items-center gap-2 text-slate-400 font-bold uppercase tracking-widest text-[10px] hover:text-indigo-600 transition-colors"
+                                        >
+                                          <Plus className="w-4 h-4" /> Available
+                                          for Check-In
+                                        </button>
                                       )}
                                     </div>
                                   </div>
-                                </div>
-                                <div className="hidden md:flex flex-1 bg-slate-200/40 rounded-2xl items-center relative overflow-hidden group/lane h-[48px]">
-                                  <div className="h-px bg-slate-300/50 absolute left-0 right-0 top-1/2 -translate-y-1/2 z-0"></div>
-                                  {todayIndex !== -1 && (
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            {/* Daily Occupancy Summary Row */}
+                            <div className="flex flex-col md:flex-row gap-3 items-center mb-1 animate-in fade-in slide-in-from-top-2 duration-500">
+                              <div
+                                className="w-full md:w-44 shrink-0 px-4 flex items-center h-[32px] sticky left-0 z-40 bg-white/80 backdrop-blur-md rounded-xl border border-slate-200/50 shadow-sm"
+                                style={{
+                                  background:
+                                    "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+                                }}
+                              >
+                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                  <Zap className="w-3 h-3 text-amber-500 animate-pulse" />
+                                  Total Booked
+                                </span>
+                              </div>
+                              <div className="flex-1 flex overflow-hidden rounded-xl bg-white border border-slate-200/50 h-[32px] items-center shadow-sm">
+                                {timelineDates.map((date, idx) => {
+                                  const isToday =
+                                    new Date().toDateString() ===
+                                    new Date(date).toDateString();
+                                  return (
                                     <div
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleExpand(row.id);
-                                      }}
-                                      className="absolute z-20 flex items-center justify-center h-full border-x-2 border-cyan-400/40 bg-cyan-400/10 shadow-[0_0_20px_rgba(34,211,238,0.1)] transition-all duration-500 cursor-pointer group/today-col hover:bg-cyan-400/20"
-                                      style={{
-                                        width: CELL_WIDTH,
-                                        left: todayIndex * CELL_WIDTH,
-                                      }}
+                                      key={date}
+                                      style={{ width: CELL_WIDTH }}
+                                      className={`shrink-0 flex items-center justify-center border-r border-slate-100 last:border-0 h-full transition-colors ${isToday ? "bg-cyan-50/50" : "hover:bg-slate-50"}`}
                                     >
-                                      <div className="flex items-center gap-2 bg-white/95 backdrop-blur-md px-3 py-1 rounded-full border-2 border-cyan-400/50 shadow-[0_0_15px_rgba(34,211,238,0.2)] group-hover/today-col:border-cyan-400 group-hover/today-col:shadow-cyan-400/30 group-active/today-col:scale-95 transition-all duration-200 select-none group/badge">
-                                        <span className="text-[9px] font-black text-cyan-600 uppercase tracking-widest flex items-center gap-1">
-                                          <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse group-hover/badge:scale-125 transition-transform"></div>
-                                          Today
-                                        </span>
-                                        <span className="text-sm font-black text-slate-900 tabular-nums">
-                                          {occupiedCount}
-                                        </span>
-                                        <span className="text-[9px] font-bold text-slate-400 uppercase">
-                                          / {row.capacity}
-                                        </span>
+                                      <div
+                                        className={`px-2 py-0.5 rounded-md text-[11px] font-black tabular-nums transition-all ${dailyOccupancy[idx] > 0 ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100 scale-110" : "text-slate-300"}`}
+                                      >
+                                        {dailyOccupancy[idx]}
                                       </div>
                                     </div>
-                                  )}
-                                  <div className="relative z-10 flex-1 flex items-center justify-end px-6 opacity-0 group-hover/lane:opacity-100 transition-opacity">
-                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                                      Click heading to{" "}
-                                      {effectiveExpandedTypes[row.id]
-                                        ? "collapse"
-                                        : "expand"}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          }
-
-                          const securityStatus = roomSecurity.find(
-                            (rs) => rs.room_id === row.id,
-                          );
-                          const isAlerted =
-                            securityStatus &&
-                            (securityStatus.failCount >= 3 ||
-                              securityStatus.isLocked);
-
-                          const roomStatus = roomStatuses.find(
-                            (s) => s.roomNumber === row.id,
-                          );
-                          const status = isAlerted
-                            ? "Alert"
-                            : roomStatus?.status || "Clean";
-
-                          let statusColor =
-                            "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
-                          let statusLabel = "Clean & Ready";
-                          let statusTextColor = "text-slate-500";
-                          let statusBg = "";
-                          let statusBorder = "border-slate-300/30";
-
-                          if (isAlerted) {
-                            statusColor =
-                              "bg-amber-500 shadow-[0_0_10px_rgba(251,191,36,1)] animate-pulse";
-                            statusLabel = "Alert Active";
-                            statusTextColor = "text-amber-700";
-                            statusBg = "bg-amber-100 ring-2 ring-amber-400";
-                            statusBorder = "border-amber-500";
-                          } else if (status === "Dirty") {
-                            statusColor = "bg-rose-500";
-                            statusLabel = "Dirty";
-                            statusTextColor = "text-rose-600";
-                            statusBorder = "border-rose-200";
-                            statusBg = "bg-rose-50";
-                          } else if (status === "Inspecting") {
-                            statusColor = "bg-amber-400";
-                            statusLabel = "Inspecting";
-                            statusTextColor = "text-amber-600";
-                          } else if (status === "OutOfOrder") {
-                            statusColor = "bg-red-500 animate-pulse";
-                            statusLabel = "MAINTENANCE";
-                            statusTextColor = "text-white/90";
-                            statusBg = "bg-slate-800";
-                            statusBorder = "border-slate-900";
-                          }
-
-                          const categoryIndex = row.parentId
-                            ? roomTypes.findIndex(
-                                (rt) => rt.id === row.parentId,
-                              )
-                            : -1;
-                          const rowTintStyle =
-                            categoryIndex >= 0
-                              ? ROW_TINTS[categoryIndex % ROW_TINTS.length]
-                              : { backgroundColor: "#ffffff" };
-                          const labelTintStyle =
-                            categoryIndex >= 0
-                              ? LABEL_TINTS[categoryIndex % LABEL_TINTS.length]
-                              : { backgroundColor: "#ffffff" };
-
-                          // Override row style for OutOfOrder
-                          const effectiveRowStyle =
-                            status === "OutOfOrder"
-                              ? {
-                                  backgroundImage:
-                                    "repeating-linear-gradient(45deg, #f1f5f9 0px, #f1f5f9 10px, #e2e8f0 10px, #e2e8f0 20px)",
-                                  opacity: 0.8,
-                                }
-                              : rowTintStyle;
-
-                          return (
-                            <div
-                              key={row.id}
-                              className="flex flex-col md:flex-row gap-3 group animate-in slide-in-from-top-2 fade-in duration-300 ease-out fill-mode-forwards"
-                            >
-                              <div className="w-full md:w-44 md:sticky md:left-0 z-20 shrink-0">
-                                <div
-                                  className={`h-[48px] w-full ${statusBg} rounded-xl shadow-lg border ${statusBorder} px-3 py-1 flex flex-col justify-center hover:shadow-indigo-500/10 transition-all group-hover:border-indigo-400/50 relative overflow-hidden`}
-                                  style={
-                                    isAlerted || statusBg ? {} : labelTintStyle
-                                  }
-                                >
-                                  <div
-                                    className={`absolute top-0 left-0 w-1.5 h-full ${isAlerted ? "bg-amber-600" : "bg-indigo-600"} opacity-0 group-hover:opacity-100 transition-opacity`}
-                                  ></div>
-                                  <div className="flex justify-between items-center">
-                                    <span
-                                      className={`text-lg font-black ${isAlerted ? "text-amber-900" : status === "OutOfOrder" ? "text-white" : "text-slate-900"} tabular-nums tracking-tighter`}
-                                    >
-                                      {row.name}
-                                    </span>
-                                    <div
-                                      className={`w-2 h-2 rounded-full ${statusColor}`}
-                                    ></div>
-                                  </div>
-                                  <span
-                                    className={`text-[8px] font-black ${statusTextColor} uppercase tracking-[0.2em] leading-none`}
-                                  >
-                                    {statusLabel}
-                                  </span>
-                                </div>
-                              </div>
-                              <div
-                                className="flex-1 rounded-xl shadow-2xl border border-black/10 relative flex overflow-hidden hover:shadow-indigo-900/10 transition-all"
-                                style={effectiveRowStyle}
-                              >
-                                {timelineDates.map((date) => {
-                                  const booking = getBookingForCell(
-                                    row.id,
-                                    date,
-                                  );
-                                  const d = new Date(date);
-                                  return (
-                                    <DroppableCell
-                                      key={date}
-                                      date={date}
-                                      roomNumber={row.id}
-                                      isWeekend={
-                                        d.getDay() === 0 || d.getDay() === 6
-                                      }
-                                      isToday={
-                                        new Date().toDateString() ===
-                                        d.toDateString()
-                                      }
-                                      onClick={() => {
-                                        if (!booking) {
-                                          setBookingPrefill({
-                                            checkIn: date,
-                                            roomTypeId: row.parentId || "",
-                                            roomId: row.id,
-                                          });
-                                          setIsNewBookingModalOpen(true);
-                                        }
-                                      }}
-                                    >
-                                      {booking &&
-                                        (() => {
-                                          const bookingStart = new Date(
-                                            booking.checkIn,
-                                          );
-                                          const timelineStart = new Date(
-                                            timelineDates[0],
-                                          );
-                                          const effectiveStart =
-                                            bookingStart < timelineStart
-                                              ? timelineStart
-                                              : bookingStart;
-                                          const bookingEnd = new Date(
-                                            booking.checkOut,
-                                          );
-
-                                          const visualDuration = Math.ceil(
-                                            (bookingEnd.getTime() -
-                                              effectiveStart.getTime()) /
-                                              (1000 * 3600 * 24),
-                                          );
-
-                                          return (
-                                            <DraggableBooking
-                                              booking={booking}
-                                              duration={visualDuration}
-                                              onResize={(newDur) =>
-                                                handleResizeBooking(
-                                                  booking.id,
-                                                  newDur,
-                                                )
-                                              }
-                                              onSelect={handleBookingClick}
-                                              isJustMoved={
-                                                booking.id ===
-                                                lastMovedBookingId
-                                              }
-                                            />
-                                          );
-                                        })()}
-                                    </DroppableCell>
                                   );
                                 })}
                               </div>
                             </div>
-                          );
-                        })}
+
+                            {gridRows.map((row) => {
+                              const isHeader = row.type === "header";
+                              const effectiveExpandedTypes =
+                                Object.keys(expandedTypes).length === 0
+                                  ? Object.fromEntries(
+                                      roomTypes.map((rt) => [rt.id, true]),
+                                    )
+                                  : expandedTypes;
+
+                              if (isHeader) {
+                                // Re-using the high-fidelity header logic from before
+                                const occupiedCount = assignedBookings.filter(
+                                  (b) =>
+                                    b.roomTypeId === row.id &&
+                                    b.status !== "Cancelled" &&
+                                    b.status !== "Rejected" &&
+                                    b.checkIn <= todayStrLocal &&
+                                    b.checkOut > todayStrLocal,
+                                ).length;
+                                const categoryIndex = roomTypes.findIndex(
+                                  (rt) => rt.id === row.id,
+                                );
+                                const gradientStyle =
+                                  CATEGORY_GRADIENTS[
+                                    categoryIndex >= 0
+                                      ? categoryIndex %
+                                        CATEGORY_GRADIENTS.length
+                                      : 0
+                                  ];
+                                return (
+                                  <div
+                                    key={row.id}
+                                    className="sticky top-[72px] z-30 flex flex-col md:flex-row gap-3 pt-3"
+                                  >
+                                    <div
+                                      onClick={() => toggleExpand(row.id)}
+                                      className="h-[48px] w-full md:w-44 shrink-0 rounded-xl shadow-xl px-3 py-1 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] border border-white/20 backdrop-blur-lg relative overflow-hidden group sticky left-0 z-40"
+                                      style={gradientStyle}
+                                    >
+                                      <div
+                                        className="absolute inset-0 pointer-events-none"
+                                        style={{
+                                          background:
+                                            "linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 100%)",
+                                        }}
+                                      ></div>
+                                      <div className="flex items-center gap-2 relative z-10">
+                                        <div className="p-1.5 bg-black/30 rounded-lg text-white shadow-inner shrink-0">
+                                          <Bed className="w-3.5 h-3.5" />
+                                        </div>
+                                        <div className="flex flex-col justify-center min-w-0">
+                                          <span className="font-black text-[10px] text-white block tracking-tight leading-none truncate uppercase">
+                                            {row.name}
+                                          </span>
+                                          <span className="text-[7px] text-white/80 font-bold uppercase tracking-widest leading-none mt-1">
+                                            {row.capacity} Units
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2 relative z-10">
+                                        <div className="p-1 bg-white/20 rounded-md text-white hover:bg-white/30 transition-colors shadow-sm shrink-0">
+                                          {effectiveExpandedTypes[row.id] ? (
+                                            <Minimize2 className="w-3 h-3" />
+                                          ) : (
+                                            <Maximize2 className="w-3 h-3" />
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="hidden md:flex flex-1 bg-slate-200/40 rounded-2xl items-center relative overflow-hidden group/lane h-[48px]">
+                                      <div className="h-px bg-slate-300/50 absolute left-0 right-0 top-1/2 -translate-y-1/2 z-0"></div>
+                                      {todayIndex !== -1 && (
+                                        <div
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleExpand(row.id);
+                                          }}
+                                          className="absolute z-20 flex items-center justify-center h-full border-x-2 border-cyan-400/40 bg-cyan-400/10 shadow-[0_0_20px_rgba(34,211,238,0.1)] transition-all duration-500 cursor-pointer group/today-col hover:bg-cyan-400/20"
+                                          style={{
+                                            width: CELL_WIDTH,
+                                            left: todayIndex * CELL_WIDTH,
+                                          }}
+                                        >
+                                          <div className="flex items-center gap-2 bg-white/95 backdrop-blur-md px-3 py-1 rounded-full border-2 border-cyan-400/50 shadow-[0_0_15px_rgba(34,211,238,0.2)] group-hover/today-col:border-cyan-400 group-hover/today-col:shadow-cyan-400/30 group-active/today-col:scale-95 transition-all duration-200 select-none group/badge">
+                                            <span className="text-[9px] font-black text-cyan-600 uppercase tracking-widest flex items-center gap-1">
+                                              <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse group-hover/badge:scale-125 transition-transform"></div>
+                                              Today
+                                            </span>
+                                            <span className="text-sm font-black text-slate-900 tabular-nums">
+                                              {occupiedCount}
+                                            </span>
+                                            <span className="text-[9px] font-bold text-slate-400 uppercase">
+                                              / {row.capacity}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      )}
+                                      <div className="relative z-10 flex-1 flex items-center justify-end px-6 opacity-0 group-hover/lane:opacity-100 transition-opacity">
+                                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                                          Click heading to{" "}
+                                          {effectiveExpandedTypes[row.id]
+                                            ? "collapse"
+                                            : "expand"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              const securityStatus = roomSecurity.find(
+                                (rs) => rs.room_id === row.id,
+                              );
+                              const isAlerted =
+                                securityStatus &&
+                                (securityStatus.failCount >= 3 ||
+                                  securityStatus.isLocked);
+
+                              const roomStatus = roomStatuses.find(
+                                (s) => s.roomNumber === row.id,
+                              );
+                              const status = isAlerted
+                                ? "Alert"
+                                : roomStatus?.status || "Clean";
+
+                              let statusColor =
+                                "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
+                              let statusLabel = "Clean & Ready";
+                              let statusTextColor = "text-slate-500";
+                              let statusBg = "";
+                              let statusBorder = "border-slate-300/30";
+
+                              if (isAlerted) {
+                                statusColor =
+                                  "bg-amber-500 shadow-[0_0_10px_rgba(251,191,36,1)] animate-pulse";
+                                statusLabel = "Alert Active";
+                                statusTextColor = "text-amber-700";
+                                statusBg = "bg-amber-100 ring-2 ring-amber-400";
+                                statusBorder = "border-amber-500";
+                              } else if (status === "Dirty") {
+                                statusColor = "bg-rose-500";
+                                statusLabel = "Dirty";
+                                statusTextColor = "text-rose-600";
+                                statusBorder = "border-rose-200";
+                                statusBg = "bg-rose-50";
+                              } else if (status === "OutOfOrder") {
+                                statusColor = "bg-red-500 animate-pulse";
+                                statusLabel = "MAINTENANCE";
+                                statusTextColor = "text-white/90";
+                                statusBg = "bg-slate-800";
+                                statusBorder = "border-slate-900";
+                              }
+
+                              const categoryIndex = row.parentId
+                                ? roomTypes.findIndex(
+                                    (rt) => rt.id === row.parentId,
+                                  )
+                                : -1;
+                              const rowTintStyle =
+                                categoryIndex >= 0
+                                  ? ROW_TINTS[categoryIndex % ROW_TINTS.length]
+                                  : { backgroundColor: "#ffffff" };
+                              const labelTintStyle =
+                                categoryIndex >= 0
+                                  ? LABEL_TINTS[
+                                      categoryIndex % LABEL_TINTS.length
+                                    ]
+                                  : { backgroundColor: "#ffffff" };
+
+                              const effectiveRowStyle =
+                                status === "OutOfOrder"
+                                  ? {
+                                      backgroundImage:
+                                        "repeating-linear-gradient(45deg, #f1f5f9 0px, #f1f5f9 10px, #e2e8f0 10px, #e2e8f0 20px)",
+                                      opacity: 0.8,
+                                    }
+                                  : rowTintStyle;
+
+                              return (
+                                <div
+                                  key={row.id}
+                                  className="flex flex-col md:flex-row gap-3 group animate-in slide-in-from-top-2 fade-in duration-300 ease-out fill-mode-forwards"
+                                >
+                                  <div className="w-full md:w-44 md:sticky md:left-0 z-20 shrink-0">
+                                    <div
+                                      className={`h-[48px] w-full ${statusBg} rounded-xl shadow-lg border ${statusBorder} px-3 py-1 flex flex-col justify-center hover:shadow-indigo-500/10 transition-all group-hover:border-indigo-400/50 relative overflow-hidden`}
+                                      style={
+                                        isAlerted || statusBg
+                                          ? {}
+                                          : labelTintStyle
+                                      }
+                                    >
+                                      <div
+                                        className={`absolute top-0 left-0 w-1.5 h-full ${isAlerted ? "bg-amber-600" : "bg-indigo-600"} opacity-0 group-hover:opacity-100 transition-opacity`}
+                                      ></div>
+                                      <div className="flex justify-between items-center">
+                                        <span
+                                          className={`text-lg font-black ${isAlerted ? "text-amber-900" : status === "OutOfOrder" ? "text-white" : "text-slate-900"} tabular-nums tracking-tighter`}
+                                        >
+                                          {row.name}
+                                        </span>
+                                        <div
+                                          className={`w-2 h-2 rounded-full ${statusColor}`}
+                                        ></div>
+                                      </div>
+                                      <span
+                                        className={`text-[8px] font-black ${statusTextColor} uppercase tracking-[0.2em] leading-none`}
+                                      >
+                                        {statusLabel}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div
+                                    className="flex-1 rounded-xl shadow-2xl border border-black/10 relative flex overflow-hidden hover:shadow-indigo-900/10 transition-all"
+                                    style={effectiveRowStyle}
+                                  >
+                                    {timelineDates.map((date) => {
+                                      const booking = getBookingForCell(
+                                        row.id,
+                                        date,
+                                      );
+                                      const d = new Date(date);
+                                      return (
+                                        <DroppableCell
+                                          key={date}
+                                          date={date}
+                                          roomNumber={row.id}
+                                          isWeekend={
+                                            d.getDay() === 0 || d.getDay() === 6
+                                          }
+                                          isToday={
+                                            new Date().toDateString() ===
+                                            d.toDateString()
+                                          }
+                                          onClick={() => {
+                                            if (!booking) {
+                                              setBookingPrefill({
+                                                checkIn: date,
+                                                roomTypeId: row.parentId || "",
+                                                roomId: row.id,
+                                              });
+                                              setIsNewBookingModalOpen(true);
+                                            }
+                                          }}
+                                        >
+                                          {booking &&
+                                            (() => {
+                                              const bookingStart = new Date(
+                                                booking.checkIn,
+                                              );
+                                              const timelineStart = new Date(
+                                                timelineDates[0],
+                                              );
+                                              const effectiveStart =
+                                                bookingStart < timelineStart
+                                                  ? timelineStart
+                                                  : bookingStart;
+                                              const bookingEnd = new Date(
+                                                booking.checkOut,
+                                              );
+                                              const visualDuration = Math.ceil(
+                                                (bookingEnd.getTime() -
+                                                  effectiveStart.getTime()) /
+                                                  (1000 * 3600 * 24),
+                                              );
+
+                                              return (
+                                                <DraggableBooking
+                                                  booking={booking}
+                                                  duration={visualDuration}
+                                                  onResize={(newDur) =>
+                                                    handleResizeBooking(
+                                                      booking.id,
+                                                      newDur,
+                                                    )
+                                                  }
+                                                  onSelect={handleBookingClick}
+                                                  isJustMoved={
+                                                    booking.id ===
+                                                    lastMovedBookingId
+                                                  }
+                                                />
+                                              );
+                                            })()}
+                                        </DroppableCell>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </>
+                        )}
                       </>
                     );
                   })()
