@@ -717,16 +717,17 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
     import uuid
     import time
     
-    # 1. Deduplication check using MessageID or Subject+From hash
-    # We use a stable hash for cases where MessageID isn't provided or changes
+    print(f"=== INBOUND EMAIL RECEIVED ===")
+    print(f"Subject: {email.Subject}")
+    print(f"From: {email.From}")
+    print(f"TextBody length: {len(email.TextBody) if email.TextBody else 0}")
+    print(f"HtmlBody length: {len(email.HtmlBody) if email.HtmlBody else 0}")
+    
+    # 1. Build external reference for deduplication
     import hashlib
     content_hash = hashlib.md5(f"{email.Subject or ''}{email.From or ''}{email.TextBody[:100] if email.TextBody else ''}".encode()).hexdigest()
     external_ref = email.MessageID or f"hash-{content_hash}"
-    
-    existing_booking = None
-    if USE_DATABASE() and db:
-        existing_booking = db.query(BookingDB).filter(BookingDB.external_reference_id == external_ref).first()
-        # We don't return early anymore, we will update the existing one if found
+    print(f"External ref: {external_ref}")
 
     # 2. Get GEMINI API Key
     api_key = None
@@ -738,7 +739,8 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
         api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
-        raise HTTPException(status_code=400, detail="Gemini API Key for email parsing not configured. Please set it in Property Setup.")
+        print("ERROR: No Gemini API key found!")
+        raise HTTPException(status_code=400, detail="Gemini API Key for email parsing not configured.")
 
     # 3. Call Gemini to parse
     try:
@@ -746,34 +748,34 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
         from google.genai import types
         client = genai.Client(api_key=api_key)
         
-        # We prefer TextBody but can use HTML as fallback
-        content_to_parse = email.TextBody or email.HtmlBody or ""
+        # We prefer HTML for richer content, then fallback to text
+        content_to_parse = email.HtmlBody or email.TextBody or ""
         if not content_to_parse:
+             print("ERROR: Email body is empty!")
              raise HTTPException(status_code=400, detail="Email body is empty")
              
         prompt = """
         Extract reservation details from this hotel booking confirmation email. 
         Return as a clean JSON with these keys:
-        - guestName: string
-        - checkIn: string (YYYY-MM-DD)
-        - checkOut: string (YYYY-MM-DD)
-        - amount: number (total price)
+        - guestName: string (full name of the primary guest)
+        - checkIn: string (YYYY-MM-DD format)
+        - checkOut: string (YYYY-MM-DD format)
+        - amount: number (total price, the Property Gross Charges)
         - source: string ('Booking.com', 'MMT', 'Expedia', or 'Direct')
-        - roomTypeRaw: string (e.g., 'Deluxe AC Room')
+        - roomTypeRaw: string (e.g., 'Double Bed Room', 'Deluxe AC Room')
         - numberOfRooms: number
-        - pax: number
-        - otaBookingId: string (The booking ID given by MMT/Booking.com, e.g. NH74074458022974)
-        - paymentStatus: string (e.g. 'Paid Online', 'Collect at Hotel', 'Prepaid')
+        - pax: number (total guests)
+        - otaBookingId: string (The booking/reservation ID, e.g. NH74074458022974 or PNR number)
+        - paymentStatus: string ('Paid Online', 'Pay at Hotel', 'Prepaid')
         
-        Only return the JSON.
+        Only return the JSON, nothing else.
         """
 
         # List of models to try
         models_to_try = [
+            'gemini-2.0-flash',
             'gemini-1.5-flash',
-            'gemini-flash-latest',
             'gemini-1.5-flash-8b',
-            'gemini-2.0-flash'
         ]
         
         response = None
@@ -781,19 +783,20 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
         
         for model_name in models_to_try:
             try:
-                print(f"Attempting Email Parsing with model: {model_name}")
+                print(f"Trying model: {model_name}")
                 response = client.models.generate_content(
                     model=model_name,
                     contents=[prompt, content_to_parse]
                 )
                 if response and response.text:
+                    print(f"Model {model_name} succeeded!")
                     break
             except Exception as e:
-                print(f"Model {model_name} failed for email parsing: {e}")
+                print(f"Model {model_name} failed: {e}")
                 last_err = e
         
         if not response or not response.text:
-             raise last_err or HTTPException(status_code=500, detail="All AI models failed to parse email content")
+             raise last_err or HTTPException(status_code=500, detail="All AI models failed")
                    
         # Clean JSON from markdown wrap
         json_text = response.text
@@ -803,6 +806,7 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
             json_text = json_text.split("```")[1].split("```")[0]
         
         parsed_data = json.loads(json_text.strip())
+        print(f"=== PARSED DATA: {json.dumps(parsed_data, indent=2)} ===")
         
         # 4. Map Room Type
         room_type_id = None
@@ -810,21 +814,22 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
             all_rts = db.query(RoomTypeDB).all()
             raw_room = parsed_data.get('roomTypeRaw', '').lower()
             
-            # 1st pass: Exact or containing match
             for rt in all_rts:
                 if rt.name.lower() in raw_room or raw_room in rt.name.lower():
                     room_type_id = rt.id
+                    print(f"Matched room type: {rt.name} -> {rt.id}")
                     break
             
-            # 2nd pass: Default to first one if none found
             if not room_type_id and all_rts:
                 room_type_id = all_rts[0].id
+                print(f"Defaulted to first room type: {room_type_id}")
 
-        # 5. Create or Update Booking
+        # 5. Determine Booking ID
         ota_id = parsed_data.get('otaBookingId')
         new_id = ota_id if ota_id else f"RES-{str(uuid.uuid4())[:8].upper()}"
+        print(f"Booking ID will be: {new_id}")
         
-        # Check for payments
+        # 6. Check for pre-payments
         initial_payments = []
         payment_status = parsed_data.get('paymentStatus', '').lower()
         if 'paid' in payment_status or 'prepaid' in payment_status:
@@ -838,24 +843,29 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
                 "category": "Room",
                 "description": f"Pre-paid through {parsed_data.get('source', 'OTA')}"
             })
+            print(f"Payment recorded: {total_amount} (status: {payment_status})")
 
-        if USE_DATABASE() and db and existing_booking:
-            # UPDATE existing
-            existing_booking.id = new_id # Allow ID update to match OTA
-            existing_booking.guest_name = parsed_data.get('guestName', existing_booking.guest_name)
-            existing_booking.amount = parsed_data.get('amount')
-            existing_booking.check_in = parsed_data.get('checkIn')
-            existing_booking.check_out = parsed_data.get('checkOut')
-            existing_booking.source = parsed_data.get('source', existing_booking.source)
-            existing_booking.payments = initial_payments
-            db.commit()
-            db.refresh(existing_booking)
-            return {"status": "success", "message": "Updated existing booking", "booking": db_booking_to_pydantic(existing_booking)}
+        # 7. Delete any old duplicate booking, then always create fresh
+        if USE_DATABASE() and db:
+            # Delete by external_reference_id
+            old_by_ref = db.query(BookingDB).filter(BookingDB.external_reference_id == external_ref).all()
+            for old in old_by_ref:
+                print(f"Deleting old duplicate booking: {old.id}")
+                db.delete(old)
+            
+            # Also delete by this new ID if it already exists (prevent PK conflict)
+            old_by_id = db.query(BookingDB).filter(BookingDB.id == new_id).first()
+            if old_by_id:
+                print(f"Deleting old booking with same ID: {old_by_id.id}")
+                db.delete(old_by_id)
+            
+            db.flush()
 
+        # 8. Create the booking
         new_booking = BookingDB(
             id=new_id,
             room_type_id=room_type_id or "rt-1", 
-            room_number="Unassigned", # Needs manual assignment on Front Desk
+            room_number="Unassigned",
             guest_name=parsed_data.get('guestName', 'Parsed Guest'),
             source=parsed_data.get('source', 'Direct'),
             status="Confirmed",
@@ -874,14 +884,17 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
             db.add(new_booking)
             db.commit()
             db.refresh(new_booking)
-            return {"status": "success", "booking": db_booking_to_pydantic(new_booking)}
+            print(f"=== BOOKING SAVED: {new_booking.id} for {new_booking.guest_name} ===")
+            return {"status": "success", "booking_id": new_booking.id, "guest": new_booking.guest_name}
         
         return {"status": "success", "parsed": parsed_data}
 
     except Exception as e:
-        print(f"Email parsing failed: {e}")
+        print(f"!!! EMAIL PARSING FAILED: {e}")
         import traceback
         traceback.print_exc()
+        if db:
+            db.rollback()
         raise HTTPException(status_code=500, detail=f"AI Parsing failed: {str(e)}")
 
 
