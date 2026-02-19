@@ -771,11 +771,11 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
         Only return the JSON, nothing else.
         """
 
-        # List of models to try
+        # List of models to try (must match available API models)
         models_to_try = [
             'gemini-2.0-flash',
-            'gemini-1.5-flash',
-            'gemini-1.5-flash-8b',
+            'gemini-2.5-flash',
+            'gemini-2.0-flash-lite',
         ]
         
         response = None
