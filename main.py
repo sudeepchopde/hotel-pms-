@@ -723,10 +723,10 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
     content_hash = hashlib.md5(f"{email.Subject or ''}{email.From or ''}{email.TextBody[:100] if email.TextBody else ''}".encode()).hexdigest()
     external_ref = email.MessageID or f"hash-{content_hash}"
     
+    existing_booking = None
     if USE_DATABASE() and db:
-        existing = db.query(BookingDB).filter(BookingDB.external_reference_id == external_ref).first()
-        if existing:
-            return {"status": "skipped", "message": "Duplicate email detected", "booking_id": existing.id}
+        existing_booking = db.query(BookingDB).filter(BookingDB.external_reference_id == external_ref).first()
+        # We don't return early anymore, we will update the existing one if found
 
     # 2. Get GEMINI API Key
     api_key = None
@@ -820,7 +820,7 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
             if not room_type_id and all_rts:
                 room_type_id = all_rts[0].id
 
-        # 5. Create Booking
+        # 5. Create or Update Booking
         ota_id = parsed_data.get('otaBookingId')
         new_id = ota_id if ota_id else f"RES-{str(uuid.uuid4())[:8].upper()}"
         
@@ -837,6 +837,19 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
                 "status": "Completed",
                 "notes": f"Pre-paid through {parsed_data.get('source', 'OTA')}"
             })
+
+        if USE_DATABASE() and db and existing_booking:
+            # UPDATE existing
+            existing_booking.id = new_id # Allow ID update to match OTA
+            existing_booking.guest_name = parsed_data.get('guestName', existing_booking.guest_name)
+            existing_booking.amount = parsed_data.get('amount')
+            existing_booking.check_in = parsed_data.get('checkIn')
+            existing_booking.check_out = parsed_data.get('checkOut')
+            existing_booking.source = parsed_data.get('source', existing_booking.source)
+            existing_booking.payments = initial_payments
+            db.commit()
+            db.refresh(existing_booking)
+            return {"status": "success", "message": "Updated existing booking", "booking": db_booking_to_pydantic(existing_booking)}
 
         new_booking = BookingDB(
             id=new_id,
