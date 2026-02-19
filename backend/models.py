@@ -130,11 +130,12 @@ class FolioItem(BaseModel):
 class Payment(BaseModel):
     id: str
     amount: float
-    method: Literal['Cash', 'UPI', 'Card']
-    timestamp: str
-    category: Literal['Room', 'Folio', 'Extra', 'Partial']
+    method: str # Flexible for 'Online (OTA)', 'Cash', etc.
+    timestamp: Any # Flexible for int or str
+    category: Optional[str] = "Room" # Default or optional
     description: Optional[str] = None
-    status: Literal['Completed', 'Refunded', 'Cancelled']
+    notes: Optional[str] = None
+    status: str # Flexible for 'Completed', 'Refunded', etc.
 
 class Booking(BaseModel):
     id: str

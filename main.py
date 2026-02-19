@@ -833,9 +833,10 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
                 "id": str(uuid.uuid4()),
                 "amount": total_amount,
                 "method": "Online (OTA)",
-                "timestamp": int(time.time() * 1000),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "status": "Completed",
-                "notes": f"Pre-paid through {parsed_data.get('source', 'OTA')}"
+                "category": "Room",
+                "description": f"Pre-paid through {parsed_data.get('source', 'OTA')}"
             })
 
         if USE_DATABASE() and db and existing_booking:
@@ -1639,7 +1640,15 @@ def get_guest_history(name: str, phone: Optional[str] = None, exclude_booking_id
 def get_bookings(db=Depends(get_db)):
     if USE_DATABASE() and db:
         bookings = db.query(BookingDB).all()
-        return [db_booking_to_pydantic(b) for b in bookings]
+        result = []
+        for b in bookings:
+            try:
+                result.append(db_booking_to_pydantic(b))
+            except Exception as e:
+                print(f"CRITICAL: Failed to convert booking {getattr(b, 'id', 'unknown')} to Pydantic: {e}")
+                # Skip invalid bookings so the rest of the app keeps working
+                continue
+        return result
     return get_fallback_bookings()
 
 @app.get("/api/statistics")
