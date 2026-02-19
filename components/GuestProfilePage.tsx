@@ -3787,84 +3787,6 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               </div>
             </section>
 
-            {/* LINKED ROOMS (Multi-Room Booking) */}
-            {relatedBookings.length > 1 && (
-              <section className="bg-white rounded-[2.5rem] border-2 border-indigo-200 p-8 shadow-sm">
-                <div className="flex items-center justify-between mb-8">
-                  <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3">
-                    <Bed className="w-5 h-5 text-indigo-500" />
-                    Linked Rooms
-                  </h3>
-                  <span className="px-3 py-1 bg-indigo-100 rounded-full text-[10px] font-black text-indigo-600 uppercase tracking-widest">
-                    {relatedBookings.length} Rooms in Reservation
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {relatedBookings.map((rb) => {
-                    const rbRoomType = roomTypes.find(
-                      (rt) => rt.id === rb.roomTypeId,
-                    );
-                    const isCurrentRoom = rb.id === booking.id;
-                    return (
-                      <div
-                        key={rb.id}
-                        className={`p-4 rounded-2xl transition-all group flex items-center justify-between cursor-pointer ${
-                          isCurrentRoom
-                            ? "bg-indigo-50 border-2 border-indigo-300 ring-2 ring-indigo-100"
-                            : "bg-slate-50 border border-slate-100 hover:border-indigo-200"
-                        }`}
-                        onClick={() => !isCurrentRoom && onSwitchBooking?.(rb)}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-sm ${
-                              isCurrentRoom
-                                ? "bg-indigo-600 text-white"
-                                : "bg-white text-slate-400 group-hover:text-indigo-500"
-                            }`}
-                          >
-                            <Bed className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-slate-800">
-                              #{rb.roomNumber || "TBD"}
-                              {isCurrentRoom && (
-                                <span className="ml-2 text-[9px] text-indigo-600 uppercase">
-                                  (Current)
-                                </span>
-                              )}
-                            </p>
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                              {rbRoomType?.name || "Unknown"} • {rb.status}
-                            </p>
-                          </div>
-                        </div>
-                        <div
-                          className={`w-3 h-3 rounded-full ${
-                            rb.status === "CheckedIn"
-                              ? "bg-emerald-500"
-                              : rb.status === "Confirmed"
-                                ? "bg-blue-500"
-                                : rb.status === "CheckedOut"
-                                  ? "bg-slate-400"
-                                  : "bg-amber-500"
-                          }`}
-                        ></div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-6 pt-6 border-t border-slate-100 flex gap-3">
-                  <button
-                    onClick={() => setShowTransferModal(true)}
-                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
-                  >
-                    <ArrowRightCircle className="w-4 h-4" /> Transfer Room
-                  </button>
-                </div>
-              </section>
-            )}
-
             {/* INTERNATIONAL REGISTRATION DATA (FORM C) */}
             {isForeigner && (
               <section className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
@@ -4152,6 +4074,89 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 </div>
               </div>
             </section>
+
+            {/* LINKED ROOMS / TRANSFER (Relocated to sidebar for accessibility) */}
+            {relatedBookings.length > 0 && (
+              <section className="bg-white rounded-[2.5rem] border-2 border-indigo-100 p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <Bed className="w-5 h-5 text-indigo-500" />
+                    <h3 className="text-base font-black text-slate-900 tracking-tight">
+                      Linked Rooms
+                    </h3>
+                  </div>
+                  <span className="px-2 py-0.5 bg-indigo-50 rounded-full text-[8px] font-black text-indigo-600 uppercase tracking-widest border border-indigo-100">
+                    {relatedBookings.length} Rooms
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {relatedBookings.map((rb) => {
+                    const rbRoomType = roomTypes.find(
+                      (rt) => rt.id === rb.roomTypeId,
+                    );
+                    const isCurrentRoom = rb.id === booking.id;
+                    return (
+                      <div
+                        key={rb.id}
+                        className={`p-3 rounded-xl transition-all group flex items-center justify-between cursor-pointer border ${
+                          isCurrentRoom
+                            ? "bg-indigo-50 border-indigo-300"
+                            : "bg-slate-50 border-slate-100 hover:border-indigo-200"
+                        }`}
+                        onClick={() => !isCurrentRoom && onSwitchBooking?.(rb)}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-sm ${
+                              isCurrentRoom
+                                ? "bg-indigo-600 text-white"
+                                : "bg-white text-slate-400 group-hover:text-indigo-500 border border-slate-100"
+                            }`}
+                          >
+                            <Bed className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-slate-800">
+                              #{rb.roomNumber || "TBD"}
+                              {isCurrentRoom && (
+                                <span className="ml-1.5 text-[8px] text-indigo-600 uppercase font-black">
+                                  Current
+                                </span>
+                              )}
+                            </p>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">
+                              {rbRoomType?.name
+                                ?.split(" ")
+                                .slice(0, 2)
+                                .join(" ") || "Unknown"}
+                            </p>
+                          </div>
+                        </div>
+                        <div
+                          className={`w-2 h-2 rounded-full ${
+                            rb.status === "CheckedIn"
+                              ? "bg-emerald-500"
+                              : rb.status === "Confirmed"
+                                ? "bg-blue-500"
+                                : rb.status === "CheckedOut"
+                                  ? "bg-slate-400"
+                                  : "bg-amber-500"
+                          }`}
+                        ></div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-6">
+                  <button
+                    onClick={() => setShowTransferModal(true)}
+                    className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-200 transition-all flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    <ArrowRightCircle className="w-4 h-4" /> Transfer Room
+                  </button>
+                </div>
+              </section>
+            )}
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Union, Literal, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, root_validator
 
 class LoyaltyTier(BaseModel):
     name: str
@@ -208,13 +208,48 @@ class RazorpayVerifyRequest(BaseModel):
     amount: float
 
 class InboundEmail(BaseModel):
-    From: str
-    To: str
-    Subject: str
-    TextBody: Optional[str] = None
-    HtmlBody: Optional[str] = None
-    Headers: Optional[List[Dict[str, str]]] = None
-    MessageID: Optional[str] = None
+    # Standard format (Postmark/General)
+    From: Optional[str] = Field(None, alias="from")
+    To: Optional[str] = Field(None, alias="to")
+    Subject: Optional[str] = Field(None, alias="subject")
+    TextBody: Optional[str] = Field(None, alias="text_body")
+    HtmlBody: Optional[str] = Field(None, alias="html_body")
+    Headers: Optional[Any] = None
+    MessageID: Optional[str] = Field(None, alias="message_id")
+    
+    # Cloudmailin specific fields
+    plain: Optional[str] = None
+    html: Optional[str] = None
+    headers: Optional[Dict[str, Any]] = None
+    envelope: Optional[Dict[str, Any]] = None
+
+    @root_validator(pre=True)
+    def map_cloudmailin_fields(cls, values):
+        # Extract from Cloudmailin 'headers' dict if present
+        h = values.get('headers')
+        if h and isinstance(h, dict):
+            if not values.get('Subject'): values['Subject'] = h.get('Subject') or h.get('subject')
+            if not values.get('From'): values['From'] = h.get('From') or h.get('from')
+            if not values.get('To'): values['To'] = h.get('To') or h.get('to')
+            if not values.get('MessageID'): values['MessageID'] = h.get('Message-ID') or h.get('message-id')
+        
+        # Extract from Cloudmailin 'envelope' if headers didn't have it
+        env = values.get('envelope')
+        if env and isinstance(env, dict):
+            if not values.get('From'): values['From'] = env.get('from')
+            if not values.get('To'): values['To'] = env.get('to')
+
+        # Map body fields
+        if values.get('plain') and not values.get('TextBody'):
+            values['TextBody'] = values.get('plain')
+        if values.get('html') and not values.get('HtmlBody'):
+            values['HtmlBody'] = values.get('html')
+            
+        return values
+    
+    class Config:
+        populate_by_name = True
+        allow_population_by_field_name = True
 
 class Notification(BaseModel):
     id: str

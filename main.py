@@ -720,7 +720,7 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
     # 1. Deduplication check using MessageID or Subject+From hash
     # We use a stable hash for cases where MessageID isn't provided or changes
     import hashlib
-    content_hash = hashlib.md5(f"{email.Subject}{email.From}{email.TextBody[:100] if email.TextBody else ''}".encode()).hexdigest()
+    content_hash = hashlib.md5(f"{email.Subject or ''}{email.From or ''}{email.TextBody[:100] if email.TextBody else ''}".encode()).hexdigest()
     external_ref = email.MessageID or f"hash-{content_hash}"
     
     if USE_DATABASE() and db:

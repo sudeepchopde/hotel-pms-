@@ -793,6 +793,62 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                     </div>
                   </div>
                 </div>
+
+                {/* Email Parsing Section */}
+                <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-indigo-600" />
+                    <h5 className="font-black text-xs uppercase tracking-widest text-slate-700">
+                      Email Parsing Engine (MMT / Booking)
+                    </h5>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Automatically create bookings from confirmation emails.
+                    Forward your hotel reservation emails (from MakeMyTrip,
+                    Booking.com, or Goibibo) to the webhook URL below.
+                  </p>
+
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                        Inbound Webhook URL
+                      </label>
+                      <div className="relative group">
+                        <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                        <input
+                          type="text"
+                          readOnly
+                          value={`${profileFormData.publicBaseUrl || window.location.origin}/api/webhooks/inbound-email`}
+                          className="w-full pl-12 pr-12 py-4 bg-white border-2 border-slate-100 rounded-2xl text-[11px] font-mono font-bold text-slate-900 focus:border-indigo-500 outline-none transition-all shadow-sm"
+                        />
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(
+                              `${profileFormData.publicBaseUrl || window.location.origin}/api/webhooks/inbound-email`,
+                            );
+                            alert("Webhook URL copied!");
+                          }}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-indigo-600 transition-colors"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100">
+                      <div className="w-8 h-8 bg-indigo-600 text-white rounded-lg flex items-center justify-center shrink-0">
+                        <Settings2 className="w-4 h-4" />
+                      </div>
+                      <div className="text-[10px] text-indigo-800 leading-relaxed">
+                        <strong>Setup Guide:</strong> Ensure you have a service
+                        like{" "}
+                        <strong className="text-indigo-900">Cloudmailin</strong>{" "}
+                        or <strong className="text-indigo-900">Postmark</strong>{" "}
+                        configured to forward emails to this URL.
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </section>
           </div>
@@ -814,22 +870,43 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                     )}
                   </div>
                   <div>
-                    <p className="text-xs font-black uppercase tracking-widest">
-                      OCR Engine
+                    <p className="text-xs font-black uppercase tracking-widest text-white">
+                      OCR / Gemini
                     </p>
                     <p className="text-[10px] text-indigo-200/70">
                       {profileFormData.geminiApiKey
-                        ? "Connected & Secure"
-                        : "API Key Missing"}
+                        ? "Active & Secured"
+                        : "API Key Required"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center ${profileFormData.publicBaseUrl ? "bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.3)]" : "bg-white/10"}`}
+                  >
+                    {profileFormData.publicBaseUrl ? (
+                      <Globe className="w-5 h-5 text-white" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5 text-amber-300" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-widest text-white">
+                      Webhook Reach
+                    </p>
+                    <p className="text-[10px] text-indigo-200/70">
+                      {profileFormData.publicBaseUrl
+                        ? "Public Access On"
+                        : "Local Mode Only"}
                     </p>
                   </div>
                 </div>
 
                 <div className="pt-6 border-t border-white/10">
                   <p className="text-[10px] leading-relaxed text-indigo-100/60 italic">
-                    "This model allows you to scale without overhead. Your
-                    customers manage their own credentials, keeping your
-                    liability and costs at zero."
+                    "AI-driven parsing eliminates data entry errors and saves
+                    hours of manual work every day."
                   </p>
                 </div>
               </div>
