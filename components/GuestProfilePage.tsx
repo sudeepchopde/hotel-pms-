@@ -4273,6 +4273,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       );
                       const rooms = targetType?.roomNumbers || [];
                       return rooms.map((roomNum) => {
+                        // Skip the guest's current room entirely
+                        const isCurrentRoom = roomNum === booking.roomNumber;
                         const isOccupied = syncEvents.some(
                           (e) =>
                             e.type === "booking" &&
@@ -4286,20 +4288,30 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                               new Date(effectiveDate) >= new Date(e.checkOut)
                             ),
                         );
+                        const isDisabled = isCurrentRoom || isOccupied;
                         const isSelected = transferTargetRoom === roomNum;
                         return (
                           <button
                             key={roomNum}
                             onClick={() =>
-                              !isOccupied && setTransferTargetRoom(roomNum)
+                              !isDisabled && setTransferTargetRoom(roomNum)
                             }
-                            disabled={isOccupied}
+                            disabled={isDisabled}
+                            title={
+                              isCurrentRoom
+                                ? "Current room"
+                                : isOccupied
+                                  ? "Room is occupied"
+                                  : `Transfer to ${roomNum}`
+                            }
                             className={`p-3 rounded-xl text-sm font-bold transition-all ${
-                              isOccupied
-                                ? "bg-slate-100 text-slate-300 cursor-not-allowed border border-slate-200"
-                                : isSelected
-                                  ? "bg-indigo-600 text-white shadow-lg border border-indigo-700"
-                                  : "bg-slate-50 text-slate-700 hover:bg-indigo-50 border border-slate-200"
+                              isCurrentRoom
+                                ? "bg-red-50 text-red-300 cursor-not-allowed border border-red-200 line-through"
+                                : isOccupied
+                                  ? "bg-slate-100 text-slate-300 cursor-not-allowed border border-slate-200"
+                                  : isSelected
+                                    ? "bg-indigo-600 text-white shadow-lg border border-indigo-700"
+                                    : "bg-slate-50 text-slate-700 hover:bg-indigo-50 border border-slate-200"
                             }`}
                           >
                             {roomNum}
