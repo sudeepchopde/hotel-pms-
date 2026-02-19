@@ -762,6 +762,8 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
         - roomTypeRaw: string (e.g., 'Deluxe AC Room')
         - numberOfRooms: number
         - pax: number
+        - otaBookingId: string (The booking ID given by MMT/Booking.com, e.g. NH74074458022974)
+        - paymentStatus: string (e.g. 'Paid Online', 'Collect at Hotel', 'Prepaid')
         
         Only return the JSON.
         """
@@ -819,8 +821,23 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
                 room_type_id = all_rts[0].id
 
         # 5. Create Booking
-        new_id = f"RES-{str(uuid.uuid4())[:8].upper()}"
+        ota_id = parsed_data.get('otaBookingId')
+        new_id = ota_id if ota_id else f"RES-{str(uuid.uuid4())[:8].upper()}"
         
+        # Check for payments
+        initial_payments = []
+        payment_status = parsed_data.get('paymentStatus', '').lower()
+        if 'paid' in payment_status or 'prepaid' in payment_status:
+            total_amount = parsed_data.get('amount', 0)
+            initial_payments.append({
+                "id": str(uuid.uuid4()),
+                "amount": total_amount,
+                "method": "Online (OTA)",
+                "timestamp": int(time.time() * 1000),
+                "status": "Completed",
+                "notes": f"Pre-paid through {parsed_data.get('source', 'OTA')}"
+            })
+
         new_booking = BookingDB(
             id=new_id,
             room_type_id=room_type_id or "rt-1", 
@@ -835,7 +852,8 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
             number_of_rooms=parsed_data.get('numberOfRooms', 1),
             pax=parsed_data.get('pax', 2),
             is_auto_generated=True,
-            external_reference_id=external_ref
+            external_reference_id=external_ref,
+            payments=initial_payments
         )
         
         if USE_DATABASE() and db:
