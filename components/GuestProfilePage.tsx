@@ -1554,7 +1554,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 <h2 class="text-xl font-black text-indigo-600 uppercase tracking-[0.2em] mb-4">Tax Invoice</h2>
                 <div class="space-y-1">
                   <p class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Invoice No</p>
-                  <p class="text-sm font-black text-slate-900 uppercase">#${booking.invoiceNumber || "INV-" + new Date().getFullYear() + "-" + (booking.id.split("-")[1]?.substring(0, 4) || "TEMP")}</p>
+                  <p class="text-sm font-black text-slate-900 uppercase">#${booking.invoiceNumber || "INV-" + new Date().getFullYear() + "-" + (booking.id.includes("-") ? booking.id.split("-")[1]?.substring(0, 4) : booking.id.substring(0, 4))}</p>
                 </div>
                 <div class="mt-4 space-y-1">
                   <p class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Date</p>
@@ -1858,8 +1858,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               Guest Profile & Booking Manager
             </h2>
             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest tabular-nums">
-              ID: #{booking.id.split("-")[1]?.slice(0, 8)} • {booking.source}{" "}
-              Channel
+              ID: #
+              {booking.id.includes("-")
+                ? booking.id.split("-")[1]?.slice(0, 8)
+                : booking.id}{" "}
+              • {booking.source} Channel
             </p>
           </div>
         </div>
