@@ -771,6 +771,12 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
         Only return the JSON, nothing else.
         """
 
+        # 3.5 Check for Gmail Verification Email explicitly
+        if "Gmail Forwarding Confirmation" in (email.Subject or "") or "forwarding-noreply" in (email.From or ""):
+             print(f"=== GMAIL VERIFICATION DETECTED ===")
+             print(f"BODY: {content_to_parse}")
+             return {"status": "ignored", "reason": "gmail_verification", "body_snippet": content_to_parse[:200]}
+
         # List of models to try (must match available API models)
         models_to_try = [
             'gemini-2.0-flash',
@@ -796,7 +802,9 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
                 last_err = e
         
         if not response or not response.text:
-             raise last_err or HTTPException(status_code=500, detail="All AI models failed")
+             # Check if it was just a random email that's not a booking
+             print("AI failed to extract JSON. Likely not a booking confirmation.")
+             return {"status": "ignored", "reason": "not_booking_email"}
                    
         # Clean JSON from markdown wrap
         json_text = response.text
@@ -812,7 +820,7 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
         room_type_id = None
         if USE_DATABASE() and db:
             all_rts = db.query(RoomTypeDB).all()
-            raw_room = parsed_data.get('roomTypeRaw', '').lower()
+            raw_room = (parsed_data.get('roomTypeRaw') or '').lower()
             
             for rt in all_rts:
                 if rt.name.lower() in raw_room or raw_room in rt.name.lower():
@@ -831,7 +839,7 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
         
         # 6. Check for pre-payments
         initial_payments = []
-        payment_status = parsed_data.get('paymentStatus', '').lower()
+        payment_status = (parsed_data.get('paymentStatus') or '').lower()
         if 'paid' in payment_status or 'prepaid' in payment_status:
             total_amount = parsed_data.get('amount', 0)
             initial_payments.append({
