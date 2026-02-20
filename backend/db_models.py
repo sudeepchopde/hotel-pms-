@@ -69,6 +69,8 @@ class BookingDB(Base):
     accessory_guests = Column(JSON, default=[])
     channel_sync = Column(JSON, default={})
     extra_beds = Column(Integer, nullable=True)
+    extra_adults = Column(Integer, default=0)
+    extra_children = Column(Integer, default=0)
     special_requests = Column(String, nullable=True)
     is_vip = Column(Boolean, default=False)
     is_settled = Column(Boolean, default=False)

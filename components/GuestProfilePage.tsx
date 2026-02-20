@@ -4095,53 +4095,145 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               </div>
             </section>
 
-            {/* EXTRA BED MANAGEMENT */}
+            {/* ADDITIONAL OCCUPANCY MANAGEMENT */}
             <section className="bg-white rounded-[2.5rem] border border-slate-200 p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-3">
-                  <Sofa className="w-5 h-5 text-indigo-500" />
-                  Extra Bedding
+                  <Users className="w-5 h-5 text-indigo-500" />
+                  Additional Occupancy
                 </h3>
-                <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded">
-                  ₹{roomType?.extraBedCharge || 0} / bed
-                </span>
               </div>
 
-              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm">
-                    <Bed className="w-5 h-5" />
+              <div className="space-y-4">
+                {/* Extra Adults */}
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                        Extra Adults
+                      </p>
+                      <p className="text-sm font-bold text-slate-800">
+                        {booking.extraAdults || 0} Adults Added
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
-                      Stay Units
-                    </p>
-                    <p
-                      className={`text-sm font-bold text-slate - 800 transition-all duration-200 ${isUpdatingBeds ? "scale-110 text-indigo-600" : "scale-100"} `}
+                  <div className="flex items-center gap-2 bg-white rounded-xl p-1 shadow-sm border border-slate-200">
+                    <button
+                      onClick={() =>
+                        onUpdateBooking?.({
+                          ...booking,
+                          extraAdults: Math.max(
+                            0,
+                            (booking.extraAdults || 0) - 1,
+                          ),
+                        })
+                      }
+                      className="p-2 text-slate-400 hover:text-red-500 transition-all active:scale-75"
                     >
-                      {booking.extraBeds || 0} Beds Added
-                    </p>
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className="w-8 text-center text-sm font-black text-slate-700 tabular-nums">
+                      {booking.extraAdults || 0}
+                    </span>
+                    <button
+                      onClick={() =>
+                        onUpdateBooking?.({
+                          ...booking,
+                          extraAdults: (booking.extraAdults || 0) + 1,
+                        })
+                      }
+                      className="p-2 text-slate-400 hover:text-emerald-500 transition-all active:scale-75"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 bg-white rounded-xl p-1 shadow-sm border border-slate-200">
-                  <button
-                    onClick={() => handleExtraBedsChange(-1)}
-                    className="p-2 text-slate-400 hover:text-red-500 transition-all active:scale-75"
-                    aria-label="Decrease extra beds"
-                  >
-                    <Minus className="w-4 h-4" />
-                  </button>
-                  <span className="w-8 text-center text-sm font-black text-slate-700 tabular-nums">
-                    {booking.extraBeds || 0}
-                  </span>
-                  <button
-                    onClick={() => handleExtraBedsChange(1)}
-                    className="p-2 text-slate-400 hover:text-emerald-500 transition-all active:scale-75"
-                    aria-label="Increase extra beds"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
+                {/* Extra Children */}
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                        Extra Children
+                      </p>
+                      <p className="text-sm font-bold text-slate-800">
+                        {booking.extraChildren || 0} Children Added
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white rounded-xl p-1 shadow-sm border border-slate-200">
+                    <button
+                      onClick={() =>
+                        onUpdateBooking?.({
+                          ...booking,
+                          extraChildren: Math.max(
+                            0,
+                            (booking.extraChildren || 0) - 1,
+                          ),
+                        })
+                      }
+                      className="p-2 text-slate-400 hover:text-red-500 transition-all active:scale-75"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className="w-8 text-center text-sm font-black text-slate-700 tabular-nums">
+                      {booking.extraChildren || 0}
+                    </span>
+                    <button
+                      onClick={() =>
+                        onUpdateBooking?.({
+                          ...booking,
+                          extraChildren: (booking.extraChildren || 0) + 1,
+                        })
+                      }
+                      className="p-2 text-slate-400 hover:text-emerald-500 transition-all active:scale-75"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Extra Bed */}
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm">
+                      <Bed className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                        Extra Bedding
+                      </p>
+                      <p className="text-sm font-bold text-slate-800">
+                        {booking.extraBeds || 0} Beds Added
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-white rounded-xl p-1 shadow-sm border border-slate-200">
+                    <button
+                      onClick={() => handleExtraBedsChange(-1)}
+                      className="p-2 text-slate-400 hover:text-red-500 transition-all active:scale-75"
+                      aria-label="Decrease extra beds"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className="w-8 text-center text-sm font-black text-slate-700 tabular-nums">
+                      {booking.extraBeds || 0}
+                    </span>
+                    <button
+                      onClick={() => handleExtraBedsChange(1)}
+                      className="p-2 text-slate-400 hover:text-emerald-500 transition-all active:scale-75"
+                      aria-label="Increase extra beds"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>

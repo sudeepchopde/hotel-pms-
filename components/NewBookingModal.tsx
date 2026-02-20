@@ -45,7 +45,11 @@ interface NewBookingModalProps {
       roomTypeId: string;
       checkIn: string;
       checkOut: string;
+      roomNumber?: string;
       customRate?: number;
+      extraAdults?: number;
+      extraChildren?: number;
+      extraBeds?: number;
     }>;
     source?: "Direct" | "MMT" | "Booking.com" | "Expedia";
   }) => void;
@@ -74,6 +78,9 @@ export default function NewBookingModal({
       checkOut: string;
       roomNumber?: string;
       customRate?: number;
+      extraAdults: number;
+      extraChildren: number;
+      extraBeds: number;
     }>
   >([]);
   const [foundGuest, setFoundGuest] = useState<any>(null);
@@ -112,6 +119,9 @@ export default function NewBookingModal({
           checkIn: initialCheckIn,
           checkOut: initialCheckOut,
           roomNumber: prefill?.roomId,
+          extraAdults: 0,
+          extraChildren: 0,
+          extraBeds: 0,
         },
       ];
       setRoomDetails(initialRoomDetails);
@@ -210,6 +220,9 @@ export default function NewBookingModal({
         roomTypeId: prefill?.roomTypeId || roomTypes[0]?.id || "",
         checkIn: checkInDate,
         checkOut: nextDay.toISOString().split("T")[0],
+        extraAdults: 0,
+        extraChildren: 0,
+        extraBeds: 0,
       };
     });
     setRoomDetails(initialDetails);
@@ -392,12 +405,24 @@ export default function NewBookingModal({
       email,
       guestDetails: guestDetails || undefined,
       rooms: roomDetails.map(
-        ({ roomTypeId, checkIn, checkOut, roomNumber, customRate }) => ({
+        ({
           roomTypeId,
           checkIn,
           checkOut,
           roomNumber,
           customRate,
+          extraAdults,
+          extraChildren,
+          extraBeds,
+        }) => ({
+          roomTypeId,
+          checkIn,
+          checkOut,
+          roomNumber,
+          customRate,
+          extraAdults,
+          extraChildren,
+          extraBeds,
         }),
       ),
       source,
@@ -486,23 +511,6 @@ export default function NewBookingModal({
                   onChange={(e) => setGuestName(e.target.value)}
                   className="w-full px-5 py-3.5 bg-white border-2 border-slate-100 rounded-2xl text-base font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-indigo-50/10 transition-all placeholder:text-slate-300"
                 />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                  <Globe className="w-3.5 h-3.5 text-indigo-500" /> Booking
-                  Source (Simulator)
-                </label>
-                <select
-                  value={source}
-                  onChange={(e) => setSource(e.target.value as any)}
-                  className="w-full px-5 py-3.5 bg-white border-2 border-slate-100 rounded-2xl text-base font-bold text-slate-900 outline-none focus:border-indigo-500 focus:bg-indigo-50/10 transition-all appearance-none cursor-pointer"
-                >
-                  <option value="Direct">Direct Booking</option>
-                  <option value="MMT">MakeMyTrip (MMT)</option>
-                  <option value="Booking.com">Booking.com</option>
-                  <option value="Expedia">Expedia</option>
-                </select>
               </div>
 
               {foundGuest &&
@@ -674,7 +682,7 @@ export default function NewBookingModal({
                       </div>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                         Assign Specific Room (Optional)
@@ -710,6 +718,75 @@ export default function NewBookingModal({
                           )}
                       </select>
                     </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Extra Adult
+                      </label>
+                      <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2.5 focus-within:border-indigo-500">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                        <input
+                          type="number"
+                          min="0"
+                          value={room.extraAdults}
+                          onChange={(e) =>
+                            handleUpdateRoom(
+                              idx,
+                              "extraAdults",
+                              parseInt(e.target.value) || 0,
+                            )
+                          }
+                          className="w-full bg-transparent text-sm font-bold text-slate-800 outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Extra Child
+                      </label>
+                      <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2.5 focus-within:border-indigo-500">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                        <input
+                          type="number"
+                          min="0"
+                          value={room.extraChildren}
+                          onChange={(e) =>
+                            handleUpdateRoom(
+                              idx,
+                              "extraChildren",
+                              parseInt(e.target.value) || 0,
+                            )
+                          }
+                          className="w-full bg-transparent text-sm font-bold text-slate-800 outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Extra Bed
+                      </label>
+                      <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2.5 focus-within:border-indigo-500">
+                        <Bed className="w-3.5 h-3.5 text-slate-400" />
+                        <input
+                          type="number"
+                          min="0"
+                          value={room.extraBeds}
+                          onChange={(e) =>
+                            handleUpdateRoom(
+                              idx,
+                              "extraBeds",
+                              parseInt(e.target.value) || 0,
+                            )
+                          }
+                          className="w-full bg-transparent text-sm font-bold text-slate-800 outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {source === "Direct" && (
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">

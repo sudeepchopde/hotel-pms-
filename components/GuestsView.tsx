@@ -95,9 +95,30 @@ const GuestsView: React.FC<GuestsViewProps> = ({
   const [filters, setFilters] = useState(INITIAL_FILTERS);
 
   const guestList = useMemo(() => {
-    return (syncEvents.filter((e) => e.type === "booking") as Booking[]).sort(
-      (a, b) => b.timestamp - a.timestamp,
-    ); // Sort by date booked descending
+    const allBookings = (
+      syncEvents.filter((e) => e.type === "booking") as Booking[]
+    ).sort((a, b) => b.timestamp - a.timestamp); // Sort by date booked descending
+
+    const uniqueGuests = new Map();
+    const result: Booking[] = [];
+
+    for (const booking of allBookings) {
+      const profileId = booking.guestDetails?.profileId;
+      const phone = booking.guestDetails?.phoneNumber;
+      const nameKey = booking.guestName?.toLowerCase().trim();
+      const guestKey = profileId
+        ? `profile_${profileId}`
+        : phone
+          ? `phone_${phone}`
+          : `name_${nameKey}`;
+
+      if (!uniqueGuests.has(guestKey)) {
+        uniqueGuests.set(guestKey, true);
+        result.push(booking);
+      }
+    }
+
+    return result;
   }, [syncEvents]);
 
   const activeFilterCount = useMemo(() => {
@@ -588,6 +609,9 @@ const GuestsView: React.FC<GuestsViewProps> = ({
             <thead className="bg-slate-50/50 border-b border-slate-100">
               <tr>
                 <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  Profile ID
+                </th>
+                <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                   Guest Info
                 </th>
                 <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">
@@ -615,6 +639,13 @@ const GuestsView: React.FC<GuestsViewProps> = ({
                     className="hover:bg-slate-50/30 transition-colors group cursor-pointer"
                     onClick={() => setSelectedBooking(guest)}
                   >
+                    <td className="p-5">
+                      <div className="font-black text-indigo-600 text-xs bg-indigo-50 px-2 py-1 rounded inline-block">
+                        {guest.guestDetails?.profileId
+                          ? `PID-${guest.guestDetails.profileId}`
+                          : "N/A"}
+                      </div>
+                    </td>
                     <td className="p-5">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 shrink-0 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors relative">
@@ -704,7 +735,7 @@ const GuestsView: React.FC<GuestsViewProps> = ({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="p-12 text-center">
+                  <td colSpan={7} className="p-12 text-center">
                     <div className="flex flex-col items-center gap-4 text-slate-400">
                       <div className="p-5 bg-slate-50 rounded-full">
                         <Users className="w-10 h-10" />

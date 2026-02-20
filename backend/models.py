@@ -154,8 +154,10 @@ class Booking(BaseModel):
     guestDetails: Optional[GuestDetails] = None
     numberOfRooms: Optional[int] = None
     pax: Optional[int] = None
+    extraAdults: Optional[int] = 0
+    extraChildren: Optional[int] = 0
     accessoryGuests: Optional[List[GuestDetails]] = None
-    extraBeds: Optional[int] = None
+    extraBeds: Optional[int] = 0
     specialRequests: Optional[str] = None
     isVIP: Optional[bool] = None
     isSettled: Optional[bool] = None

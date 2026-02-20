@@ -1038,6 +1038,9 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
       checkOut: string;
       roomNumber?: string;
       customRate?: number;
+      extraAdults?: number;
+      extraChildren?: number;
+      extraBeds?: number;
     }>;
     source?: "Direct" | "MMT" | "Booking.com" | "Expedia";
   }) => {
@@ -1121,7 +1124,19 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
           }
         }
       }
-      const totalAmount = rate * duration;
+      let totalAmount = rate * duration;
+
+      // Add extra charges
+      const extraAdults = room.extraAdults || 0;
+      const extraChildren = room.extraChildren || 0;
+      const extraBeds = room.extraBeds || 0;
+
+      if (roomType) {
+        totalAmount += extraAdults * (roomType.extraAdultRate || 0) * duration;
+        totalAmount +=
+          extraChildren * (roomType.extraChildRate || 0) * duration;
+        totalAmount += extraBeds * (roomType.extraBedCharge || 0) * duration;
+      }
 
       return {
         id: `${(data.source || "Direct").toLowerCase().replace(/[^a-z0-9]/g, "")}-${Date.now()}-${idx}`,
@@ -1135,6 +1150,9 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
         timestamp: Date.now(),
         amount: totalAmount,
         numberOfRooms: data.rooms.length,
+        extraAdults: room.extraAdults || 0,
+        extraChildren: room.extraChildren || 0,
+        extraBeds: room.extraBeds || 0,
         reservationId,
         channelSync: {},
         guestDetails: {

@@ -220,6 +220,8 @@ export interface Booking {
   // Enhanced detail fields
   numberOfRooms?: number;
   pax?: number;
+  extraAdults?: number;
+  extraChildren?: number;
   accessoryGuests?: GuestDetails[];
   extraBeds?: number;
   specialRequests?: string;

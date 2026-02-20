@@ -1016,36 +1016,36 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                         Revenue Shield (Max / Min)
                       </label>
                       <div className="flex items-center gap-2">
-                        <div className="flex-1 flex items-center gap-2 px-3 py-3 bg-amber-50 border-2 border-amber-100 rounded-2xl focus-within:border-amber-500 transition-all">
-                          <span className="text-[10px] font-black text-amber-600">
+                        <div className="flex-1 flex flex-col justify-center px-3 py-1.5 bg-amber-50 border-2 border-amber-100 rounded-2xl focus-within:border-amber-500 transition-all overflow-hidden">
+                          <span className="text-[8px] font-black text-amber-500">
                             MIN
                           </span>
                           <input
                             type="number"
-                            value={formData.floorPrice}
+                            value={formData.floorPrice || ""}
                             onChange={(e) =>
                               setFormData({
                                 ...formData,
                                 floorPrice: Number(e.target.value),
                               })
                             }
-                            className="w-full bg-transparent text-xs font-bold text-amber-700 outline-none"
+                            className="w-full bg-transparent text-sm font-bold text-amber-700 outline-none min-w-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
                         </div>
-                        <div className="flex-1 flex items-center gap-2 px-3 py-3 bg-indigo-50 border-2 border-indigo-100 rounded-2xl focus-within:border-indigo-500 transition-all">
-                          <span className="text-[10px] font-black text-indigo-600">
+                        <div className="flex-1 flex flex-col justify-center px-3 py-1.5 bg-indigo-50 border-2 border-indigo-100 rounded-2xl focus-within:border-indigo-500 transition-all overflow-hidden">
+                          <span className="text-[8px] font-black text-indigo-400">
                             MAX
                           </span>
                           <input
                             type="number"
-                            value={formData.ceilingPrice}
+                            value={formData.ceilingPrice || ""}
                             onChange={(e) =>
                               setFormData({
                                 ...formData,
                                 ceilingPrice: Number(e.target.value),
                               })
                             }
-                            className="w-full bg-transparent text-xs font-bold text-indigo-700 outline-none"
+                            className="w-full bg-transparent text-sm font-bold text-indigo-700 outline-none min-w-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
                         </div>
                       </div>
@@ -1060,14 +1060,22 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                         <Sofa className="w-4 h-4 text-indigo-600" />
                         <input
                           type="number"
-                          value={formData.extraBedCharge}
+                          value={
+                            formData.extraBedCharge === 0
+                              ? ""
+                              : formData.extraBedCharge
+                          }
+                          placeholder="0"
                           onChange={(e) =>
                             setFormData({
                               ...formData,
-                              extraBedCharge: Number(e.target.value),
+                              extraBedCharge:
+                                e.target.value === ""
+                                  ? 0
+                                  : Number(e.target.value),
                             })
                           }
-                          className="w-full bg-transparent font-bold text-indigo-700 outline-none"
+                          className="w-full bg-transparent font-bold text-indigo-700 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                       </div>
                     </div>
@@ -1079,14 +1087,22 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                         <Users className="w-4 h-4 text-amber-600" />
                         <input
                           type="number"
-                          value={formData.extraAdultRate}
+                          value={
+                            formData.extraAdultRate === 0
+                              ? ""
+                              : formData.extraAdultRate
+                          }
+                          placeholder="0"
                           onChange={(e) =>
                             setFormData({
                               ...formData,
-                              extraAdultRate: Number(e.target.value),
+                              extraAdultRate:
+                                e.target.value === ""
+                                  ? 0
+                                  : Number(e.target.value),
                             })
                           }
-                          className="w-full bg-transparent font-bold text-amber-700 outline-none"
+                          className="w-full bg-transparent font-bold text-amber-700 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                       </div>
                     </div>
@@ -1100,14 +1116,22 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                         <Users className="w-4 h-4 text-blue-600" />
                         <input
                           type="number"
-                          value={formData.extraChildRate}
+                          value={
+                            formData.extraChildRate === 0
+                              ? ""
+                              : formData.extraChildRate
+                          }
+                          placeholder="0"
                           onChange={(e) =>
                             setFormData({
                               ...formData,
-                              extraChildRate: Number(e.target.value),
+                              extraChildRate:
+                                e.target.value === ""
+                                  ? 0
+                                  : Number(e.target.value),
                             })
                           }
-                          className="w-full bg-transparent font-bold text-blue-700 outline-none"
+                          className="w-full bg-transparent font-bold text-blue-700 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                       </div>
                     </div>
@@ -1116,10 +1140,10 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
                       Room Unit Identifiers
                     </label>
-                    <div className="grid grid-cols-4 gap-3 max-h-48 overflow-y-auto p-1">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-48 overflow-y-auto p-1">
                       {formData.roomNumbers?.map((num, idx) => (
                         <div key={idx} className="relative">
-                          <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 w-3 h-3" />
+                          <Hash className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-300 w-3.5 h-3.5" />
                           <input
                             type="text"
                             value={num}
@@ -1134,7 +1158,7 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                               });
                               if (validationError) setValidationError(null);
                             }}
-                            className={`w-full pl-8 pr-2 py-2.5 bg-slate-50 border-2 rounded-xl text-xs font-bold text-slate-700 outline-none ${validationError && formData.roomNumbers?.indexOf(num) !== formData.roomNumbers?.lastIndexOf(num) ? "border-red-200" : "border-slate-100 focus:border-indigo-500"}`}
+                            className={`w-full pl-7 pr-2 py-2.5 bg-slate-50 border-2 rounded-xl text-xs font-bold text-slate-700 outline-none min-w-0 ${validationError && formData.roomNumbers?.indexOf(num) !== formData.roomNumbers?.lastIndexOf(num) ? "border-red-200" : "border-slate-100 focus:border-indigo-500"}`}
                           />
                         </div>
                       ))}
