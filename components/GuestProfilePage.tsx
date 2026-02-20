@@ -983,6 +983,41 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     }
   };
 
+  const handlePrintScan = () => {
+    const src =
+      activeSide === "front"
+        ? idImages.front
+        : activeSide === "back"
+          ? idImages.back
+          : activeSide === "visa"
+            ? idImages.visa
+            : activeAdditionalIndex >= 100
+              ? idImages.formPages[activeAdditionalIndex - 100]
+              : idImages.additional[activeAdditionalIndex];
+
+    if (!src) return;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    const html = `
+      <html>
+        <head>
+          <title>Scanned Document</title>
+          <style>
+            body { margin: 0; padding: 20px; display: flex; justify-content: center; align-items: flex-start; }
+            img { max-width: 100%; height: auto; max-height: 95vh; object-fit: contain; }
+          </style>
+        </head>
+        <body>
+          <img src="${src}" onload="setTimeout(() => { window.print(); window.close(); }, 500);" />
+        </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
   const handleDeleteScan = () => {
     console.log("Delete scan triggered", { activeSide, activeAdditionalIndex });
     // Store which scan to delete and show confirmation modal
@@ -2521,17 +2556,30 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                               ))}
                             </div>
 
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleDeleteScan();
-                              }}
-                              className="p-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition-all shadow-2xl active:scale-90 pointer-events-auto flex items-center justify-center border-2 border-white/20"
-                              title="Delete this scan"
-                            >
-                              <Trash2 className="w-5 h-5 shadow-sm" />
-                            </button>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handlePrintScan();
+                                }}
+                                className="p-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all shadow-2xl active:scale-90 pointer-events-auto flex items-center justify-center border-2 border-white/20"
+                                title="Print this scan"
+                              >
+                                <Printer className="w-5 h-5 shadow-sm" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleDeleteScan();
+                                }}
+                                className="p-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition-all shadow-2xl active:scale-90 pointer-events-auto flex items-center justify-center border-2 border-white/20"
+                                title="Delete this scan"
+                              >
+                                <Trash2 className="w-5 h-5 shadow-sm" />
+                              </button>
+                            </div>
                           </div>
                         )}
                       </>
