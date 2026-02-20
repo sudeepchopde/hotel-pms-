@@ -138,16 +138,30 @@ def _load_db_imports():
         RoomStatusDB = _RoomStatusDB
         
         # Test connection and create tables if they don't exist
+        # Ensure tables exist
         from backend.database import Base
-        # SKIP BLOCKING CHECKS FOR VERCEL PERFORMANCE
-        # with engine.connect() as conn:
-        #     pass
-        # Base.metadata.create_all(bind=engine)
-        
-        # We assume tables exist or user hits /api/init-db manually
+        Base.metadata.create_all(bind=engine)
         
         _USE_DATABASE = True
         print("✓ Connected to PostgreSQL database")
+        
+        # Create default admin if not exists
+        try:
+            db = SessionLocal()
+            admin = db.query(_UserDB).filter(_UserDB.username == "admin").first()
+            if not admin:
+                from main import get_password_hash
+                db.add(_UserDB(
+                    username="admin",
+                    password_hash=get_password_hash("admin123"),
+                    full_name="Administrator",
+                    role="admin"
+                ))
+                db.commit()
+                print("✓ Default admin created")
+            db.close()
+        except Exception as e:
+            print(f"⚠️ Could not create default admin: {e}")
         
     except Exception as e:
         _USE_DATABASE = False
