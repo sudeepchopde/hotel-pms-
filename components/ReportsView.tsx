@@ -94,31 +94,36 @@ const ReportsView: React.FC = () => {
     return map;
   }, [roomTypes]);
 
-  // Filter Logic
   const filteredData = useMemo(() => {
-    return bookings.filter((booking) => {
-      // Date Range Filter
-      if (startDate && booking.checkIn < startDate) return false;
-      if (endDate && booking.checkOut > endDate) return false;
+    return bookings
+      .filter((booking) => {
+        // Date Range Filter
+        if (startDate && booking.checkIn < startDate) return false;
+        if (endDate && booking.checkOut > endDate) return false;
 
-      // Channel Filter
-      if (
-        !selectedChannels.includes("All") &&
-        !selectedChannels.includes(booking.source)
-      )
-        return false;
+        // Channel Filter
+        if (
+          !selectedChannels.includes("All") &&
+          !selectedChannels.includes(booking.source)
+        )
+          return false;
 
-      // Search Filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        return (
-          booking.guestName.toLowerCase().includes(query) ||
-          booking.id.toLowerCase().includes(query)
-        );
-      }
+        // Search Filter
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          return (
+            booking.guestName.toLowerCase().includes(query) ||
+            booking.id.toLowerCase().includes(query)
+          );
+        }
 
-      return true;
-    });
+        return true;
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.createdAt || a.checkIn).getTime();
+        const dateB = new Date(b.createdAt || b.checkIn).getTime();
+        return dateB - dateA;
+      });
   }, [bookings, startDate, endDate, selectedChannels, searchQuery]);
 
   const toggleChannel = (channel: string) => {
