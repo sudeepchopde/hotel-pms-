@@ -36,12 +36,12 @@ if NEON_DATABASE_URL: print("DEBUG: NEON_DATABASE_URL is set")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Strict pool settings to avoid exceeding connection limits on free tiers
+# Ultra-conservative settings for limited connection slots (Render Free Tier)
 engine_args = {
-    "pool_pre_ping": True,
-    "pool_recycle": 360,
-    "pool_size": 3,
+    "pool_size": 1,
     "max_overflow": 0,
+    "pool_recycle": 60,  # Recycle every minute
+    "pool_timeout": 30,
 }
 
 # Add SSL arguments if connecting to Neon (cloud database)
