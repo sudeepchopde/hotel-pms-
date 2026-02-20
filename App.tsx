@@ -730,8 +730,8 @@ const App: React.FC = () => {
     // Expose to window for immediate refreshes from other components
     (window as any).__refreshDashboardData = refreshDashboardData;
 
-    // Poll for notifications and data every 5 seconds
-    const pollNotifications = setInterval(refreshDashboardData, 5000);
+    // Poll for notifications and data every 30 seconds (conservative for Render Free Tier)
+    const pollNotifications = setInterval(refreshDashboardData, 30000);
 
     // Complementary periodic poll for bookings every 20 seconds (independent of notifications)
     const pollBookings = setInterval(async () => {
@@ -753,7 +753,7 @@ const App: React.FC = () => {
       } catch (e) {
         console.error("Periodic booking poll failed", e);
       }
-    }, 20000);
+    }, 60000); // Check every 60 seconds
 
     return () => {
       clearInterval(pollNotifications);
@@ -774,7 +774,7 @@ const App: React.FC = () => {
     };
 
     loadNotificationCount();
-    const interval = setInterval(loadNotificationCount, 10000); // Poll every 10 seconds
+    const interval = setInterval(loadNotificationCount, 60000); // Poll every 60 seconds
     return () => clearInterval(interval);
   }, []);
 

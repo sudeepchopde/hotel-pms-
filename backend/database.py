@@ -36,19 +36,24 @@ if NEON_DATABASE_URL: print("DEBUG: NEON_DATABASE_URL is set")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+from sqlalchemy.pool import NullPool
+
 # Ultra-conservative settings for limited connection slots (Render Free Tier)
+# Using NullPool ensures that every connection is closed immediately after use,
+# rather than being returned to a pool which might hold a slot open.
 engine_args = {
-    "pool_size": 1,
-    "max_overflow": 0,
-    "pool_recycle": 60,  # Recycle every minute
-    "pool_timeout": 30,
+    "poolclass": NullPool,
 }
 
-# Add SSL arguments if connecting to Neon (cloud database)
-if "neon.tech" in DATABASE_URL:
+# Add SSL arguments if connecting to Neon/Render/Supabase (cloud database)
+if "neon.tech" in DATABASE_URL or "render.com" in DATABASE_URL or "supabase.co" in DATABASE_URL:
     engine_args["connect_args"] = {"sslmode": "require"}
 elif DATABASE_URL.startswith("sqlite"):
-    engine_args["connect_args"] = {"check_same_thread": False}
+    from sqlalchemy.pool import StaticPool
+    engine_args = {
+        "connect_args": {"check_same_thread": False},
+        "poolclass": StaticPool
+    }
 
 engine = create_engine(DATABASE_URL, **engine_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
