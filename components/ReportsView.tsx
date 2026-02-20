@@ -168,7 +168,7 @@ const ReportsView: React.FC = () => {
     link.setAttribute("href", encodedUri);
     link.setAttribute(
       "download",
-      `bookings_report_${new Date().toISOString().split("T")[0]}.csv`,
+      `bookings_list_${new Date().toISOString().split("T")[0]}.csv`,
     );
     document.body.appendChild(link);
     link.click();
@@ -211,7 +211,7 @@ const ReportsView: React.FC = () => {
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-3xl font-black text-slate-900 tracking-tight">
-            Booking Reports
+            Bookings
           </h2>
           <p className="text-slate-500 mt-2">
             Generate detailed transaction logs and revenue statements.

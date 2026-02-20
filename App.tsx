@@ -171,7 +171,7 @@ const DEFAULT_NAV_ITEMS = [
   {
     id: "reports",
     icon: FileSpreadsheet,
-    label: "Reports",
+    label: "Bookings",
     color: "text-teal-300",
   },
   { id: "flow", icon: Presentation, label: "Flow", color: "text-slate-500" },

@@ -10,6 +10,11 @@ from collections import defaultdict
 import json
 import re
 import uuid
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("hotel-pms")
 
 def normalize_phone(phone: str) -> str:
     """Normalize phone number by removing all non-digit characters."""
@@ -1330,9 +1335,17 @@ def _sync_guest_profile(gd, check_in_date, db):
     if not norm_phone:
         return None
         
+    logger.info(f"Syncing guest profile: name='{gd.name}', phone='{gd.phoneNumber}' (norm='{norm_phone}'), profileId={gd.profileId}")
+        
     existing_profile = None
     if gd.profileId:
         existing_profile = db.query(GuestProfileDB).filter(GuestProfileDB.id == gd.profileId).first()
+        if existing_profile:
+            logger.info(f"  Found profile by ID: {existing_profile.id} (DB name: '{existing_profile.name}')")
+            # Safety check: if name is completely different, this might be a stale profileId
+            # We allow it for now but log it. 
+            if existing_profile.name.lower() != gd.name.lower():
+                logger.warning(f"  Profile ID {gd.profileId} name mismatch: DB='{existing_profile.name}', New='{gd.name}'")
     
     if not existing_profile:
         # Try exact name (case-insensitive) + normalized phone match first
@@ -1342,27 +1355,18 @@ def _sync_guest_profile(gd, check_in_date, db):
         for p in profiles:
             if p.name.lower() == gd.name.lower() and normalize_phone(p.phone_number) == norm_phone:
                 existing_profile = p
+                logger.info(f"  Found profile by name+phone match: {existing_profile.id}")
                 break
         
     if not existing_profile:
-        # Fallback to phone number only (useful for slight name variations or missing name during lookup)
-        # Match by last 10 digits as a common heuristic for mobile numbers
-        search_phone = norm_phone[-10:] if len(norm_phone) >= 10 else norm_phone
-        # Try a more direct match first for performance, then broad
-        existing_profile = db.query(GuestProfileDB).filter(GuestProfileDB.phone_number == gd.phoneNumber).first()
-        
-        if not existing_profile:
-            # Broad search in the whole table if it's small (usual for hotels)
-            # or try the suffix match again but more broadly
-            all_profiles = db.query(GuestProfileDB).limit(500).all()
-            for p in all_profiles:
-                p_norm = normalize_phone(p.phone_number)
-                if p_norm.endswith(search_phone) or search_phone.endswith(p_norm) and len(p_norm) >= 6:
-                    existing_profile = p
-                    break
+        logger.info(f"  No existing profile found for '{gd.name}' / '{gd.phoneNumber}'. Creating new.")
         
     if existing_profile:
-        # Update...
+        # Update existing profile with any new info from this booking
+        # We also update the name and phone in case they were slightly different (e.g. casing/format)
+        existing_profile.name = gd.name
+        existing_profile.phone_number = gd.phoneNumber
+        
         if gd.idType: existing_profile.id_type = gd.idType
         if gd.idNumber: existing_profile.id_number = encrypt_field(gd.idNumber)
         if gd.address: existing_profile.address = gd.address
@@ -1403,7 +1407,7 @@ def _sync_guest_profile(gd, check_in_date, db):
         db.flush()
         return existing_profile.id
     else:
-        # Create...
+        # Create new profile
         new_profile = GuestProfileDB(
             name=gd.name,
             phone_number=gd.phoneNumber or "",
@@ -1649,16 +1653,33 @@ def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, db=Dep
         
         if phone:
             norm_search = normalize_phone(phone)
+            # Use last 10 digits for broad filter, but only if we have enough digits to be safe
             search_suffix = norm_search[-10:] if len(norm_search) >= 10 else norm_search
             
-            # Fetch all to be safe about formatting (hyphens, spaces) in DB
-            # We limit to 500 which covers most active guest sets easily
-            all_profiles = query.limit(500).all()
+            # DB filter using the suffix to avoid fetching all rows
+            if len(search_suffix) >= 4:
+                query = query.filter(GuestProfileDB.phone_number.like(f"%{search_suffix}%"))
+            
+            # We limit to 1000 which covers most active guest sets easily
+            all_profiles = query.limit(1000).all()
             profiles = []
             for p in all_profiles:
                 p_norm = normalize_phone(p.phone_number)
-                if p_norm and (p_norm.endswith(search_suffix) or search_suffix.endswith(p_norm)):
-                    profiles.append(p)
+                if not p_norm:
+                    continue
+                
+                # Perfect match after normalization
+                if p_norm == norm_search:
+                    if p not in profiles:
+                        profiles.append(p)
+                    continue
+                
+                # Check for shared suffix if the numbers are long enough (prevent '91' matching randomly)
+                if len(norm_search) >= 7 and len(p_norm) >= 7:
+                    len_to_compare = min(10, len(norm_search), len(p_norm))
+                    if norm_search[-len_to_compare:] == p_norm[-len_to_compare:]:
+                        if p not in profiles:
+                            profiles.append(p)
         else:
             profiles = query.order_by(GuestProfileDB.last_check_in.desc()).limit(100).all()
         
@@ -1966,7 +1987,7 @@ def generate_booking_report(
     
     # Title
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(190, 10, txt="Booking Report", ln=True, align='C')
+    pdf.cell(190, 10, txt="Bookings", ln=True, align='C')
     pdf.set_font("Arial", size=10)
     pdf.cell(190, 10, txt=f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align='C')
     pdf.ln(10)
@@ -2034,7 +2055,7 @@ def generate_booking_report(
     report_path = os.path.join(out_dir, f"report_{uuid.uuid4().hex}.pdf")
     pdf.output(report_path)
     
-    return FileResponse(report_path, filename=f"Booking_Report_{datetime.now().strftime('%Y%m%d')}.pdf", media_type='application/pdf')
+    return FileResponse(report_path, filename=f"Booking_List_{datetime.now().strftime('%Y%m%d')}.pdf", media_type='application/pdf')
 
 @app.post("/api/bookings")
 def create_booking(booking: Booking, db=Depends(get_db)):
