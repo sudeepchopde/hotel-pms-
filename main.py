@@ -224,33 +224,18 @@ def ping():
 
 
 @app.post("/api/login", response_model=UserResponse)
-def login(user: UserLogin):
-    import os
-    import json
-    import psycopg2
-    from fastapi import HTTPException
-    
-    db_url = get_db_url()
-    if not db_url:
+def login(user: UserLogin, db=Depends(get_db)):
+    if not (USE_DATABASE() and db):
         # Fallback for demo/no-db mode
         if user.username == "admin" and user.password == "admin123":
              return UserResponse(
                 id=1, username="admin", full_name="System Admin", 
                 role="admin", allowed_sections=[]
              )
-        raise HTTPException(status_code=503, detail="Database URL not configured")
+        raise HTTPException(status_code=503, detail="Database not available")
         
     try:
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor()
-        
-        cur.execute(
-            "SELECT id, username, password_hash, full_name, role, allowed_sections FROM users WHERE username = %s", 
-            (user.username,)
-        )
-        db_user = cur.fetchone()
-        cur.close()
-        conn.close()
+        db_user = db.query(UserDB).filter(UserDB.username == user.username).first()
         
         if not db_user:
              if user.username == "admin" and user.password == "admin123":
@@ -260,16 +245,15 @@ def login(user: UserLogin):
                  )
              raise HTTPException(status_code=401, detail="Incorrect username or password")
              
-        user_id, username, password_hash, full_name, role, allowed_sections = db_user
-        
-        if not verify_password(user.password, password_hash):
+        if not verify_password(user.password, db_user.password_hash):
              # Allow admin fallback if hash verification fails (e.g. dummy hash or reset)
-             if username == "admin" and user.password == "admin123":
+             if db_user.username == "admin" and user.password == "admin123":
                  pass
              else:
                  raise HTTPException(status_code=401, detail="Incorrect username or password")
         
         # Parse allowed_sections
+        allowed_sections = db_user.allowed_sections
         if isinstance(allowed_sections, str):
             try:
                 allowed_sections = json.loads(allowed_sections)
@@ -279,10 +263,10 @@ def login(user: UserLogin):
             allowed_sections = []
             
         return UserResponse(
-            id=user_id, 
-            username=username, 
-            full_name=full_name or "", 
-            role=role, 
+            id=db_user.id, 
+            username=db_user.username, 
+            full_name=db_user.full_name or "", 
+            role=db_user.role, 
             allowed_sections=allowed_sections
         )
     except HTTPException:
@@ -292,75 +276,53 @@ def login(user: UserLogin):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/users", response_model=UserResponse)
-def create_user(user: UserCreate):
-    import os
-    import json
-    import psycopg2
-    from fastapi import HTTPException
-    
-    db_url = get_db_url()
-    if not db_url:
-        raise HTTPException(status_code=503, detail="Database URL not configured")
+def create_user(user: UserCreate, db=Depends(get_db)):
+    if not (USE_DATABASE() and db):
+        raise HTTPException(status_code=503, detail="Database not available")
         
     try:
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor()
-        
         # Check if username exists
-        cur.execute("SELECT id FROM users WHERE username = %s", (user.username,))
-        if cur.fetchone():
-            cur.close()
-            conn.close()
+        existing = db.query(UserDB).filter(UserDB.username == user.username).first()
+        if existing:
             raise HTTPException(status_code=400, detail="Username already registered")
             
         hashed_password = get_password_hash(user.password)
         
-        cur.execute(
-            """
-            INSERT INTO users (username, password_hash, full_name, role, allowed_sections) 
-            VALUES (%s, %s, %s, %s, %s) 
-            RETURNING id
-            """,
-            (user.username, hashed_password, user.full_name, user.role, json.dumps(user.allowed_sections))
-        )
-        new_id = cur.fetchone()[0]
-        conn.commit()
-        cur.close()
-        conn.close()
-        
-        return UserResponse(
-            id=new_id,
+        new_user = UserDB(
             username=user.username,
+            password_hash=hashed_password,
             full_name=user.full_name,
             role=user.role,
             allowed_sections=user.allowed_sections
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        return UserResponse(
+            id=new_user.id,
+            username=new_user.username,
+            full_name=new_user.full_name,
+            role=new_user.role,
+            allowed_sections=new_user.allowed_sections
         )
     except HTTPException:
         raise
     except Exception as e:
         print(f"Create User error: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/users")
-def list_users():
-    import os
-    import psycopg2
+def list_users(db=Depends(get_db)):
+    if not (USE_DATABASE() and db):
+        return []
     try:
-        db_url = get_db_url()
-        if not db_url:
-            return []
-            
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor()
-        cur.execute("SELECT id, username, full_name, role, allowed_sections FROM users")
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
+        users_db = db.query(UserDB).all()
         
-        users = []
-        for r in rows:
-            role = r[3]
-            sections = r[4]
+        result = []
+        for u in users_db:
+            sections = u.allowed_sections
             # Handle JSON if stored as string
             if isinstance(sections, str):
                 try: sections = json.loads(sections)
@@ -368,141 +330,95 @@ def list_users():
             elif sections is None:
                 sections = []
                 
-            users.append({
-                "id": r[0],
-                "username": r[1],
-                "full_name": r[2] or "",
-                "role": role,
+            result.append({
+                "id": u.id,
+                "username": u.username,
+                "full_name": u.full_name or "",
+                "role": u.role,
                 "allowed_sections": sections
             })
-        return users
+        return result
     except Exception as e:
         print(f"List users error: {e}")
         return []
 
 @app.put("/api/users/{user_id}", response_model=UserResponse)
-def update_user(user_id: int, user: UserUpdate):
-    import os
-    import json
-    import psycopg2
-    from fastapi import HTTPException
-    
-    db_url = get_db_url()
-    if not db_url:
-        raise HTTPException(status_code=503, detail="Database URL not configured")
+def update_user(user_id: int, user: UserUpdate, db=Depends(get_db)):
+    if not (USE_DATABASE() and db):
+        raise HTTPException(status_code=503, detail="Database not available")
         
     try:
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor()
-        
-        # Check if user exists
-        cur.execute("SELECT username FROM users WHERE id = %s", (user_id,))
-        existing_user = cur.fetchone()
-        if not existing_user:
-            cur.close()
-            conn.close()
+        db_user = db.query(UserDB).filter(UserDB.id == user_id).first()
+        if not db_user:
             raise HTTPException(status_code=404, detail="User not found")
             
-        update_fields = []
-        params = []
-        
         if user.username is not None:
             # Check if username exists for other users
-            cur.execute("SELECT id FROM users WHERE username = %s AND id != %s", (user.username, user_id))
-            if cur.fetchone():
-                cur.close()
-                conn.close()
+            existing = db.query(UserDB).filter(UserDB.username == user.username, UserDB.id != user_id).first()
+            if existing:
                 raise HTTPException(status_code=400, detail="Username already registered")
-            update_fields.append("username = %s")
-            params.append(user.username)
+            db_user.username = user.username
             
         if user.password is not None:
-            hashed_password = get_password_hash(user.password)
-            update_fields.append("password_hash = %s")
-            params.append(hashed_password)
+            db_user.password_hash = get_password_hash(user.password)
             
         if user.full_name is not None:
-            update_fields.append("full_name = %s")
-            params.append(user.full_name)
+            db_user.full_name = user.full_name
             
         if user.role is not None:
-            if existing_user[0] == 'admin' and user.role != 'admin':
-                # Optional: prevent demoting the root admin if needed
-                pass
-            update_fields.append("role = %s")
-            params.append(user.role)
+            db_user.role = user.role
             
         if user.allowed_sections is not None:
-            update_fields.append("allowed_sections = %s")
-            params.append(json.dumps(user.allowed_sections))
+            db_user.allowed_sections = user.allowed_sections
             
-        if not update_fields:
-            cur.close()
-            conn.close()
-            return list_users()[0] # This is a bit hacky, but if nothing to update, just return current
-            
-        sql = f"UPDATE users SET {', '.join(update_fields)} WHERE id = %s RETURNING id, username, full_name, role, allowed_sections"
-        params.append(user_id)
+        db.commit()
+        db.refresh(db_user)
         
-        cur.execute(sql, tuple(params))
-        updated_row = cur.fetchone()
-        conn.commit()
-        cur.close()
-        conn.close()
-        
-        u_id, u_username, u_full_name, u_role, u_sections = updated_row
-        if isinstance(u_sections, str):
-            try: u_sections = json.loads(u_sections)
-            except: u_sections = []
-        elif u_sections is None:
-            u_sections = []
+        sections = db_user.allowed_sections
+        if isinstance(sections, str):
+            try: sections = json.loads(sections)
+            except: sections = []
+        elif sections is None:
+            sections = []
             
         return UserResponse(
-            id=u_id,
-            username=u_username,
-            full_name=u_full_name or "",
-            role=u_role,
-            allowed_sections=u_sections
+            id=db_user.id,
+            username=db_user.username,
+            full_name=db_user.full_name or "",
+            role=db_user.role,
+            allowed_sections=sections
         )
     except HTTPException:
         raise
     except Exception as e:
         print(f"Update User error: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/users/{user_id}")
-def delete_user(user_id: int):
-    import os
-    import psycopg2
+def delete_user(user_id: int, db=Depends(get_db)):
+    if not (USE_DATABASE() and db):
+        raise HTTPException(status_code=503, detail="Database not available")
+        
     try:
         if user_id == 1:
             raise HTTPException(status_code=400, detail="Cannot delete admin")
             
-        db_url = get_db_url()
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor()
-        
-        cur.execute("SELECT username FROM users WHERE id = %s", (user_id,))
-        row = cur.fetchone()
-        if not row:
-             cur.close()
-             conn.close()
-             raise HTTPException(status_code=404, detail="User not found")
+        db_user = db.query(UserDB).filter(UserDB.id == user_id).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="User not found")
              
-        if row[0] == 'admin':
-             cur.close()
-             conn.close()
+        if db_user.username == 'admin':
              raise HTTPException(status_code=400, detail="Cannot delete admin user")
              
-        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
-        conn.commit()
-        cur.close()
-        conn.close()
+        db.delete(db_user)
+        db.commit()
         return {"status": "success"}
     except HTTPException:
         raise
     except Exception as e:
         print(f"Delete user error: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/init-db")
