@@ -2227,15 +2227,18 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
                         print(f"Error adjusting late check-in: {e}")
         
         # Save or update guest profile whenever guest details are present
-        if booking.guestDetails and booking.guestDetails.name and booking.guestDetails.phoneNumber:
-            profile_id = _sync_guest_profile(booking.guestDetails, booking.checkIn, db)
-            if profile_id:
-                # Update the guest_details dictionary in the DB model
-                updated_gd = booking.guestDetails.dict() if booking.guestDetails else {}
-                updated_gd['profileId'] = profile_id
-                db_booking.guest_details = updated_gd
-        else:
-            db_booking.guest_details = None # Clear if no guest details provided
+        if booking.guestDetails:
+            # We ALWAYS save guest details to the booking if they are provided, 
+            # even if phone is missing (which is required for global profile syncing).
+            updated_gd = booking.guestDetails.dict()
+            
+            # Sync with global Guest Profile only if name and phone are available
+            if booking.guestDetails.name and booking.guestDetails.phoneNumber:
+                profile_id = _sync_guest_profile(booking.guestDetails, booking.checkIn, db)
+                if profile_id:
+                    updated_gd['profileId'] = profile_id
+            
+            db_booking.guest_details = updated_gd
 
         # Track folio count for service order notifications
         old_folio_count = len(db_booking.folio or [])
