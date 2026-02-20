@@ -1401,42 +1401,59 @@ def create_room_type(room_type: RoomType, db=Depends(get_db)):
 def update_room_type(rt_id: str, room_type: RoomType, db=Depends(get_db)):
     if USE_DATABASE() and db:
         db_room = db.query(RoomTypeDB).filter(RoomTypeDB.id == rt_id).first()
+        
+        # If it doesn't exist, Create it (Upsert)
         if not db_room:
-            raise HTTPException(status_code=404, detail="Room Type not found")
-        
-        # Check if any room numbers are being removed that have active or future bookings
-        new_room_numbers = room_type.roomNumbers or []
-        old_room_numbers = db_room.room_numbers or []
-        removed_rooms = [r for r in old_room_numbers if r not in new_room_numbers]
-        
-        if removed_rooms:
-            today = datetime.now().strftime("%Y-%m-%d")
-            active_conflicts = db.query(BookingDB).filter(
-                BookingDB.room_number.in_(removed_rooms),
-                BookingDB.status.in_(['Confirmed', 'CheckedIn']),
-                BookingDB.check_out >= today
-            ).all()
+            db_room = RoomTypeDB(
+                id=rt_id,
+                name=room_type.name,
+                total_capacity=room_type.totalCapacity,
+                base_price=room_type.basePrice,
+                floor_price=room_type.floorPrice,
+                ceiling_price=room_type.ceilingPrice,
+                base_occupancy=room_type.baseOccupancy,
+                amenities=room_type.amenities or [],
+                room_numbers=room_type.roomNumbers or [],
+                extra_bed_charge=room_type.extraBedCharge,
+                extra_adult_rate=room_type.extraAdultRate,
+                extra_child_rate=room_type.extraChildRate
+            )
+            db.add(db_room)
+        else:
+            # Check if any room numbers are being removed that have active or future bookings
+            new_room_numbers = room_type.roomNumbers or []
+            old_room_numbers = db_room.room_numbers or []
+            removed_rooms = [r for r in old_room_numbers if r not in new_room_numbers]
             
-            if active_conflicts:
-                conflict_rooms = ", ".join(list(set([b.room_number for b in active_conflicts])))
-                raise HTTPException(status_code=400, detail=f"Cannot remove room(s) {conflict_rooms} as they have active or future bookings. Please relocate them first.")
+            if removed_rooms:
+                today = datetime.now().strftime("%Y-%m-%d")
+                active_conflicts = db.query(BookingDB).filter(
+                    BookingDB.room_number.in_(removed_rooms),
+                    BookingDB.status.in_(['Confirmed', 'CheckedIn']),
+                    BookingDB.check_out >= today
+                ).all()
+                
+                if active_conflicts:
+                    conflict_rooms = ", ".join(list(set([b.room_number for b in active_conflicts])))
+                    raise HTTPException(status_code=400, detail=f"Cannot remove room(s) {conflict_rooms} as they have active or future bookings.")
 
-        db_room.name = room_type.name
-        db_room.total_capacity = room_type.totalCapacity
-        db_room.base_price = room_type.basePrice
-        db_room.floor_price = room_type.floorPrice
-        db_room.ceiling_price = room_type.ceilingPrice
-        db_room.base_occupancy = room_type.baseOccupancy
-        db_room.amenities = room_type.amenities or []
-        db_room.room_numbers = room_type.roomNumbers or []
-        db_room.extra_bed_charge = room_type.extraBedCharge
-        db_room.extra_adult_rate = room_type.extraAdultRate
-        db_room.extra_child_rate = room_type.extraChildRate
+            db_room.name = room_type.name
+            db_room.total_capacity = room_type.totalCapacity
+            db_room.base_price = room_type.basePrice
+            db_room.floor_price = room_type.floorPrice
+            db_room.ceiling_price = room_type.ceilingPrice
+            db_room.base_occupancy = room_type.baseOccupancy
+            db_room.amenities = room_type.amenities or []
+            db_room.room_numbers = room_type.roomNumbers or []
+            db_room.extra_bed_charge = room_type.extraBedCharge
+            db_room.extra_adult_rate = room_type.extraAdultRate
+            db_room.extra_child_rate = room_type.extraChildRate
         
         db.commit()
         db.refresh(db_room)
         return db_room_type_to_pydantic(db_room)
     
+    # Fallback mode
     for i, rt in enumerate(get_fallback_room_types()):
         if rt.id == rt_id:
             get_fallback_room_types()[i] = room_type
