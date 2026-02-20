@@ -123,6 +123,7 @@ class FolioItem(BaseModel):
     category: Literal['F&B', 'Laundry', 'Room', 'Other']
     timestamp: str
     isPaid: Optional[bool] = False
+    isInclusive: Optional[bool] = False
     paymentMethod: Optional[str] = None
     paymentId: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None

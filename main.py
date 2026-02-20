@@ -12,6 +12,13 @@ import re
 import uuid
 import logging
 from sqlalchemy.exc import IntegrityError
+try:
+    from dotenv import load_dotenv
+    load_dotenv('.env')
+    load_dotenv('.env.local', override=True)
+except:
+    pass
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -54,10 +61,10 @@ def get_db_url():
         url = url.replace("postgres://", "postgresql://", 1)
     return url
 
-# Ensure DATABASE_URL is set in environment for manual psycopg2/os.getenv calls
+# Ensure get_db_url() correctly returns the database URL
 _current_url = get_db_url()
-if _current_url:
-    os.environ["DATABASE_URL"] = _current_url
+# DO NOT set os.environ["DATABASE_URL"] here to a default, 
+# as it might override the actual env vars in other modules.
 
 # Import Pydantic models at top level for FastAPI type validation
 from backend.models import (
@@ -146,7 +153,7 @@ def _load_db_imports():
         Base.metadata.create_all(bind=engine)
         
         _USE_DATABASE = True
-        print("✓ Connected to PostgreSQL database")
+        print("[OK] Connected to PostgreSQL database")
         
         # Create default admin if not exists
         try:
@@ -161,10 +168,10 @@ def _load_db_imports():
                     role="admin"
                 ))
                 db.commit()
-                print("✓ Default admin created")
+                print("[OK] Default admin created")
             db.close()
         except Exception as e:
-            print(f"⚠️ Could not create default admin: {e}")
+            print(f"[WARN] Could not create default admin: {e}")
         
     except Exception as e:
         _USE_DATABASE = False
@@ -220,6 +227,21 @@ try:
 except Exception as e:
     print(f"[WARN] Payment Gateway routes not loaded: {e}")
 
+
+@app.on_event("startup")
+async def startup_db():
+    """Eagerly initialize DB at startup so errors are visible immediately."""
+    import traceback
+    print("=== STARTUP: Initializing database connection ===")
+    try:
+        result = _load_db_imports()
+        if result:
+            print(f"=== STARTUP: [OK] Database ready (USE_DATABASE={_USE_DATABASE}) ===")
+        else:
+            print(f"=== STARTUP: [FAIL] Database FAILED. Error: {_db_connection_error} ===")
+    except Exception as e:
+        print(f"=== STARTUP: [FAIL] Exception in _load_db_imports: {e} ===")
+        traceback.print_exc()
 
 @app.get("/ping")
 def ping():
@@ -1148,6 +1170,20 @@ def db_booking_to_pydantic(db_booking):
             except:
                 return []
         return []
+
+    def safe_json_dict(value):
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            import json
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, dict) else {}
+            except:
+                return {}
+        return {}
     
     return Booking(
         id=db_booking.id,
@@ -1160,14 +1196,16 @@ def db_booking_to_pydantic(db_booking):
         checkIn=db_booking.check_in or "",
         checkOut=db_booking.check_out or "",
         reservationId=db_booking.reservation_id,
-        channelSync=db_booking.channel_sync or {},
+        channelSync=safe_json_dict(db_booking.channel_sync),
         amount=db_booking.amount,
         rejectionReason=db_booking.rejection_reason,
-        guestDetails=db_booking.guest_details,
+        guestDetails=safe_json_dict(db_booking.guest_details),
         numberOfRooms=db_booking.number_of_rooms,
         pax=db_booking.pax,
         accessoryGuests=safe_json_list(db_booking.accessory_guests),
         extraBeds=db_booking.extra_beds,
+        extraAdults=db_booking.extra_adults,
+        extraChildren=db_booking.extra_children,
         specialRequests=db_booking.special_requests,
         isVIP=db_booking.is_vip,
         isSettled=db_booking.is_settled,
@@ -2019,7 +2057,12 @@ def create_booking(booking: Booking, db=Depends(get_db)):
                 folio=[f.dict() for f in booking.folio] if booking.folio else [],
                 discount=booking.discount,
                 extra_adults=booking.extraAdults or 0,
-                extra_children=booking.extraChildren or 0
+                extra_children=booking.extraChildren or 0,
+                extra_beds=booking.extraBeds or 0,
+                special_requests=booking.specialRequests,
+                accessory_guests=[g.dict() for g in booking.accessoryGuests] if booking.accessoryGuests else [],
+                is_vip=booking.isVIP or False,
+                is_settled=booking.isSettled or False
             )
             db.add(db_booking)
             db.commit()
@@ -2101,7 +2144,8 @@ def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
                     folio=[f.dict() for f in booking.folio] if booking.folio else [],
                     discount=booking.discount,
                     extra_adults=booking.extraAdults or 0,
-                    extra_children=booking.extraChildren or 0
+                    extra_children=booking.extraChildren or 0,
+                    is_settled=booking.isSettled or False
                 )
                 db_bookings.append(db_booking)
             
@@ -2155,180 +2199,152 @@ def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
 
 @app.put("/api/bookings/{booking_id}")
 def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
-    if USE_DATABASE() and db:
-        db_booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
-        if not db_booking:
-            raise HTTPException(status_code=404, detail="Booking not found")
-        
-        # Track old status for notification triggers
-        old_status = db_booking.status
-        new_status = booking.status
-
-        # Apply late check-in adjustment rule for unpaid direct bookings
-        if old_status == 'Confirmed' and new_status == 'CheckedIn':
-            # Rule: Only for Direct Bookings with NO payments (sum <= 0)
-            total_paid = sum(p.get('amount', 0) for p in (db_booking.payments or []))
-            if db_booking.source == 'Direct' and total_paid <= 0:
-                # Use current date (server time)
-                today_str = datetime.now().strftime('%Y-%m-%d')
-                
-                # Check if today is after the scheduled check-in
-                if today_str > db_booking.check_in:
-                    try:
-                        d_start = datetime.strptime(db_booking.check_in, '%Y-%m-%d')
-                        d_end = datetime.strptime(db_booking.check_out, '%Y-%m-%d')
-                        d_today = datetime.strptime(today_str, '%Y-%m-%d')
-                        
-                        old_nights = (d_end - d_start).days
-                        new_nights = (d_end - d_today).days
-                        
-                        if old_nights > 0 and new_nights > 0:
-                            # Adjust the incoming 'booking' object so it gets saved to DB correctly
-                            rate_per_night = (db_booking.amount or 0) / old_nights
-                            booking.checkIn = today_str
-                            booking.amount = rate_per_night * new_nights
-                            print(f"Late check-in adjustment: {db_booking.guest_name} from {old_nights} nights starting {db_booking.check_in} to {new_nights} nights starting {today_str}. New amount: {booking.amount}")
-                    except Exception as e:
-                        print(f"Error adjusting late check-in: {e}")
-        
-        # Save or update guest profile whenever guest details are present
-        if booking.guestDetails:
-            # We ALWAYS save guest details to the booking if they are provided, 
-            # even if phone is missing (which is required for global profile syncing).
-            updated_gd = booking.guestDetails.dict()
+    try:
+        if USE_DATABASE() and db:
+            db_booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
+            if not db_booking:
+                raise HTTPException(status_code=404, detail="Booking not found")
             
-            # Sync with global Guest Profile only if name and phone are available
-            if booking.guestDetails.name and booking.guestDetails.phoneNumber:
-                profile_id = _sync_guest_profile(booking.guestDetails, booking.checkIn, db)
-                if profile_id:
-                    updated_gd['profileId'] = profile_id
+            # Track old status for notification triggers
+            old_status = db_booking.status
+            new_status = booking.status
+
+            # Apply late check-in adjustment rule for unpaid direct bookings
+            if old_status == 'Confirmed' and new_status == 'CheckedIn':
+                # Rule: Only for Direct Bookings with NO payments (sum <= 0)
+                total_paid = sum(p.get('amount', 0) for p in (db_booking.payments or []))
+                if db_booking.source == 'Direct' and total_paid <= 0:
+                    # Use current date (server time)
+                    today_str = datetime.now().strftime('%Y-%m-%d')
+                    
+                    # Check if today is after the scheduled check-in
+                    if today_str > db_booking.check_in:
+                        try:
+                            d_start = datetime.strptime(db_booking.check_in, '%Y-%m-%d')
+                            d_end = datetime.strptime(db_booking.check_out, '%Y-%m-%d')
+                            d_today = datetime.strptime(today_str, '%Y-%m-%d')
+                            
+                            old_nights = (d_end - d_start).days
+                            new_nights = (d_end - d_today).days
+                            
+                            if old_nights > 0 and new_nights > 0:
+                                # Adjust the incoming 'booking' object so it gets saved to DB correctly
+                                rate_per_night = (db_booking.amount or 0) / old_nights
+                                booking.checkIn = today_str
+                                booking.amount = rate_per_night * new_nights
+                                logger.info(f"Late check-in adjustment: {db_booking.guest_name} from {old_nights} nights starting {db_booking.check_in} to {new_nights} nights starting {today_str}. New amount: {booking.amount}")
+                        except Exception as e:
+                            logger.error(f"Error adjusting late check-in: {e}")
             
-            db_booking.guest_details = updated_gd
+            # Save or update guest profile whenever guest details are present
+            if booking.guestDetails:
+                updated_gd = booking.guestDetails.dict()
+                if booking.guestDetails.name and booking.guestDetails.phoneNumber:
+                    profile_id = _sync_guest_profile(booking.guestDetails, booking.checkIn, db)
+                    if profile_id:
+                        updated_gd['profileId'] = profile_id
+                db_booking.guest_details = updated_gd
 
-        # Track folio count for service order notifications
-        old_folio_count = len(db_booking.folio or [])
-        new_folio_count = len(booking.folio or [])
+            # Track folio count
+            old_folio_count = len(db_booking.folio or [])
+            new_folio_count = len(booking.folio or [])
 
-        # Update fields
-        db_booking.room_type_id = booking.roomTypeId
-        db_booking.room_number = booking.roomNumber
-        db_booking.guest_name = booking.guestName
-        db_booking.status = booking.status
-        db_booking.check_in = booking.checkIn
-        db_booking.check_out = booking.checkOut
-        db_booking.amount = booking.amount
-        db_booking.reservation_id = booking.reservationId
-        db_booking.channel_sync = booking.channelSync or {}
-        # guest_details already handled above
-        db_booking.number_of_rooms = booking.numberOfRooms
-        db_booking.pax = booking.pax
-        db_booking.accessory_guests = [g.dict() for g in booking.accessoryGuests] if booking.accessoryGuests else []
-        db_booking.extra_beds = booking.extraBeds
-        db_booking.extra_adults = booking.extraAdults or 0
-        db_booking.extra_children = booking.extraChildren or 0
-        db_booking.special_requests = booking.specialRequests
-        db_booking.is_vip = booking.isVIP or False
-        db_booking.is_settled = booking.isSettled or False
-        db_booking.invoice_number = booking.invoiceNumber
-        db_booking.folio = [f.dict() for f in booking.folio] if booking.folio else []
-        db_booking.payments = [p.dict() for p in booking.payments] if booking.payments else []
-        db_booking.discount = booking.discount
-        
-        # Since we are using BigInteger for timestamp, ensure it's an int
-        import time
-        db_booking.timestamp = int(time.time() * 1000)
+            # Update fields
+            db_booking.room_type_id = booking.roomTypeId
+            db_booking.room_number = booking.roomNumber
+            db_booking.guest_name = booking.guestName
+            db_booking.status = booking.status
+            db_booking.check_in = booking.checkIn
+            db_booking.check_out = booking.checkOut
+            db_booking.amount = booking.amount
+            db_booking.reservation_id = booking.reservationId
+            db_booking.channel_sync = booking.channelSync or {}
+            db_booking.number_of_rooms = booking.numberOfRooms
+            db_booking.pax = booking.pax
+            db_booking.accessory_guests = [g.dict() for g in booking.accessoryGuests] if booking.accessoryGuests else []
+            db_booking.extra_beds = booking.extraBeds
+            db_booking.extra_adults = booking.extraAdults or 0
+            db_booking.extra_children = booking.extraChildren or 0
+            db_booking.special_requests = booking.specialRequests
+            db_booking.is_vip = booking.isVIP or False
+            db_booking.is_settled = booking.isSettled or False
+            db_booking.invoice_number = booking.invoiceNumber
+            db_booking.folio = [f.dict() for f in booking.folio] if booking.folio else []
+            db_booking.payments = [p.dict() for p in booking.payments] if booking.payments else []
+            db_booking.discount = booking.discount
+            
+            import time
+            db_booking.timestamp = int(time.time() * 1000)
 
-        db.commit()
-        db.refresh(db_booking)
+            db.commit()
+            db.refresh(db_booking)
 
-        # Notification for new folio items (Service Orders)
-        if new_folio_count > old_folio_count:
+            # Notification Logic with nested try/except to avoid rolling back booking update
             try:
-                last_item = booking.folio[-1]
-                
-                # Sudeep's Rule: Do not trigger notification for Extra Bed setup
-                if "Extra Bed" not in last_item.description:
-                    create_notification_internal(
-                        db,
-                        notif_type="housekeeping" if last_item.category == 'Laundry' else "guest_request",
-                        category="service_order",
-                        title=f"New {last_item.category} Order",
-                        message=f"Order for {last_item.description} (₹{last_item.amount}) received from Room {booking.roomNumber}",
-                        priority="normal",
-                        booking_id=booking_id,
-                        room_number=booking.roomNumber
-                    )
+                if new_folio_count > old_folio_count:
+                    last_item = booking.folio[-1]
+                    skip_keywords = ["Extra Bed", "Extra Adult", "Extra Child"]
+                    if not any(kw in last_item.description for kw in skip_keywords):
+                        create_notification_internal(db, 
+                            notif_type="housekeeping" if last_item.category == 'Laundry' else "guest_request",
+                            category="service_order",
+                            title=f"New {last_item.category} Order",
+                            message=f"Order for {last_item.description} (₹{last_item.amount}) received from Room {booking.roomNumber}",
+                            priority="normal",
+                            booking_id=booking_id,
+                            room_number=booking.roomNumber
+                        )
+                        db.commit()
+
+                if old_status != new_status:
+                    guest_name = booking.guestName or 'Guest'
+                    room_info = f"Room {booking.roomNumber}" if booking.roomNumber else ""
+                    
+                    if new_status == 'CheckedIn':
+                        create_notification_internal(db, notif_type="checkin", category="guest_arrival", title="Guest Checked In",
+                            message=f"{guest_name} has checked in to {room_info}", priority="high", booking_id=booking_id, room_number=booking.roomNumber)
+                    elif new_status == 'CheckedOut':
+                        create_notification_internal(db, notif_type="checkout", category="guest_departure", title="Guest Checked Out",
+                            message=f"{guest_name} has checked out from {room_info}", priority="normal", booking_id=booking_id, room_number=booking.roomNumber)
+                        if booking.roomNumber and booking.roomNumber != 'Unassigned':
+                            try:
+                                from sqlalchemy import text
+                                exists = db.execute(text("SELECT 1 FROM room_status WHERE room_number = :rn"), {"rn": booking.roomNumber}).fetchone()
+                                now_ts = datetime.now().isoformat()
+                                if exists:
+                                    db.execute(text("UPDATE room_status SET status = 'Dirty' WHERE room_number = :rn"), {"rn": booking.roomNumber})
+                                else:
+                                    db.execute(text("INSERT INTO room_status (room_number, status, priority, last_cleaned) VALUES (:rn, 'Dirty', 'Medium', :ts)"), {"rn": booking.roomNumber, "ts": now_ts})
+                            except: pass
+                    elif new_status == 'Cancelled':
+                        create_notification_internal(db, notif_type="reservation", category="cancellation", title="Booking Cancelled",
+                            message=f"Reservation for {guest_name} ({booking.checkIn}) has been cancelled", priority="high", booking_id=booking_id, room_number=booking.roomNumber)
                     db.commit()
             except Exception as e:
-                print(f"Error creating folio notification: {e}")
-                db.rollback()
-        
-        # Create notifications for status changes
-        if old_status != new_status:
-            try:
-                guest_name = booking.guestName or 'Guest'
-                room_info = f"Room {booking.roomNumber}" if booking.roomNumber else ""
-                
-                if new_status == 'CheckedIn':
-                    create_notification_internal(
-                        db,
-                        notif_type="checkin",
-                        category="guest_arrival",
-                        title="Guest Checked In",
-                        message=f"{guest_name} has checked in to {room_info}",
-                        priority="high",
-                        booking_id=booking_id,
-                        room_number=booking.roomNumber
-                    )
-                elif new_status == 'CheckedOut':
-                    create_notification_internal(
-                        db,
-                        notif_type="checkout",
-                        category="guest_departure",
-                        title="Guest Checked Out",
-                        message=f"{guest_name} has checked out from {room_info}",
-                        priority="normal",
-                        booking_id=booking_id,
-                        room_number=booking.roomNumber
-                    )
-                    
-                    # Automate Housekeeping Status
-                    if booking.roomNumber and booking.roomNumber != 'Unassigned':
-                        try:
-                            from sqlalchemy import text
-                            from datetime import datetime
-                            
-                            # Upsert Room Status
-                            check_stmt = text("SELECT 1 FROM room_status WHERE room_number = :rn")
-                            exists = db.execute(check_stmt, {"rn": booking.roomNumber}).fetchone()
-                            
-                            now_ts = datetime.now().isoformat()
-                            
-                            if exists:
-                                db.execute(text("UPDATE room_status SET status = 'Dirty' WHERE room_number = :rn"), {"rn": booking.roomNumber})
-                            else:
-                                db.execute(text("INSERT INTO room_status (room_number, status, priority, last_cleaned) VALUES (:rn, 'Dirty', 'Medium', :ts)"), {"rn": booking.roomNumber, "ts": now_ts})
-                            
-                            db.commit()
-                        except Exception as ex:
-                            print(f"Failed to update room status on checkout: {ex}")
-                elif new_status == 'Cancelled':
-                    create_notification_internal(
-                        db,
-                        notif_type="reservation",
-                        category="cancellation",
-                        title="Booking Cancelled",
-                        message=f"Reservation for {guest_name} ({booking.checkIn}) has been cancelled",
-                        priority="high",
-                        booking_id=booking_id,
-                        room_number=booking.roomNumber
-                    )
-                db.commit()
-            except Exception as e:
-                print(f"Error creating status notification: {e}")
-                db.rollback() # Rollback the notification part but booking update was already committed
-        
-        return db_booking_to_pydantic(db_booking)
+                logger.error(f"Error creating notification: {e}")
+                # Don't rollback everything - booking update is already committed
+                try: db.rollback() 
+                except: pass
+
+            return db_booking_to_pydantic(db_booking)
+            
+        else: # Handle Fallback
+            fallback = get_fallback_bookings()
+            idx = next((i for i, b in enumerate(fallback) if b.id == booking_id), -1)
+            if idx >= 0:
+                # Update status
+                old_b = fallback[idx]
+                updated_b = booking
+                fallback[idx] = updated_b
+                save_fallback_bookings(fallback)
+                return updated_b
+            raise HTTPException(status_code=404, detail="Booking not found in fallback")
+
+    except Exception as e:
+        logger.error(f"FATAL ERROR in update_booking: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to update booking: {str(e)}")
 
 @app.post("/api/bookings/{booking_id}/folio")
 def add_folio_item(booking_id: str, item: FolioItem, db=Depends(get_db)):
@@ -2351,19 +2367,21 @@ def add_folio_item(booking_id: str, item: FolioItem, db=Depends(get_db)):
         db.commit()
         db.refresh(db_booking)
         
-        # Create notification
-        create_notification_internal(
-            db,
-            notif_type="housekeeping" if item.category == 'Laundry' else "guest_request",
-            category="service_order",
-            title=f"New {item.category} Order",
-            message=f"Order for {item.description} (₹{item.amount}) received from Room {db_booking.room_number}",
-            priority="normal",
-            booking_id=booking_id,
-            room_number=db_booking.room_number,
-            metadata=item.metadata
-        )
-        db.commit()
+        # Create notification (skip internal charge items)
+        skip_keywords = ["Extra Bed", "Extra Adult", "Extra Child"]
+        if not any(kw in (item.description or "") for kw in skip_keywords):
+            create_notification_internal(
+                db,
+                notif_type="housekeeping" if item.category == 'Laundry' else "guest_request",
+                category="service_order",
+                title=f"New {item.category} Order",
+                message=f"Order for {item.description} ({item.amount}) received from Room {db_booking.room_number}",
+                priority="normal",
+                booking_id=booking_id,
+                room_number=db_booking.room_number,
+                metadata=item.metadata
+            )
+            db.commit()
         
         return db_booking_to_pydantic(db_booking)
     

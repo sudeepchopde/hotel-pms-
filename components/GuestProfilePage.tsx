@@ -191,6 +191,15 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     "Room" | "Folio" | "Extra" | "Partial"
   >("Partial");
   const [showAddChargeModal, setShowAddChargeModal] = useState(false);
+
+  const nights = Math.max(
+    1,
+    Math.ceil(
+      (new Date(booking.checkOut).getTime() -
+        new Date(booking.checkIn).getTime()) /
+        (1000 * 3600 * 24),
+    ),
+  );
   const [chargeDescription, setChargeDescription] = useState("");
   const [chargeAmount, setChargeAmount] = useState("");
   const [chargeCategory, setChargeCategory] = useState<
@@ -351,12 +360,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     const rate = isAdult
       ? roomType?.extraAdultRate || 0
       : roomType?.extraChildRate || 0;
-    // Base charge without tax
-    const baseCharge = next * rate;
-    // Determine GST rate for 'Other' category (default 18%)
-    const gstRate = propertySettings?.otherGstRate || 18;
-    // Inclusive amount includes tax
-    const inclusiveAmount = baseCharge * (1 + gstRate / 100);
+    // Inclusive amount as requested (taxes are already included in the rates provided)
+    // Multiplied by nights for the full stay duration
+    const inclusiveAmount = next * rate * nights;
 
     let newFolio = [...(booking.folio || [])];
     const desc = isAdult ? "Extra Adult Charge" : "Extra Child Charge";
@@ -413,19 +419,37 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   // 3. Final total reflects both standalone settlements and all paid folio items
   const totalPayments = standalonePaymentsTotal + paidFolioTotal;
 
-  const nights = Math.max(
-    1,
-    Math.ceil(
-      (new Date(booking.checkOut).getTime() -
-        new Date(booking.checkIn).getTime()) /
-        (1000 * 3600 * 24),
-    ),
-  );
-  // Room rate calculation - always use booking.amount which includes custom rates
-  const roomRate = (booking.amount || 0) / nights;
+  // Calculate elapsed nights for in-house guests to support pro-rata billing
+  const elapsedNights = useMemo(() => {
+    if (booking.status === "Confirmed") return 0;
+    if (booking.status === "CheckedOut") return nights;
+    if (booking.status !== "CheckedIn") return 0;
 
-  // Room base total is the booking amount (already calculated with custom rate if applicable)
-  const roomBaseTotal = booking.amount || 0;
+    const start = new Date(booking.checkIn);
+    const today = new Date();
+    // Use local date for calendar night check
+    const d1 = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const d2 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    const diffDays = Math.round(
+      (d2.getTime() - d1.getTime()) / (1000 * 3600 * 24),
+    );
+
+    // Charge for the number of nights passed (minimum 1, maximum total nights)
+    return Math.max(1, Math.min(nights, diffDays + 1));
+  }, [booking.checkIn, booking.status, nights]);
+
+  // Room rate calculation
+  // Handle case where user might have entered the daily rate as the total amount
+  // If the calculated rate is very low compared to base price, or if user explicitly requested it
+  const roomRate = (booking.amount || 0) / (nights || 1);
+
+  // For display and ledger: if in-house, we only charge for sessions stayed so far.
+  // This matches the user's request: "total outstanding should show for one night"
+  const roomBaseTotal =
+    booking.status === "CheckedIn"
+      ? roomRate * elapsedNights
+      : booking.amount || 0;
 
   // Calculate Bill Summary with Taxes to match Invoice
   const billSummary = useMemo(() => {
@@ -456,7 +480,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
     // 2. Folio Items Tax
     (booking.folio || []).forEach((item) => {
-      const isInclusive = item.isInclusive === true;
+      const descUpper = (item.description || "").toUpperCase();
+      const isInclusive =
+        item.isInclusive === true ||
+        descUpper.includes("EXTRA ADULT") ||
+        descUpper.includes("EXTRA CHILD") ||
+        descUpper.includes("EXTRA BED");
 
       // Determine the GST rate based on category
       let rate = propertySettings?.otherGstRate || 18; // Default for Service/Other
@@ -1709,8 +1738,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     <p class="text-sm font-black text-slate-900 uppercase">Room Rent</p>
                     <p class="text-[10px] font-bold text-slate-400 mt-0.5">Accommodation (Inclusive of ${roomGstRate}% GST)</p>
                   </td>
-                  <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">${nights}</td>
-                  <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${roomRate.toLocaleString()}</td>
+                  <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">${elapsedNights}</td>
+                  <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${roomRate.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                   <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${roomBaseTotal.toLocaleString()}</td>
                 </tr>
                 ${
@@ -3611,7 +3640,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           </span>
                         </div>
                         <span className="text-xs font-bold text-slate-200 tabular-nums">
-                          ₹{roomRate.toLocaleString()} / N
+                          ₹
+                          {roomRate.toLocaleString(undefined, {
+                            maximumFractionDigits: 0,
+                          })}{" "}
+                          / N
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
@@ -3872,16 +3905,34 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                 </div>
                                 <button
                                   onClick={() => {
+                                    const descUpper = (
+                                      item.description || ""
+                                    ).toUpperCase();
                                     const isExtraBed =
                                       (item.category === "Other" ||
                                         item.category === "Room") &&
-                                      item.description
-                                        ?.toUpperCase()
-                                        .includes("EXTRA BED");
+                                      descUpper.includes("EXTRA BED");
+                                    const isExtraAdult =
+                                      item.category === "Other" &&
+                                      descUpper.includes("EXTRA ADULT CHARGE");
+                                    const isExtraChild =
+                                      item.category === "Other" &&
+                                      descUpper.includes("EXTRA CHILD CHARGE");
 
                                     if (isExtraBed) {
                                       // Using the dedicated handler ensures both count and folio are updated atomically
                                       onUpdateExtraBeds?.(booking.id, 0);
+                                    } else if (isExtraAdult || isExtraChild) {
+                                      const newFolio = (
+                                        booking.folio || []
+                                      ).filter((f) => f.id !== item.id);
+                                      onUpdateBooking?.({
+                                        ...booking,
+                                        [isExtraAdult
+                                          ? "extraAdults"
+                                          : "extraChildren"]: 0,
+                                        folio: newFolio,
+                                      });
                                     } else {
                                       const newFolio = (
                                         booking.folio || []

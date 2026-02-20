@@ -1070,7 +1070,15 @@ const App: React.FC = () => {
 
     const roomType = roomTypes.find((rt) => rt.id === booking.roomTypeId);
     const extraBedCharge = roomType?.extraBedCharge || 0;
-    const totalExtraCharge = count * extraBedCharge;
+    const duration = Math.max(
+      1,
+      Math.ceil(
+        (new Date(booking.checkOut).getTime() -
+          new Date(booking.checkIn).getTime()) /
+          (1000 * 3600 * 24),
+      ),
+    );
+    const totalExtraCharge = count * extraBedCharge * duration;
 
     let newFolio = [...(booking.folio || [])];
     const existingIdx = newFolio.findIndex(

@@ -731,11 +731,23 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
     // Total duration is hidden nights + new visible duration
     const totalDuration = hiddenNights + newDuration;
 
+    const oldDuration = Math.max(
+      1,
+      Math.ceil(
+        (new Date(booking.checkOut).getTime() -
+          new Date(booking.checkIn).getTime()) /
+          (1000 * 3600 * 24),
+      ),
+    );
+    const dailyRate = (booking.amount || 0) / oldDuration;
+    const newAmount = dailyRate * totalDuration;
+
     const newCheckOut = new Date(bookingStart);
     newCheckOut.setDate(bookingStart.getDate() + totalDuration);
     const updated = {
       ...booking,
       checkOut: newCheckOut.toISOString().split("T")[0],
+      amount: newAmount,
       timestamp: Date.now(),
     };
 
