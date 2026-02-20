@@ -106,8 +106,8 @@ def _load_db_imports():
     global Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest, GuestProfile, PropertySettings, RoomStatus, UserResponse
     global get_db_real, engine, SessionLocal
     
-    if _db_imports_loaded:
-        return _USE_DATABASE
+    if _db_imports_loaded and _USE_DATABASE:
+        return True
     
     try:
         from backend.database import get_db as _get_db_real, engine as _engine, SessionLocal as _SessionLocal
@@ -1655,8 +1655,10 @@ def get_guest_history(name: str, phone: Optional[str] = None, exclude_booking_id
 
 @app.get("/api/bookings")
 def get_bookings(db=Depends(get_db)):
-    if USE_DATABASE() and db:
+    db_available = USE_DATABASE()
+    if db_available and db:
         bookings = db.query(BookingDB).all()
+        logger.info(f"GET /api/bookings - Fetched {len(bookings)} from PostgreSQL")
         result = []
         for b in bookings:
             try:
@@ -1666,7 +1668,10 @@ def get_bookings(db=Depends(get_db)):
                 # Skip invalid bookings so the rest of the app keeps working
                 continue
         return result
-    return get_fallback_bookings()
+    
+    fallback = get_fallback_bookings()
+    logger.warning(f"GET /api/bookings - Using IN-MEMORY FALLBACK (found {len(fallback)} bookings)")
+    return fallback
 
 @app.get("/api/statistics")
 def get_statistics(db=Depends(get_db)):
@@ -1962,53 +1967,63 @@ def generate_booking_report(
 
 @app.post("/api/bookings")
 def create_booking(booking: Booking, db=Depends(get_db)):
-    if USE_DATABASE() and db:
-        if booking.guestDetails:
-            profile_id = _sync_guest_profile(booking.guestDetails, booking.checkIn, db)
-            if profile_id:
-                # Update the Pydantic model's guestDetails before converting to DB model
-                if booking.guestDetails: # Check again to be safe
+    db_available = USE_DATABASE()
+    logger.info(f"POST /api/bookings - ID: {booking.id}, Guest: {booking.guestName}, DB Available: {db_available}")
+    
+    if db_available and db:
+        try:
+            if booking.guestDetails:
+                profile_id = _sync_guest_profile(booking.guestDetails, booking.checkIn, db)
+                if profile_id:
+                    # Update the Pydantic model's guestDetails before converting to DB model
                     booking.guestDetails.profileId = profile_id
 
-        db_booking = BookingDB(
-            id=booking.id,
-            room_type_id=booking.roomTypeId,
-            room_number=booking.roomNumber,
-            guest_name=booking.guestName,
-            source=booking.source,
-            status=booking.status,
-            timestamp=booking.timestamp,
-            check_in=booking.checkIn,
-            check_out=booking.checkOut,
-            amount=booking.amount,
-            reservation_id=booking.reservationId,
-            channel_sync=booking.channelSync or {},
-            guest_details=booking.guestDetails.dict() if booking.guestDetails else None,
-            number_of_rooms=booking.numberOfRooms or 1,
-            pax=booking.pax or 1,
-            folio=[f.dict() for f in booking.folio] if booking.folio else [],
-            discount=booking.discount
-        )
-        db.add(db_booking)
-        db.commit()
-        db.refresh(db_booking)
-        
-        # Create notification for new booking
-        create_notification_internal(
-            db,
-            notif_type="reservation",
-            category="new_booking",
-            title="New Reservation",
-            message=f"{booking.guestName or 'Guest'} arriving {booking.checkIn} - Room {booking.roomNumber or 'Unassigned'}",
-            priority="normal",
-            booking_id=booking.id,
-            room_number=booking.roomNumber
-        )
-        db.commit()
-        
-        return db_booking_to_pydantic(db_booking)
+            db_booking = BookingDB(
+                id=booking.id,
+                room_type_id=booking.roomTypeId,
+                room_number=booking.roomNumber,
+                guest_name=booking.guestName,
+                source=booking.source,
+                status=booking.status,
+                timestamp=booking.timestamp or int(datetime.now().timestamp() * 1000),
+                check_in=booking.checkIn,
+                check_out=booking.checkOut,
+                amount=booking.amount,
+                reservation_id=booking.reservationId,
+                channel_sync=booking.channelSync or {},
+                guest_details=booking.guestDetails.dict() if booking.guestDetails else None,
+                number_of_rooms=booking.numberOfRooms or 1,
+                pax=booking.pax or 1,
+                folio=[f.dict() for f in booking.folio] if booking.folio else [],
+                discount=booking.discount
+            )
+            db.add(db_booking)
+            db.commit()
+            db.refresh(db_booking)
+            
+            # Create notification for new booking
+            create_notification_internal(
+                db,
+                notif_type="reservation",
+                category="new_booking",
+                title="New Reservation",
+                message=f"{booking.guestName or 'Guest'} arriving {booking.checkIn} - Room {booking.roomNumber or 'Unassigned'}",
+                priority="normal",
+                booking_id=booking.id,
+                room_number=booking.roomNumber
+            )
+            db.commit()
+            
+            logger.info(f"✓ Successfully saved booking {booking.id} to PostgreSQL")
+            return db_booking_to_pydantic(db_booking)
+        except Exception as e:
+            logger.error(f"CRITICAL: Failed to save booking {booking.id} to PostgreSQL: {e}")
+            if db: db.rollback()
+            # If we are in DB mode, don't silently fallback to memory as it leads to "disappearing" data
+            raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     
-    # Fallback
+    # Fallback (Only happens if USE_DATABASE() is False)
+    logger.warning(f"⚠️ Saving booking {booking.id} to IN-MEMORY FALLBACK (it may disappear on restart)")
     get_fallback_bookings().append(booking)
     return booking
 
