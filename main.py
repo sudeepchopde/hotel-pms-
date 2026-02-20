@@ -102,9 +102,9 @@ engine = None
 def _load_db_imports():
     """Lazy load database imports to avoid import-time failures on Vercel."""
     global _db_imports_loaded, _USE_DATABASE, _db_connection_error
-    global HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, RateRulesDB, GuestProfileDB, PropertySettingsDB, NotificationDB, RoomStatusDB
-    global Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest, GuestProfile, PropertySettings, RoomStatus
-    global get_db_real, engine
+    global HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, RateRulesDB, GuestProfileDB, PropertySettingsDB, NotificationDB, RoomStatusDB, UserDB
+    global Hotel, RoomType, Booking, OTAConnection, RateRulesConfig, RoomTransferRequest, GuestProfile, PropertySettings, RoomStatus, UserResponse
+    global get_db_real, engine, SessionLocal
     
     if _db_imports_loaded:
         return _USE_DATABASE
@@ -127,6 +127,7 @@ def _load_db_imports():
         # Assign to globals
         get_db_real = _get_db_real
         engine = _engine
+        SessionLocal = _SessionLocal
         HotelDB = _HotelDB
         RoomTypeDB = _RoomTypeDB
         BookingDB = _BookingDB
@@ -136,6 +137,7 @@ def _load_db_imports():
         PropertySettingsDB = _PropertySettingsDB
         NotificationDB = _NotificationDB
         RoomStatusDB = _RoomStatusDB
+        UserDB = _UserDB
         
         # Test connection and create tables if they don't exist
         # Ensure tables exist
