@@ -200,25 +200,25 @@ except Exception:
 try:
     if os.path.exists("dist"):
         app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
-        print("✓ Frontend assets mounted")
+        print("[OK] Frontend assets mounted")
 except Exception as e:
-    print(f"⚠️ Could not mount assets: {e}")
+    print(f"[WARN] Could not mount assets: {e}")
 
 # Include Channel Manager routes for OTA integrations
 try:
     from backend.channel_manager.routes import router as channel_router
     app.include_router(channel_router)
-    print("✓ Channel Manager routes loaded")
+    print("[OK] Channel Manager routes loaded")
 except Exception as e:
-    print(f"⚠️ Channel Manager routes not loaded: {e}")
+    print(f"[WARN] Channel Manager routes not loaded: {e}")
 
 # Include Payment Gateway routes
 try:
     from backend.payment_gateway.routes import router as payment_router
     app.include_router(payment_router)
-    print("✓ Payment Gateway routes loaded")
+    print("[OK] Payment Gateway routes loaded")
 except Exception as e:
-    print(f"⚠️ Payment Gateway routes not loaded: {e}")
+    print(f"[WARN] Payment Gateway routes not loaded: {e}")
 
 
 @app.get("/ping")
@@ -2672,7 +2672,8 @@ def audit_no_shows():
         
     try:
         from sqlalchemy import create_engine, text
-        engine = create_engine(db_url, pool_pre_ping=True)
+        from sqlalchemy.pool import NullPool
+        engine = create_engine(db_url, poolclass=NullPool)
         
         # Current local date
         today_str = datetime.now().strftime('%Y-%m-%d')
@@ -2743,11 +2744,12 @@ def get_notifications(unread_only: bool = False, type_filter: str = None, limit:
     
     try:
         from sqlalchemy import create_engine, text
+        from sqlalchemy.pool import NullPool
         
         if db_url.startswith("postgres://"):
             db_url = db_url.replace("postgres://", "postgresql://", 1)
         
-        engine = create_engine(db_url, pool_pre_ping=True)
+        engine = create_engine(db_url, poolclass=NullPool)
         
         # Build query
         # IF history_mode is True, we want DISMISSED items.
@@ -2805,11 +2807,12 @@ def get_unread_notification_count():
     
     try:
         from sqlalchemy import create_engine, text
+        from sqlalchemy.pool import NullPool
         
         if db_url.startswith("postgres://"):
             db_url = db_url.replace("postgres://", "postgresql://", 1)
         
-        engine = create_engine(db_url, pool_pre_ping=True)
+        engine = create_engine(db_url, poolclass=NullPool)
         
         with engine.connect() as conn:
             result = conn.execute(text("SELECT COUNT(*) FROM notifications WHERE is_read = FALSE AND is_dismissed = FALSE"))
@@ -2861,11 +2864,12 @@ def mark_notification_read(notification_id: str):
     
     try:
         from sqlalchemy import create_engine, text
+        from sqlalchemy.pool import NullPool
         
         if db_url.startswith("postgres://"):
             db_url = db_url.replace("postgres://", "postgresql://", 1)
         
-        engine = create_engine(db_url, pool_pre_ping=True)
+        engine = create_engine(db_url, poolclass=NullPool)
         now = datetime.now(timezone.utc).isoformat()
         
         with engine.connect() as conn:
@@ -2896,11 +2900,12 @@ def mark_all_notifications_read():
     
     try:
         from sqlalchemy import create_engine, text
+        from sqlalchemy.pool import NullPool
         
         if db_url.startswith("postgres://"):
             db_url = db_url.replace("postgres://", "postgresql://", 1)
         
-        engine = create_engine(db_url, pool_pre_ping=True)
+        engine = create_engine(db_url, poolclass=NullPool)
         now = datetime.now(timezone.utc).isoformat()
         
         with engine.connect() as conn:

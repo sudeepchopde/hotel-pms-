@@ -351,7 +351,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     const rate = isAdult
       ? roomType?.extraAdultRate || 0
       : roomType?.extraChildRate || 0;
-    const totalCharge = next * rate;
+    // Base charge without tax
+    const baseCharge = next * rate;
+    // Determine GST rate for 'Other' category (default 18%)
+    const gstRate = propertySettings?.otherGstRate || 18;
+    // Inclusive amount includes tax
+    const inclusiveAmount = baseCharge * (1 + gstRate / 100);
 
     let newFolio = [...(booking.folio || [])];
     const desc = isAdult ? "Extra Adult Charge" : "Extra Child Charge";
@@ -363,7 +368,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       const newItem = {
         id: existingIdx >= 0 ? newFolio[existingIdx].id : `fi-eo-${Date.now()}`,
         description: `${desc} x${next}`,
-        amount: totalCharge,
+        amount: inclusiveAmount,
         category: "Other",
         isInclusive: true,
         timestamp: new Date().toISOString(),
