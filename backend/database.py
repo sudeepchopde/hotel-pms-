@@ -24,7 +24,7 @@ DATABASE_URL = (
     os.getenv("POSTGRES_URL_NON_POOLING") or
     DATABASE_URL_ENV or 
     NEON_DATABASE_URL or
-    "postgresql://postgres:postgres@localhost:5432/hotel_pms"
+    "sqlite:///./pms.db"
 )
 
 print(f"DEBUG: Selected Database Source: {'POSTGRES_URL' if POSTGRES_URL else 'Other'}")
@@ -45,6 +45,8 @@ engine_args = {
 # Add SSL arguments if connecting to Neon (cloud database)
 if "neon.tech" in DATABASE_URL:
     engine_args["connect_args"] = {"sslmode": "require"}
+elif DATABASE_URL.startswith("sqlite"):
+    engine_args["connect_args"] = {"check_same_thread": False}
 
 engine = create_engine(DATABASE_URL, **engine_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

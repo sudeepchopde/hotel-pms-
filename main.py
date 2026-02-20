@@ -45,7 +45,8 @@ def get_db_url():
         os.getenv("DATABASE_URL") or 
         os.getenv("POSTGRES_URL") or 
         os.getenv("POSTGRES_URL_NON_POOLING") or
-        os.getenv("NEON_DATABASE_URL")
+        os.getenv("NEON_DATABASE_URL") or
+        "sqlite:///./pms.db"
     )
     # Normalize for SQLAlchemy if needed, but psycopg2 is usually fine with either
     if url and url.startswith("postgres://"):
