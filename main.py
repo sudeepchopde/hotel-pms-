@@ -110,8 +110,7 @@ def _load_db_imports():
         return _USE_DATABASE
     
     try:
-        from backend.database import get_db as _get_db_real
-        from backend.database import engine as _engine
+        from backend.database import get_db as _get_db_real, engine as _engine, SessionLocal as _SessionLocal
         from backend.db_models import (
             HotelDB as _HotelDB, 
             RoomTypeDB as _RoomTypeDB, 
@@ -121,7 +120,8 @@ def _load_db_imports():
             GuestProfileDB as _GuestProfileDB, 
             PropertySettingsDB as _PropertySettingsDB,
             NotificationDB as _NotificationDB,
-            RoomStatusDB as _RoomStatusDB
+            RoomStatusDB as _RoomStatusDB,
+            UserDB as _UserDB
         )
         
         # Assign to globals
@@ -147,7 +147,7 @@ def _load_db_imports():
         
         # Create default admin if not exists
         try:
-            db = SessionLocal()
+            db = _SessionLocal()
             admin = db.query(_UserDB).filter(_UserDB.username == "admin").first()
             if not admin:
                 from main import get_password_hash
