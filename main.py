@@ -426,29 +426,16 @@ def delete_user(user_id: int, db=Depends(get_db)):
 @app.get("/api/init-db")
 def init_db():
     """Manual trigger to ensure all tables exist - includes all models"""
-    import os
+    _load_db_imports()
     
-    # Check which database variables are available
-    db_vars = {
-        "DATABASE_URL": "YES" if os.getenv("DATABASE_URL") else "NO",
-        "POSTGRES_URL": "YES" if os.getenv("POSTGRES_URL") else "NO",
-        "NEON_DATABASE_URL": "YES" if os.getenv("NEON_DATABASE_URL") else "NO",
-    }
-    
-    # Try to get any database URL (synchronized with backend/database.py)
-    db_url = get_db_url()
-    
-    if not db_url:
+    if not engine:
         return {
             "status": "error", 
-            "message": "No database URL found",
-            "env_vars": db_vars
+            "message": "Database engine not initialized"
         }
     
     try:
-        from sqlalchemy import create_engine
         from backend.database import Base
-        
         # Explicitly ensure all models are imported so Base knows about them
         from backend.db_models import (
             HotelDB, RoomTypeDB, BookingDB, OTAConnectionDB, 
@@ -456,79 +443,54 @@ def init_db():
             UserDB
         )
         
-        # Fix postgres:// -> postgresql://
-        if db_url.startswith("postgres://"):
-            db_url = db_url.replace("postgres://", "postgresql://", 1)
-        
-        engine = create_engine(db_url, pool_pre_ping=True)
         Base.metadata.create_all(bind=engine)
         
         return {
             "status": "success", 
-            "message": "All database tables initialized successfully",
-            "env_vars": db_vars
+            "message": "All database tables initialized successfully"
         }
     except Exception as e:
         import traceback
         return {
             "status": "error", 
             "message": str(e),
-            "traceback": traceback.format_exc(),
-            "env_vars": db_vars
+            "traceback": traceback.format_exc()
         }
 
 @app.get("/api/test-notification")
-def test_notification():
+def test_notification(db=Depends(get_db)):
     """Create a test notification to verify the system works"""
-    import os
-    from datetime import datetime
-    import uuid
-    
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url:
-        return {"status": "error", "message": "No DATABASE_URL"}
+    if not (USE_DATABASE() and db):
+        return {"status": "error", "message": "Database not connected"}
     
     try:
-        from sqlalchemy import create_engine, text
-        
-        if db_url.startswith("postgres://"):
-            db_url = db_url.replace("postgres://", "postgresql://", 1)
-        
-        engine = create_engine(db_url, pool_pre_ping=True)
-        
-        # Create a test notification
         notif_id = f"test-{str(uuid.uuid4())[:8]}"
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         
-        insert_sql = text("""
-            INSERT INTO notifications (id, type, category, title, message, priority, is_read, is_dismissed, created_at)
-            VALUES (:id, :type, :category, :title, :message, :priority, :is_read, :is_dismissed, :created_at)
-        """)
+        notif = NotificationDB(
+            id=notif_id,
+            type="system",
+            category="test",
+            title="Test Notification",
+            message=f"This is a test notification created at {now}",
+            priority="normal",
+            is_read=False,
+            is_dismissed=False,
+            created_at=now
+        )
+        db.add(notif)
+        db.commit()
         
-        with engine.connect() as conn:
-            conn.execute(insert_sql, {
-                "id": notif_id,
-                "type": "system",
-                "category": "test",
-                "title": "Test Notification",
-                "message": f"This is a test notification created at {now}",
-                "priority": "normal",
-                "is_read": False,
-                "is_dismissed": False,
-                "created_at": now
-            })
-            conn.commit()
-        
-        # Count notifications
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT COUNT(*) FROM notifications"))
-            count = result.scalar()
+        count = db.query(NotificationDB).count()
         
         return {
             "status": "success",
             "message": f"Test notification created with ID: {notif_id}",
             "total_notifications": count
         }
+    except Exception as e:
+        if db: db.rollback()
+        return {"status": "error", "message": str(e)}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -1137,7 +1099,9 @@ def get_fallback_property():
     return _fallback_cache['property']
 
 def get_fallback_bookings():
-    return []
+    if 'bookings' not in _fallback_cache:
+        _fallback_cache['bookings'] = []
+    return _fallback_cache['bookings']
 
 # --- Converters (always defined, called only when DB is available) ---
 def db_hotel_to_pydantic(db_hotel):
@@ -2624,48 +2588,31 @@ def db_notification_to_pydantic(db_notif):
 def create_notification_internal(db, notif_type: str, category: str, title: str, message: str, 
                                  priority: str = "normal", booking_id: str = None, 
                                  room_number: str = None, metadata: dict = None):
-    """Helper function to create a notification from within other endpoints - uses direct SQL"""
-    import os
-    import json
-    
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url:
+    """Helper function to create a notification from within other endpoints - uses existing session"""
+    if not (USE_DATABASE() and db):
         return None
     
     try:
-        from sqlalchemy import create_engine, text
-        
-        if db_url.startswith("postgres://"):
-            db_url = db_url.replace("postgres://", "postgresql://", 1)
-        
-        engine = create_engine(db_url, pool_pre_ping=True)
-        
-        notif_id = f"notif-{str(uuid.uuid4())[:8]}"
-        now = datetime.now(timezone.utc).isoformat()
-        
-        insert_sql = text("""
-            INSERT INTO notifications (id, type, category, title, message, priority, is_read, is_dismissed, created_at, booking_id, room_number, metadata)
-            VALUES (:id, :type, :category, :title, :message, :priority, :is_read, :is_dismissed, :created_at, :booking_id, :room_number, :extra_data)
-        """)
-        
-        with engine.connect() as conn:
-            conn.execute(insert_sql, {
-                "id": notif_id,
-                "type": notif_type,
-                "category": category,
-                "title": title,
-                "message": message,
-                "priority": priority,
-                "is_read": False,
-                "is_dismissed": False,
-                "created_at": now,
-                "booking_id": booking_id,
-                "room_number": room_number,
-                "extra_data": json.dumps(metadata or {})
-            })
-            conn.commit()
-        
-        return notif_id
+        # Use ORM instead of raw SQL to avoid manual connection management
+        notif = NotificationDB(
+            id=f"notif-{str(uuid.uuid4())[:8]}",
+            type=notif_type,
+            category=category,
+            title=title,
+            message=message,
+            priority=priority,
+            is_read=False,
+            is_dismissed=False,
+            created_at=datetime.now(timezone.utc).isoformat(),
+            booking_id=booking_id,
+            room_number=room_number,
+            metadata=metadata or {}
+        )
+        db.add(notif)
+        # We don't commit here, let the calling endpoint handle the commit
+        # or we flush to get the ID if needed
+        db.flush()
+        return notif.id
     except Exception as e:
         print(f"Error creating notification: {e}")
         return None
@@ -2925,127 +2872,79 @@ def mark_all_notifications_read():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/notifications/{notification_id}")
-def dismiss_notification(notification_id: str):
+def dismiss_notification(notification_id: str, db=Depends(get_db)):
     """Dismiss/delete a notification"""
-    import os
-    
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url:
+    if not (USE_DATABASE() and db):
         raise HTTPException(status_code=503, detail="Database not available")
     
     try:
-        from sqlalchemy import create_engine, text
-        
-        if db_url.startswith("postgres://"):
-            db_url = db_url.replace("postgres://", "postgresql://", 1)
-        
-        engine = create_engine(db_url, pool_pre_ping=True)
-        
-        with engine.connect() as conn:
-            result = conn.execute(
-                text("UPDATE notifications SET is_dismissed = TRUE WHERE id = :id"),
-                {"id": notification_id}
-            )
-            conn.commit()
+        notif = db.query(NotificationDB).filter(NotificationDB.id == notification_id).first()
+        if not notif:
+            raise HTTPException(status_code=404, detail="Notification not found")
             
-            if result.rowcount == 0:
-                raise HTTPException(status_code=404, detail="Notification not found")
-        
+        notif.is_dismissed = True
+        db.commit()
         return {"status": "success"}
     except HTTPException:
         raise
     except Exception as e:
+        if db: db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 # ========== HOUSEKEEPING API ==========
 
 @app.get("/api/room-status")
-def get_room_statuses():
-    import os
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url: return []
+def get_room_statuses(db=Depends(get_db)):
+    if not (USE_DATABASE() and db): return []
     
     try:
-        from sqlalchemy import create_engine, text
-        if db_url.startswith("postgres://"): db_url = db_url.replace("postgres://", "postgresql://", 1)
-        engine = create_engine(db_url, pool_pre_ping=True)
-        
-        with engine.connect() as conn:
-            # Check if table exists first (handling migration lag)
-            try:
-                result = conn.execute(text("SELECT * FROM room_status"))
-            except Exception:
-                return []
-                
-            rows = result.fetchall()
-            return [
-                {
-                    "roomNumber": r.room_number,
-                    "status": r.status,
-                    "priority": r.priority,
-                    "notes": r.notes,
-                    "lastCleaned": r.last_cleaned,
-                    "housekeeper": r.housekeeper
-                }
-                for r in rows
-            ]
+        # Check if table exists first (handling migration lag)
+        rows = db.query(RoomStatusDB).all()
+        return [
+            {
+                "roomNumber": r.room_number,
+                "status": r.status,
+                "priority": r.priority,
+                "notes": r.notes,
+                "lastCleaned": r.last_cleaned,
+                "housekeeper": r.housekeeper
+            }
+            for r in rows
+        ]
     except Exception as e:
         print(f"Error fetching room statuses: {e}")
         return []
 
 @app.post("/api/room-status")
-def update_room_status_endpoint(status_data: RoomStatus):
-    import os
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url: raise HTTPException(status_code=503, detail="Database not available")
+def update_room_status_endpoint(status_data: RoomStatus, db=Depends(get_db)):
+    if not (USE_DATABASE() and db): 
+        raise HTTPException(status_code=503, detail="Database not available")
     
     try:
-        from sqlalchemy import create_engine, text
-        if db_url.startswith("postgres://"): db_url = db_url.replace("postgres://", "postgresql://", 1)
-        engine = create_engine(db_url, pool_pre_ping=True)
+        # Check if exists
+        status_entry = db.query(RoomStatusDB).filter(RoomStatusDB.room_number == status_data.roomNumber).first()
         
-        with engine.connect() as conn:
-            # Check if exists
-            exists = conn.execute(
-                text("SELECT 1 FROM room_status WHERE room_number = :rn"),
-                {"rn": status_data.roomNumber}
-            ).fetchone()
+        if status_entry:
+            status_entry.status = status_data.status
+            status_entry.priority = status_data.priority
+            status_entry.notes = status_data.notes
+            status_entry.last_cleaned = status_data.lastCleaned
+            status_entry.housekeeper = status_data.housekeeper
+        else:
+            new_status = RoomStatusDB(
+                room_number=status_data.roomNumber,
+                status=status_data.status,
+                priority=status_data.priority, 
+                notes=status_data.notes,
+                last_cleaned=status_data.lastCleaned,
+                housekeeper=status_data.housekeeper
+            )
+            db.add(new_status)
             
-            if exists:
-                conn.execute(
-                    text("""
-                        UPDATE room_status 
-                        SET status = :status, priority = :priority, notes = :notes, 
-                            last_cleaned = :last_cleaned, housekeeper = :housekeeper
-                        WHERE room_number = :rn
-                    """),
-                    {
-                        "status": status_data.status,
-                        "priority": status_data.priority, 
-                        "notes": status_data.notes,
-                        "last_cleaned": status_data.lastCleaned,
-                        "housekeeper": status_data.housekeeper,
-                        "rn": status_data.roomNumber
-                    }
-                )
-            else:
-                conn.execute(
-                    text("""
-                        INSERT INTO room_status (room_number, status, priority, notes, last_cleaned, housekeeper)
-                        VALUES (:rn, :status, :priority, :notes, :last_cleaned, :housekeeper)
-                    """),
-                    {
-                        "rn": status_data.roomNumber,
-                        "status": status_data.status,
-                        "priority": status_data.priority,
-                        "notes": status_data.notes,
-                        "last_cleaned": status_data.lastCleaned,
-                        "housekeeper": status_data.housekeeper
-                    }
-                )
-            conn.commit()
-            return status_data
+        db.commit()
+        return status_data
     except Exception as e:
+        if db: db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 # SPA Catch-all: Handled by checking file existence first, otherwise serving index.html
