@@ -2012,7 +2012,9 @@ def create_booking(booking: Booking, db=Depends(get_db)):
                 number_of_rooms=booking.numberOfRooms or 1,
                 pax=booking.pax or 1,
                 folio=[f.dict() for f in booking.folio] if booking.folio else [],
-                discount=booking.discount
+                discount=booking.discount,
+                extra_adults=booking.extraAdults or 0,
+                extra_children=booking.extraChildren or 0
             )
             db.add(db_booking)
             db.commit()
@@ -2092,7 +2094,9 @@ def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
                     special_requests=booking.specialRequests,
                     is_vip=booking.isVIP or False,
                     folio=[f.dict() for f in booking.folio] if booking.folio else [],
-                    discount=booking.discount
+                    discount=booking.discount,
+                    extra_adults=booking.extraAdults or 0,
+                    extra_children=booking.extraChildren or 0
                 )
                 db_bookings.append(db_booking)
             
@@ -2215,6 +2219,8 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
         db_booking.pax = booking.pax
         db_booking.accessory_guests = [g.dict() for g in booking.accessoryGuests] if booking.accessoryGuests else []
         db_booking.extra_beds = booking.extraBeds
+        db_booking.extra_adults = booking.extraAdults or 0
+        db_booking.extra_children = booking.extraChildren or 0
         db_booking.special_requests = booking.specialRequests
         db_booking.is_vip = booking.isVIP or False
         db_booking.is_settled = booking.isSettled or False

@@ -337,6 +337,54 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     setTimeout(() => setIsUpdatingBeds(false), 200);
   };
 
+  const handleExtraOccupancyChange = (
+    type: "adults" | "children",
+    delta: number,
+  ) => {
+    const isAdult = type === "adults";
+    const current =
+      (isAdult ? booking.extraAdults : booking.extraChildren) || 0;
+    const next = Math.max(0, current + delta);
+
+    if (current === next) return;
+
+    const rate = isAdult
+      ? roomType?.extraAdultRate || 0
+      : roomType?.extraChildRate || 0;
+    const totalCharge = next * rate;
+
+    let newFolio = [...(booking.folio || [])];
+    const desc = isAdult ? "Extra Adult Charge" : "Extra Child Charge";
+    const existingIdx = newFolio.findIndex(
+      (fi) => fi.category === "Other" && fi.description.includes(desc),
+    );
+
+    if (next > 0 && rate > 0) {
+      const newItem = {
+        id: existingIdx >= 0 ? newFolio[existingIdx].id : `fi-eo-${Date.now()}`,
+        description: `${desc} x${next}`,
+        amount: totalCharge,
+        category: "Other",
+        isInclusive: true,
+        timestamp: new Date().toISOString(),
+      };
+
+      if (existingIdx >= 0) {
+        newFolio[existingIdx] = newItem as any;
+      } else {
+        newFolio.push(newItem as any);
+      }
+    } else if (existingIdx >= 0) {
+      newFolio.splice(existingIdx, 1);
+    }
+
+    onUpdateBooking?.({
+      ...booking,
+      [isAdult ? "extraAdults" : "extraChildren"]: next,
+      folio: newFolio,
+    });
+  };
+
   const unpaidFolioTotal = (booking.folio || [])
     .filter((item) => !item.isPaid)
     .reduce((sum, item) => sum + item.amount, 0);
@@ -4122,15 +4170,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   </div>
                   <div className="flex items-center gap-2 bg-white rounded-xl p-1 shadow-sm border border-slate-200">
                     <button
-                      onClick={() =>
-                        onUpdateBooking?.({
-                          ...booking,
-                          extraAdults: Math.max(
-                            0,
-                            (booking.extraAdults || 0) - 1,
-                          ),
-                        })
-                      }
+                      onClick={() => handleExtraOccupancyChange("adults", -1)}
                       className="p-2 text-slate-400 hover:text-red-500 transition-all active:scale-75"
                     >
                       <Minus className="w-4 h-4" />
@@ -4139,12 +4179,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       {booking.extraAdults || 0}
                     </span>
                     <button
-                      onClick={() =>
-                        onUpdateBooking?.({
-                          ...booking,
-                          extraAdults: (booking.extraAdults || 0) + 1,
-                        })
-                      }
+                      onClick={() => handleExtraOccupancyChange("adults", 1)}
                       className="p-2 text-slate-400 hover:text-emerald-500 transition-all active:scale-75"
                     >
                       <Plus className="w-4 h-4" />
@@ -4169,15 +4204,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   </div>
                   <div className="flex items-center gap-2 bg-white rounded-xl p-1 shadow-sm border border-slate-200">
                     <button
-                      onClick={() =>
-                        onUpdateBooking?.({
-                          ...booking,
-                          extraChildren: Math.max(
-                            0,
-                            (booking.extraChildren || 0) - 1,
-                          ),
-                        })
-                      }
+                      onClick={() => handleExtraOccupancyChange("children", -1)}
                       className="p-2 text-slate-400 hover:text-red-500 transition-all active:scale-75"
                     >
                       <Minus className="w-4 h-4" />
@@ -4186,12 +4213,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       {booking.extraChildren || 0}
                     </span>
                     <button
-                      onClick={() =>
-                        onUpdateBooking?.({
-                          ...booking,
-                          extraChildren: (booking.extraChildren || 0) + 1,
-                        })
-                      }
+                      onClick={() => handleExtraOccupancyChange("children", 1)}
                       className="p-2 text-slate-400 hover:text-emerald-500 transition-all active:scale-75"
                     >
                       <Plus className="w-4 h-4" />
