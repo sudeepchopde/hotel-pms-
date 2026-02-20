@@ -52,7 +52,7 @@ class BookingDB(Base):
     __tablename__ = "bookings"
     
     id = Column(String, primary_key=True, index=True)
-    room_type_id = Column(String, ForeignKey("room_types.id"), nullable=False)
+    room_type_id = Column(String, ForeignKey("room_types.id", ondelete="SET NULL"), nullable=True)
     room_number = Column(String, nullable=True)
     guest_name = Column(String, nullable=False)
     source = Column(String, nullable=False)  # 'MMT', 'Booking.com', 'Expedia', 'Direct'
