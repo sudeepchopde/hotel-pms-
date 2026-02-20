@@ -11,6 +11,7 @@ import json
 import re
 import uuid
 import logging
+from sqlalchemy.exc import IntegrityError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -1477,9 +1478,13 @@ def delete_room_type(rt_id: str, db=Depends(get_db)):
         if active_bookings > 0:
             raise HTTPException(status_code=400, detail="Cannot delete room type with active or future bookings. Please cancel or relocate them first.")
             
-        db.delete(db_room)
-        db.commit()
-        return {"status": "success"}
+        try:
+            db.delete(db_room)
+            db.commit()
+            return {"status": "success"}
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=400, detail="Cannot delete room category because it has past or cancelled bookings tied to it (needed for records). You can rename or repurpose this category instead.")
     
     # In fallback mode, just return success (can't persist changes)
     return {"status": "success"}
