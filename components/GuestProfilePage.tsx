@@ -862,7 +862,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleCheckInNow = async () => {
+  const handleSave = async (isCheckIn: boolean = true) => {
     if (!validateDetails()) {
       setToastMessage("Please complete all required fields and scans.");
       return;
@@ -900,9 +900,15 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         hour: "2-digit",
         minute: "2-digit",
       });
+
+      const newStatus =
+        isCheckIn && booking.status === "Confirmed"
+          ? "CheckedIn"
+          : booking.status;
+
       updated = {
         ...booking,
-        status: booking.status === "Confirmed" ? "CheckedIn" : booking.status,
+        status: newStatus,
         guestName: editableDetails.name,
         guestDetails: {
           ...editableDetails,
@@ -926,13 +932,14 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         await updateBooking(updated);
         if (
           !isAddingAccessory &&
+          isCheckIn &&
           (booking.status === "Confirmed" || booking.status === "CheckedIn")
         ) {
           onUpdateStatus(booking.id, "CheckedIn");
         }
       }
 
-      if (!isAddingAccessory && booking.status === "Confirmed") {
+      if (!isAddingAccessory && isCheckIn && booking.status === "Confirmed") {
         alert("Check-in successful! Guest is now In-House.");
       } else {
         setToastMessage(
@@ -949,6 +956,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       setToastMessage(`Error: ${err.message}`);
     }
   };
+
+  const handleCheckInNow = () => handleSave(true);
+  const handleSaveOnly = () => handleSave(false);
 
   const triggerFileUpload = () => fileInputRef.current?.click();
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1891,6 +1901,16 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
           {/* Status & Check-in/Out Group */}
           <div className="flex items-center gap-3">
+            {booking.status === "Confirmed" && !isAddingAccessory && (
+              <button
+                onClick={handleSaveOnly}
+                className="px-6 py-2.5 bg-white text-emerald-600 border-2 border-emerald-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-50 transition-all shadow-sm flex items-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                Save Details
+              </button>
+            )}
+
             {(booking.status === "Confirmed" || isAddingAccessory) && (
               <button
                 onClick={handleCheckInNow}

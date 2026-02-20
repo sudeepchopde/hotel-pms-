@@ -2198,6 +2198,33 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
         # Track old status for notification triggers
         old_status = db_booking.status
         new_status = booking.status
+
+        # Apply late check-in adjustment rule for unpaid direct bookings
+        if old_status == 'Confirmed' and new_status == 'CheckedIn':
+            # Rule: Only for Direct Bookings with NO payments (sum <= 0)
+            total_paid = sum(p.get('amount', 0) for p in (db_booking.payments or []))
+            if db_booking.source == 'Direct' and total_paid <= 0:
+                # Use current date (server time)
+                today_str = datetime.now().strftime('%Y-%m-%d')
+                
+                # Check if today is after the scheduled check-in
+                if today_str > db_booking.check_in:
+                    try:
+                        d_start = datetime.strptime(db_booking.check_in, '%Y-%m-%d')
+                        d_end = datetime.strptime(db_booking.check_out, '%Y-%m-%d')
+                        d_today = datetime.strptime(today_str, '%Y-%m-%d')
+                        
+                        old_nights = (d_end - d_start).days
+                        new_nights = (d_end - d_today).days
+                        
+                        if old_nights > 0 and new_nights > 0:
+                            # Adjust the incoming 'booking' object so it gets saved to DB correctly
+                            rate_per_night = (db_booking.amount or 0) / old_nights
+                            booking.checkIn = today_str
+                            booking.amount = rate_per_night * new_nights
+                            print(f"Late check-in adjustment: {db_booking.guest_name} from {old_nights} nights starting {db_booking.check_in} to {new_nights} nights starting {today_str}. New amount: {booking.amount}")
+                    except Exception as e:
+                        print(f"Error adjusting late check-in: {e}")
         
         # Save or update guest profile whenever guest details are present
         if booking.guestDetails and booking.guestDetails.name and booking.guestDetails.phoneNumber:
@@ -2680,10 +2707,82 @@ def create_notification_internal(db, notif_type: str, category: str, title: str,
         print(f"Error creating notification: {e}")
         return None
 
+def audit_no_shows():
+    """Background-style check for guests who haven't checked in on time"""
+    import os
+    import json
+    from datetime import datetime, timezone
+    
+    db_url = get_db_url()
+    if not db_url:
+        return
+        
+    try:
+        from sqlalchemy import create_engine, text
+        engine = create_engine(db_url, pool_pre_ping=True)
+        
+        # Current local date
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        
+        # Query for no-shows: 
+        # 1. Status is Confirmed
+        # 2. Check-in was BEFORE today
+        # 3. Stay is MORE than 1 night
+        query = text("""
+            SELECT id, guest_name, check_in, check_out, room_number 
+            FROM bookings 
+            WHERE status = 'Confirmed' 
+            AND check_in < :today
+            AND (TO_DATE(check_out, 'YYYY-MM-DD') - TO_DATE(check_in, 'YYYY-MM-DD')) > 1
+        """)
+        
+        with engine.connect() as conn:
+            result = conn.execute(query, {"today": today_str})
+            no_shows = result.fetchall()
+            
+            for b_id, guest_name, check_in, check_out, room_number in no_shows:
+                # Check for existing warning to avoid duplicates
+                check_notif = text("""
+                    SELECT id FROM notifications 
+                    WHERE category = 'no_show_warning' 
+                    AND booking_id = :b_id 
+                    AND is_dismissed = FALSE 
+                    LIMIT 1
+                """)
+                existing = conn.execute(check_notif, {"b_id": b_id}).fetchone()
+                
+                if not existing:
+                    notif_id = f"notif-ns-{str(uuid.uuid4())[:8]}"
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    msg = f"Guest {guest_name} was scheduled to arrive on {check_in} for a multi-day stay but has not checked in. Should this booking be canceled?"
+                    
+                    conn.execute(text("""
+                        INSERT INTO notifications (id, type, category, title, message, priority, is_read, is_dismissed, created_at, booking_id, room_number)
+                        VALUES (:id, :type, :category, :title, :message, :priority, :is_read, :is_dismissed, :created_at, :b_id, :room_number)
+                    """), {
+                        "id": notif_id,
+                        "type": "system",
+                        "category": "no_show_warning",
+                        "title": "No-Show Warning",
+                        "message": msg,
+                        "priority": "high",
+                        "is_read": False,
+                        "is_dismissed": False,
+                        "created_at": now_iso,
+                        "b_id": b_id,
+                        "room_number": room_number
+                    })
+            conn.commit()
+    except Exception as e:
+        print(f"Error in no-show audit: {e}")
+
 @app.get("/api/notifications")
 def get_notifications(unread_only: bool = False, type_filter: str = None, limit: int = 50, history_mode: bool = False):
     """Get notifications with optional filters. history_mode=True fetches dismissed notifications."""
     import os
+    
+    # Run audit logic on every fetch to keep alerts fresh
+    audit_no_shows()
     
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
