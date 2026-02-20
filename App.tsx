@@ -143,38 +143,13 @@ const DEFAULT_NAV_ITEMS = [
     label: "Notifications",
     color: "text-yellow-400",
   },
-  {
-    id: "compliance",
-    icon: FileBadge,
-    label: "Police Compliance",
-    color: "text-amber-400",
-  },
   { id: "guests", icon: Users, label: "Guests", color: "text-sky-300" },
-  {
-    id: "security",
-    icon: ShieldAlert,
-    label: "Security Center",
-    color: "text-red-400",
-  },
-  {
-    id: "dashboard",
-    icon: LayoutDashboard,
-    label: "Live Inventory",
-    color: "text-slate-400",
-  },
-  {
-    id: "analysis",
-    icon: BarChart2,
-    label: "Analysis",
-    color: "text-blue-300",
-  },
   {
     id: "reports",
     icon: FileSpreadsheet,
     label: "Bookings",
     color: "text-teal-300",
   },
-  { id: "flow", icon: Presentation, label: "Flow", color: "text-slate-500" },
   {
     id: "kitchen",
     icon: ChefHat,
@@ -188,11 +163,36 @@ const DEFAULT_NAV_ITEMS = [
     color: "text-indigo-400",
   },
   {
+    id: "analysis",
+    icon: BarChart2,
+    label: "Analysis",
+    color: "text-blue-300",
+  },
+  {
+    id: "dashboard",
+    icon: LayoutDashboard,
+    label: "Live Inventory",
+    color: "text-slate-400",
+  },
+  {
+    id: "compliance",
+    icon: FileBadge,
+    label: "Police Compliance",
+    color: "text-amber-400",
+  },
+  {
+    id: "security",
+    icon: ShieldAlert,
+    label: "Security Center",
+    color: "text-red-400",
+  },
+  {
     id: "settings_hub",
     icon: Settings,
     label: "Settings",
     color: "text-slate-400",
   },
+  { id: "flow", icon: Presentation, label: "Flow", color: "text-slate-500" },
   // Hidden internal tabs for settings
   {
     id: "setup",
