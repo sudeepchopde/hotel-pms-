@@ -724,10 +724,19 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
     print(f"HtmlBody length: {len(email.HtmlBody) if email.HtmlBody else 0}")
     
     # 1. Build external reference for deduplication
-    import hashlib
-    content_hash = hashlib.md5(f"{email.Subject or ''}{email.From or ''}{email.TextBody[:100] if email.TextBody else ''}".encode()).hexdigest()
-    external_ref = email.MessageID or f"hash-{content_hash}"
+    # We prioritize the unique Cloudmailin ID or MessageID to distinguish different emails.
+    # Cloudmailin's 'id' is unique for every received message even if headers/content are similar.
+    external_ref = email.id or email.MessageID
+    
+    if not external_ref:
+        import hashlib
+        # Combine subject, from, and FULL body for the hash to avoid collisions on similar test emails
+        body_content = email.TextBody or email.HtmlBody or ""
+        content_hash = hashlib.md5(f"{email.Subject or ''}{email.From or ''}{body_content}".encode()).hexdigest()
+        external_ref = f"hash-{content_hash}"
+        
     print(f"External ref: {external_ref}")
+
 
     # 2. Get GEMINI API Key
     api_key = None
@@ -765,11 +774,13 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
         - roomTypeRaw: string (e.g., 'Double Bed Room', 'Deluxe AC Room')
         - numberOfRooms: number
         - pax: number (total guests)
-        - otaBookingId: string (The booking/reservation ID, e.g. NH74074458022974 or PNR number)
+        - otaBookingId: string (The booking/reservation ID, e.g. NH74074458022974)
+        - pnr: string (The PNR number if available, e.g. 0166806571)
         - paymentStatus: string ('Paid Online', 'Pay at Hotel', 'Prepaid')
         
         Only return the JSON, nothing else.
         """
+
 
         # 3.5 Check for Gmail Verification Email explicitly
         if "Gmail Forwarding Confirmation" in (email.Subject or "") or "forwarding-noreply" in (email.From or ""):
@@ -832,10 +843,12 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
                 room_type_id = all_rts[0].id
                 print(f"Defaulted to first room type: {room_type_id}")
 
-        # 5. Determine Booking ID
+        # 5. Determine Booking ID and PNR
         ota_id = parsed_data.get('otaBookingId')
+        pnr = parsed_data.get('pnr')
         new_id = ota_id if ota_id else f"RES-{str(uuid.uuid4())[:8].upper()}"
-        print(f"Booking ID will be: {new_id}")
+        print(f"Booking ID: {new_id}, PNR: {pnr}")
+
         
         # 6. Check for pre-payments
         initial_payments = []
@@ -853,21 +866,59 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
             })
             print(f"Payment recorded: {total_amount} (status: {payment_status})")
 
-        # 7. Delete any old duplicate booking, then always create fresh
+        # 7. Check for existing booking to update (Modifies if ID or PNR match)
         if USE_DATABASE() and db:
-            # Delete by external_reference_id
-            old_by_ref = db.query(BookingDB).filter(BookingDB.external_reference_id == external_ref).all()
-            for old in old_by_ref:
-                print(f"Deleting old duplicate booking: {old.id}")
-                db.delete(old)
+            # Check by primary ID (new_id)
+            existing = db.query(BookingDB).filter(BookingDB.id == new_id).first()
             
-            # Also delete by this new ID if it already exists (prevent PK conflict)
-            old_by_id = db.query(BookingDB).filter(BookingDB.id == new_id).first()
-            if old_by_id:
-                print(f"Deleting old booking with same ID: {old_by_id.id}")
-                db.delete(old_by_id)
-            
-            db.flush()
+            # If not found, check by reservation_id (PNR)
+            if not existing and pnr:
+                existing = db.query(BookingDB).filter(BookingDB.reservation_id == pnr).first()
+                
+            # If still not found, check by external_ref (Cloudmailin ID)
+            if not existing and external_ref:
+                existing = db.query(BookingDB).filter(BookingDB.external_reference_id == external_ref).first()
+
+            if existing:
+                print(f"Found existing booking {existing.id}, updating...")
+                existing.room_type_id = room_type_id or existing.room_type_id
+                existing.guest_name = parsed_data.get('guestName', existing.guest_name)
+                existing.check_in = parsed_data.get('checkIn', existing.check_in)
+                existing.check_out = parsed_data.get('checkOut', existing.check_out)
+                existing.amount = parsed_data.get('amount', existing.amount)
+                existing.number_of_rooms = parsed_data.get('numberOfRooms', existing.number_of_rooms)
+                existing.pax = parsed_data.get('pax', existing.pax)
+                existing.reservation_id = pnr or existing.reservation_id
+                existing.external_reference_id = external_ref
+                
+                # Update payments if provided
+                if initial_payments:
+                    existing.payments = initial_payments
+                
+                db.commit()
+                db.refresh(existing)
+                print(f"=== BOOKING UPDATED: {existing.id} for {existing.guest_name} ===")
+                
+                # Create Notification for update
+                notif_id = f"notif-{str(uuid.uuid4())[:8]}"
+                new_notif = NotificationDB(
+                    id=notif_id,
+                    type="reservation",
+                    category="update_booking",
+                    title="Booking Updated",
+                    message=f"Updated booking for {existing.guest_name} from {existing.source}",
+                    priority="normal",
+                    is_read=False,
+                    is_dismissed=False,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                    booking_id=existing.id,
+                    room_number=existing.room_number
+                )
+                db.add(new_notif)
+                db.commit()
+                
+                return {"status": "success", "booking_id": existing.id, "guest": existing.guest_name, "action": "updated"}
+
 
         # 8. Create the booking
         new_booking = BookingDB(
@@ -881,18 +932,39 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
             check_in=parsed_data.get('checkIn'),
             check_out=parsed_data.get('checkOut'),
             amount=parsed_data.get('amount'),
+            reservation_id=pnr, # Store PNR here
             number_of_rooms=parsed_data.get('numberOfRooms', 1),
             pax=parsed_data.get('pax', 2),
             is_auto_generated=True,
             external_reference_id=external_ref,
             payments=initial_payments
         )
+
         
         if USE_DATABASE() and db:
             db.add(new_booking)
             db.commit()
             db.refresh(new_booking)
             print(f"=== BOOKING SAVED: {new_booking.id} for {new_booking.guest_name} ===")
+            
+            # Create Notification for new booking
+            notif_id = f"notif-{str(uuid.uuid4())[:8]}"
+            new_notif = NotificationDB(
+                id=notif_id,
+                type="reservation",
+                category="new_booking",
+                title="New Booking Parsed",
+                message=f"Received a new booking for {new_booking.guest_name} from {new_booking.source}",
+                priority="high",
+                is_read=False,
+                is_dismissed=False,
+                created_at=datetime.now(timezone.utc).isoformat(),
+                booking_id=new_booking.id,
+                room_number=new_booking.room_number
+            )
+            db.add(new_notif)
+            db.commit()
+            
             return {"status": "success", "booking_id": new_booking.id, "guest": new_booking.guest_name}
         
         return {"status": "success", "parsed": parsed_data}

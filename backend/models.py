@@ -210,6 +210,7 @@ class RazorpayVerifyRequest(BaseModel):
 
 class InboundEmail(BaseModel):
     # Standard format (Postmark/General)
+    id: Optional[str] = None
     From: Optional[str] = Field(None, alias="from")
     To: Optional[str] = Field(None, alias="to")
     Subject: Optional[str] = Field(None, alias="subject")
@@ -217,6 +218,7 @@ class InboundEmail(BaseModel):
     HtmlBody: Optional[str] = Field(None, alias="html_body")
     Headers: Optional[Any] = None
     MessageID: Optional[str] = Field(None, alias="message_id")
+
     
     # Cloudmailin specific fields
     plain: Optional[str] = None
