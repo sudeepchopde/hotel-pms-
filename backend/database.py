@@ -46,7 +46,7 @@ engine_args = {
 }
 
 # Add SSL arguments if connecting to Neon/Render/Supabase (cloud database)
-if "neon.tech" in DATABASE_URL or "render.com" in DATABASE_URL or "supabase.co" in DATABASE_URL:
+if "neon.tech" in DATABASE_URL or "render.com" in DATABASE_URL or "supabase" in DATABASE_URL:
     engine_args["connect_args"] = {"sslmode": "require"}
 elif DATABASE_URL.startswith("sqlite"):
     from sqlalchemy.pool import StaticPool
