@@ -209,18 +209,23 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
         const newRoomData: RoomType = {
           ...formData,
           id: `rt-${Date.now()}`,
-          floorPrice: Math.round((formData.basePrice || 1000) * 0.7),
-          ceilingPrice: Math.round((formData.basePrice || 1000) * 2.0),
+          floorPrice:
+            formData.floorPrice ||
+            Math.round((formData.basePrice || 1000) * 0.7),
+          ceilingPrice:
+            formData.ceilingPrice ||
+            Math.round((formData.basePrice || 1000) * 2.0),
         } as RoomType;
         const created = await createRoomType(newRoomData);
         setRoomTypes((prev) => [...prev, created]);
       }
       resetForm();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to save room category", err);
-      setValidationError(
-        "Failed to save room category. Please check your connection.",
-      );
+      const msg =
+        err.message ||
+        "Failed to save room category. Please check your connection.";
+      setValidationError(msg);
     } finally {
       setIsSavingRoom(false);
     }

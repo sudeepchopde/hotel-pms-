@@ -1488,24 +1488,30 @@ def get_room_types(db=Depends(get_db)):
 @app.post("/api/room-types")
 def create_room_type(room_type: RoomType, db=Depends(get_db)):
     if USE_DATABASE() and db:
-        db_room = RoomTypeDB(
-            id=room_type.id,
-            name=room_type.name,
-            total_capacity=room_type.totalCapacity,
-            base_price=room_type.basePrice,
-            floor_price=room_type.floorPrice,
-            ceiling_price=room_type.ceilingPrice,
-            base_occupancy=room_type.baseOccupancy,
-            amenities=room_type.amenities or [],
-            room_numbers=room_type.roomNumbers or [],
-            extra_bed_charge=room_type.extraBedCharge,
-            extra_adult_rate=room_type.extraAdultRate,
-            extra_child_rate=room_type.extraChildRate
-        )
-        db.add(db_room)
-        db.commit()
-        db.refresh(db_room)
-        return db_room_type_to_pydantic(db_room)
+        try:
+            db_room = RoomTypeDB(
+                id=room_type.id,
+                name=room_type.name,
+                total_capacity=room_type.totalCapacity,
+                base_price=room_type.basePrice,
+                floor_price=room_type.floorPrice,
+                ceiling_price=room_type.ceilingPrice,
+                base_occupancy=room_type.baseOccupancy,
+                amenities=room_type.amenities or [],
+                room_numbers=room_type.roomNumbers or [],
+                extra_bed_charge=room_type.extraBedCharge,
+                extra_adult_rate=room_type.extraAdultRate,
+                extra_child_rate=room_type.extraChildRate
+            )
+            db.add(db_room)
+            db.commit()
+            db.refresh(db_room)
+            return db_room_type_to_pydantic(db_room)
+        except Exception as e:
+            print(f"ERROR Saving Room Type: {e}")
+            if db: db.rollback()
+            raise HTTPException(status_code=500, detail=str(e))
+            
     get_fallback_room_types().append(room_type)
     return room_type
 
