@@ -2229,10 +2229,22 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
                             
                             if old_nights > 0 and new_nights > 0:
                                 # Adjust the incoming 'booking' object so it gets saved to DB correctly
+                                # Get room type to check base price for heuristic
+                                from backend.db_models import RoomTypeDB
+                                rt_item = db.query(RoomTypeDB).filter(RoomTypeDB.id == db_booking.room_type_id).first()
+                                
                                 rate_per_night = (db_booking.amount or 0) / old_nights
+                                
+                                # Heuristic: If rate_per_night is suspiciously low but 'amount' matches base price
+                                if rt_item and rt_item.base_price > 0 and old_nights > 1:
+                                    if rate_per_night < rt_item.base_price * 0.6 and abs((db_booking.amount or 0) - rt_item.base_price) < rt_item.base_price * 0.3:
+                                        rate_per_night = db_booking.amount or 0
+
                                 booking.checkIn = today_str
                                 booking.amount = rate_per_night * new_nights
                                 logger.info(f"Late check-in adjustment: {db_booking.guest_name} from {old_nights} nights starting {db_booking.check_in} to {new_nights} nights starting {today_str}. New amount: {booking.amount}")
+
+
                         except Exception as e:
                             logger.error(f"Error adjusting late check-in: {e}")
             
@@ -2451,7 +2463,22 @@ def transfer_booking(booking_id: str, transfer: RoomTransferRequest, db=Depends(
         # Handle folio transfer
         new_folio = []
         if transfer.transferFolio:
-            new_folio = db_booking.folio
+            import json
+            raw_folio = db_booking.folio or []
+            if isinstance(raw_folio, str):
+                raw_folio = json.loads(raw_folio)
+            
+            # Identify current (soon to be previous) room type
+            old_rt = db.query(RoomTypeDB).filter(RoomTypeDB.id == db_booking.room_type_id).first()
+            old_rt_name = old_rt.name if old_rt else "Std"
+            
+            for item in raw_folio:
+                desc = item.get('description', '')
+                origin_suffix = f" (from {old_rt_name})"
+                if origin_suffix not in desc:
+                    item['description'] = f"{desc}{origin_suffix}"
+                new_folio.append(item)
+            
             db_booking.folio = []
 
         new_booking = BookingDB(
@@ -2473,8 +2500,12 @@ def transfer_booking(booking_id: str, transfer: RoomTransferRequest, db=Depends(
             accessory_guests=db_booking.accessory_guests,
             channel_sync=db_booking.channel_sync,
             extra_beds=db_booking.extra_beds,
+            extra_adults=db_booking.extra_adults,
+            extra_children=db_booking.extra_children,
             special_requests=db_booking.special_requests,
-            is_vip=db_booking.is_vip
+            is_vip=db_booking.is_vip,
+            discount=db_booking.discount,
+            is_settled=db_booking.is_settled
         )
         
         db_booking.check_out = transfer.effectiveDate
@@ -2578,12 +2609,74 @@ def checkout_booking(booking_id: str, db=Depends(get_db)):
     
     booking.folio = current_folio
     
+    # 1. Consolidated Stay logic
+    res_id = booking.reservation_id
+    related_bookings = []
+    if res_id:
+        related_bookings = db.query(BookingDB).filter(BookingDB.reservation_id == res_id).all()
+    else:
+        related_bookings = [booking]
+        
+    # Sort stay history by check-in date
+    related_bookings.sort(key=lambda b: b.check_in)
+    
+    all_folio = []
+    all_payments = []
+    stay_history = []
+    
+    for rb in related_bookings:
+        # Aggregate Folio
+        rb_folio = rb.folio or []
+        if isinstance(rb_folio, str):
+            rb_folio = json.loads(rb_folio)
+        for item in rb_folio:
+            # Tag the item with room number and type for clarity on unified invoice
+            rb_rt = db.query(RoomTypeDB).filter(RoomTypeDB.id == rb.room_type_id).first()
+            rt_name = rb_rt.name if rb_rt else "Std"
+            prefix = f"R{rb.room_number} ({rt_name}): "
+            
+            if not any(x in item.get('description', '') for x in [f"R{rb.room_number}", prefix]):
+                item['description'] = f"{prefix}{item.get('description')}"
+            all_folio.append(item)
+            
+        # Aggregate Payments
+        rb_payments = rb.payments or []
+        if isinstance(rb_payments, str):
+            rb_payments = json.loads(rb_payments)
+        for p in rb_payments:
+            all_payments.append(p)
+            
+        # Create Stay Segment Record (for PDF room revenue section)
+        rb_rt = db.query(RoomTypeDB).filter(RoomTypeDB.id == rb.room_type_id).first()
+        rt_name = rb_rt.name if rb_rt else "Standard"
+        
+        # Mark if this is a "Previous Room Type" relative to the current checkout booking
+        label_prefix = ""
+        if rb.id != booking.id:
+            label_prefix = "[PREVIOUS] "
+
+        stay_history.append({
+            "bookingId": rb.id,
+            "roomNumber": rb.room_number,
+            "roomTypeName": f"{label_prefix}{rt_name}",
+            "checkIn": rb.check_in,
+            "checkOut": rb.check_out,
+            "amount": rb.amount,
+            "discount": rb.discount,
+            "status": rb.status
+        })
+    
     # Prepare data for PDF
     booking_pydantic = db_booking_to_pydantic(booking)
     prop_pydantic = db_property_to_pydantic(prop)
     
     booking_dict = booking_pydantic.dict()
-    # Add room type name for PDF
+    # Replace single-booking folio/payments with stay-wide consolidated lists
+    booking_dict['folio'] = all_folio
+    booking_dict['payments'] = all_payments
+    booking_dict['stayHistory'] = stay_history
+    
+    # Add room type name for PDF (main room)
     rt = db.query(RoomTypeDB).filter(RoomTypeDB.id == booking.room_type_id).first()
     booking_dict['roomTypeName'] = rt.name if rt else "Standard"
     
@@ -2597,10 +2690,10 @@ def checkout_booking(booking_id: str, db=Depends(get_db)):
     try:
         generate_invoice_pdf(booking_dict, prop_dict, invoice_num, invoice_path)
         
-        # Check if paid to generate receipt
-        total_paid = sum(p['amount'] for p in (booking.payments or []) if p.get('status') == 'Completed')
-        # We also count paid folio items
-        total_paid += sum(f.get('amount', 0) for f in (booking.folio or []) if f.get('isPaid'))
+        # Check if paid across the whole stay
+        total_paid = sum(p['amount'] for p in all_payments if p.get('status') == 'Completed')
+        # We also count paid folio items (high resiliency fallback)
+        total_paid += sum(f.get('amount', 0) for f in all_folio if f.get('isPaid') and not f.get('paymentId'))
         
         if total_paid > 0:
             generate_receipt_pdf(booking_dict, prop_dict, invoice_num, receipt_path)

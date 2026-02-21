@@ -1492,6 +1492,8 @@ const App: React.FC = () => {
             setSyncEvents={setSyncEvents}
             roomTypes={roomTypes}
             onUpdateExtraBeds={handleUpdateExtraBeds}
+            propertySettings={propertySettings}
+            user={user}
           />
         )}
         {activeTab === "compliance" && (

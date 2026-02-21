@@ -23,7 +23,13 @@ import {
   Clock,
   Plus,
 } from "lucide-react";
-import { Booking, RoomType, SyncEvent } from "../types";
+import {
+  Booking,
+  RoomType,
+  SyncEvent,
+  PropertySettings,
+  UserResponse,
+} from "../types";
 import GuestProfilePage from "./GuestProfilePage";
 import { updateBooking } from "../api";
 import { formatDate } from "../utils";
@@ -34,6 +40,8 @@ interface GuestsViewProps {
   roomTypes: RoomType[];
   // Fix: Added missing onUpdateExtraBeds prop to interface to match usage in App.tsx
   onUpdateExtraBeds?: (bookingId: string, count: number) => void;
+  propertySettings: PropertySettings | null;
+  user: UserResponse | null;
 }
 
 // Status Color Mappings (Matching user request and existing styles)
@@ -75,6 +83,8 @@ const GuestsView: React.FC<GuestsViewProps> = ({
   setSyncEvents,
   roomTypes,
   onUpdateExtraBeds,
+  propertySettings,
+  user,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
@@ -295,6 +305,8 @@ const GuestsView: React.FC<GuestsViewProps> = ({
           onCheckIn={handleCheckInRequest}
           // Fix: Passing wrapped onUpdateExtraBeds to GuestProfilePage
           onUpdateExtraBeds={handleUpdateExtraBedsFromProfile}
+          propertySettings={propertySettings}
+          user={user}
         />
       )}
 

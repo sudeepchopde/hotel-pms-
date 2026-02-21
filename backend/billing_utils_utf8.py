@@ -80,107 +80,80 @@ def generate_invoice_pdf(booking_data, property_settings, invoice_num, filepath)
     pdf.set_font('Helvetica', '', 10)
     
     total_base = 0
-    # Room Rent calculation
-    check_in = datetime.strptime(booking_data['checkIn'], '%Y-%m-%d')
-    check_out = datetime.strptime(booking_data['checkOut'], '%Y-%m-%d')
-    nights = max(1, (check_out - check_in).days)
-    
-    room_rate = 0
-    if booking_data.get('source') == 'Direct':
-        # Default to the booking amount / nights if no direct base price in property
-        room_rate = booking_data.get('amount', 0) / nights
-    else:
-        room_rate = booking_data.get('amount', 0) / nights
-    
     gst_rate = property_settings.get('gstRate', 12)
-    
-    # Calculate Room Discount first
-    discount = booking_data.get('discount')
-    room_discount_amount = 0
-    if discount:
-        if discount.get('type') == 'percentage':
-            room_discount_amount = (room_rate * nights) * (discount.get('value', 0) / 100)
-        else:
-            room_discount_amount = discount.get('value', 0)
-    
-    # Inclusive Room Calculation
-    discounted_room_total = (room_rate * nights) - room_discount_amount
-    room_base = discounted_room_total / (1 + gst_rate / 100)
-    room_tax = discounted_room_total - room_base
-    
-    pdf.cell(100, 10, f" Room Rent (#{booking_data.get('roomNumber')}) - {booking_data.get('roomTypeName', 'Standard')}", 1)
-    pdf.cell(20, 10, str(nights), 1, 0, 'C')
-    # Show base rate (exclusive of GST) in Rate column
-    base_rate = room_rate / (1 + gst_rate / 100)
-    pdf.cell(30, 10, f"{base_rate:,.2f}", 1, 0, 'R')
-    # Show room base (exclusive of GST) in Amount column
-    pdf.cell(40, 10, f"{room_base:,.2f}", 1, 1, 'R')
-    total_base += room_base
-    
-    # If discount applied, show as a separate line (negative) - wait, if room_base is already discounted, 
-    # then total_base already reflects it. But we should ideally show the discount line for clarity.
-    if room_discount_amount > 0:
-        pdf.cell(100, 10, f" Discount ({discount.get('type', '').title()}: {discount.get('value')})", 1)
-        pdf.cell(20, 10, "", 1, 0, 'C')
-        pdf.cell(30, 10, "", 1, 0, 'R')
-        disc_base = room_discount_amount / (1 + gst_rate / 100)
-        # Note: We already used room_base which is (rent-disc)/1.12. 
-        # So total_base calculation is correct. 
-        # For display, if we show full rent then discount, it's clearer.
-        # Let's re-calculate to show full rent then discount line.
-    
-    # Re-doing for clarity:
-    pdf.set_y(pdf.get_y() - 10) # Go back
-    full_room_base = (room_rate * nights) / (1 + gst_rate / 100)
-    pdf.cell(100, 10, f" Room Rent (#{booking_data.get('roomNumber')})", 1)
-    pdf.cell(20, 10, str(nights), 1, 0, 'C')
-    pdf.cell(30, 10, f"{(room_rate / (1 + gst_rate / 100)):,.2f}", 1, 0, 'R')
-    pdf.cell(40, 10, f"{full_room_base:,.2f}", 1, 1, 'R')
-    total_base = full_room_base
-    
-    if room_discount_amount > 0:
-        pdf.cell(100, 10, f" Discount ({discount.get('type', '').title()}: {discount.get('value')})", 1)
-        pdf.cell(20, 10, "-", 1, 0, 'C')
-        pdf.cell(30, 10, "", 1, 0, 'R')
-        disc_base = room_discount_amount / (1 + gst_rate / 100)
-        pdf.cell(40, 10, f"-{disc_base:,.2f}", 1, 1, 'R')
-        total_base -= disc_base
+    actual_room_tax = 0
 
-    # Folio items - handle both inclusive and exclusive pricing
+    # Stay History consolidation
+    stay_history = booking_data.get('stayHistory', [])
+    if not stay_history:
+        stay_history = [{
+            "roomNumber": booking_data.get('roomNumber'),
+            "roomTypeName": booking_data.get('roomTypeName'),
+            "checkIn": booking_data.get('checkIn'),
+            "checkOut": booking_data.get('checkOut'),
+            "amount": booking_data.get('amount'),
+            "discount": booking_data.get('discount')
+        }]
+
+    for segment in stay_history:
+        check_in = datetime.strptime(segment['checkIn'], '%Y-%m-%d')
+        check_out = datetime.strptime(segment['checkOut'], '%Y-%m-%d')
+        nights = max(1, (check_out - check_in).days)
+        
+        # Rate calculation
+        room_rate = segment.get('amount', 0) / nights
+        
+        # Discount calculation for this segment
+        seg_discount = segment.get('discount')
+        seg_discount_amount = 0
+        if seg_discount:
+            if seg_discount.get('type') == 'percentage':
+                seg_discount_amount = (room_rate * nights) * (seg_discount.get('value', 0) / 100)
+            else:
+                seg_discount_amount = seg_discount.get('value', 0)
+        
+        # Segment Base/Tax
+        discounted_seg_total = (room_rate * nights) - seg_discount_amount
+        seg_base = discounted_seg_total / (1 + gst_rate / 100)
+        seg_tax = discounted_seg_total - seg_base
+        
+        actual_room_tax += seg_tax
+        
+        # Display Row
+        full_seg_base = (room_rate * nights) / (1 + gst_rate / 100)
+        pdf.cell(100, 10, f" Room Rent (#{segment.get('roomNumber')}) - {segment.get('roomTypeName', 'Std')}", 1)
+        pdf.cell(20, 10, str(nights), 1, 0, 'C')
+        pdf.cell(30, 10, f"{(room_rate / (1 + gst_rate / 100)):,.2f}", 1, 0, 'R')
+        pdf.cell(40, 10, f"{full_seg_base:,.2f}", 1, 1, 'R')
+        total_base += full_seg_base
+        
+        if seg_discount_amount > 0:
+            pdf.cell(100, 10, f"  > Discount ({seg_discount.get('type','').title()})", 1)
+            pdf.cell(20, 10, "-", 1, 0, 'C')
+            pdf.cell(30, 10, "", 1, 0, 'R')
+            seg_disc_base = seg_discount_amount / (1 + gst_rate / 100)
+            pdf.cell(40, 10, f"-{seg_disc_base:,.2f}", 1, 1, 'R')
+            total_base -= seg_disc_base
+
+    # Folio items (Exclusive logic - tax added later)
     total_folio_tax = 0
     for item in booking_data.get('folio', []):
         cat = item.get('category', 'Other')
-        is_inclusive = item.get('isInclusive', False)
-        
         f_rate = 18
         if cat == 'F&B': f_rate = property_settings.get('foodGstRate', 5)
         elif cat == 'Laundry': f_rate = property_settings.get('otherGstRate', 18)
         else: f_rate = property_settings.get('otherGstRate', 18)
         
-        if is_inclusive:
-            # For inclusive items, back out the tax from the amount
-            item_base = item['amount'] / (1 + f_rate / 100)
-            item_tax = item['amount'] - item_base
-        else:
-            # For exclusive items, tax is added on top
-            item_base = item['amount']
-            item_tax = item['amount'] * (f_rate / 100)
-        
         pdf.cell(100, 10, f" {item['description']} ({cat})", 1)
         pdf.cell(20, 10, '1', 1, 0, 'C')
-        pdf.cell(30, 10, f"{item_base:,.2f}", 1, 0, 'R')
-        pdf.cell(40, 10, f"{item_base:,.2f}", 1, 1, 'R')
-        total_base += item_base
-        total_folio_tax += item_tax
+        pdf.cell(30, 10, f"{item['amount']:,.2f}", 1, 0, 'R')
+        pdf.cell(40, 10, f"{item['amount']:,.2f}", 1, 1, 'R')
+        total_base += item['amount']
+        total_folio_tax += item['amount'] * (f_rate / 100)
         
     # --- Totals ---
     pdf.ln(5)
     pdf.set_font('Helvetica', 'B', 10)
-    
-    # Calculate Total Tax
-    room_tax = (total_base - sum(i['amount'] for i in booking_data.get('folio', []))) * (gst_rate / 100)
-    # Wait, the room tax is correctly the remainder of the inclusive price
-    actual_room_tax = (discounted_room_total) - room_base
     
     grand_total = total_base + actual_room_tax + total_folio_tax
     

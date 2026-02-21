@@ -739,7 +739,25 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
           (1000 * 3600 * 24),
       ),
     );
-    const dailyRate = (booking.amount || 0) / oldDuration;
+
+    const roomType = roomTypes.find((rt) => rt.id === booking.roomTypeId);
+    const base = roomType?.basePrice || 0;
+
+    let dailyRate = (booking.amount || 0) / oldDuration;
+
+    // HEURISTIC: If the derived dailyRate is suspiciously low but the 'amount' itself matches the base price,
+    // the 'amount' was likely storing the daily rate instead of total.
+    if (
+      oldDuration > 1 &&
+      base > 0 &&
+      dailyRate < base * 0.6 &&
+      Math.abs((booking.amount || 0) - base) < base * 0.3
+    ) {
+      dailyRate = booking.amount || 0;
+    } else if (dailyRate === 0 && base > 0) {
+      dailyRate = base;
+    }
+
     const newAmount = dailyRate * totalDuration;
 
     const newCheckOut = new Date(bookingStart);

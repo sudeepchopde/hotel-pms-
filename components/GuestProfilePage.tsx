@@ -264,6 +264,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     | "processing"
     | "success"
   >("idle");
+  const [isOcrEnabled, setIsOcrEnabled] = useState(true);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isIdRevealed, setIsIdRevealed] = useState(
     booking.status !== "CheckedIn" && booking.status !== "CheckedOut",
@@ -336,6 +337,21 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     setIsIdRevealed(true);
   };
 
+  const [localExtraAdults, setLocalExtraAdults] = useState(
+    booking.extraAdults || 0,
+  );
+  const [localExtraChildren, setLocalExtraChildren] = useState(
+    booking.extraChildren || 0,
+  );
+
+  useEffect(() => {
+    setLocalExtraAdults(booking.extraAdults || 0);
+  }, [booking.extraAdults]);
+
+  useEffect(() => {
+    setLocalExtraChildren(booking.extraChildren || 0);
+  }, [booking.extraChildren]);
+
   const handleExtraBedsChange = (delta: number) => {
     const current = booking.extraBeds || 0;
     const next = Math.max(0, current + delta);
@@ -351,11 +367,14 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     delta: number,
   ) => {
     const isAdult = type === "adults";
-    const current =
-      (isAdult ? booking.extraAdults : booking.extraChildren) || 0;
+    const current = isAdult ? localExtraAdults : localExtraChildren;
     const next = Math.max(0, current + delta);
 
     if (current === next) return;
+
+    // Optimistic local update to prevent "resetting" flicker
+    if (isAdult) setLocalExtraAdults(next);
+    else setLocalExtraChildren(next);
 
     const rate = isAdult
       ? roomType?.extraAdultRate || 0
@@ -396,124 +415,154 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     });
   };
 
-  const unpaidFolioTotal = (booking.folio || [])
-    .filter((item) => !item.isPaid)
-    .reduce((sum, item) => sum + item.amount, 0);
-  const paidFolioTotal = (booking.folio || [])
-    .filter((item) => item.isPaid)
-    .reduce((sum, item) => sum + item.amount, 0);
-
-  // High-resiliency payment audit
-  // 1. Map all payment IDs already tied to folio entries to avoid double counting
-  const settledFolioPaymentIds = (booking.folio || [])
-    .filter((f) => f.isPaid && f.paymentId)
-    .map((f) => f.paymentId);
-
-  // 2. Sum only "standalone" payments (those not specifically covering a folio item)
-  const standalonePaymentsTotal = (booking.payments || [])
-    .filter(
-      (p) => p.status === "Completed" && !settledFolioPaymentIds.includes(p.id),
-    )
-    .reduce((sum, p) => sum + p.amount, 0);
-
-  // 3. Final total reflects both standalone settlements and all paid folio items
-  const totalPayments = standalonePaymentsTotal + paidFolioTotal;
-
-  // Calculate elapsed nights for in-house guests to support pro-rata billing
-  const elapsedNights = useMemo(() => {
-    if (booking.status === "Confirmed") return 0;
-    if (booking.status === "CheckedOut") return nights;
-    if (booking.status !== "CheckedIn") return 0;
-
-    const start = new Date(booking.checkIn);
-    const today = new Date();
-    // Use local date for calendar night check
-    const d1 = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-    const d2 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
-    const diffDays = Math.round(
-      (d2.getTime() - d1.getTime()) / (1000 * 3600 * 24),
+  // 1. Unified stay-wide accounting
+  const allStayBookings = useMemo(() => {
+    if (!relatedBookings || relatedBookings.length === 0) return [booking];
+    // Sort stay history by check-in date
+    return [...relatedBookings].sort(
+      (a, b) => new Date(a.checkIn).getTime() - new Date(b.checkIn).getTime(),
     );
+  }, [booking, relatedBookings]);
 
-    // Charge for the number of nights passed (minimum 1, maximum total nights)
-    return Math.max(1, Math.min(nights, diffDays + 1));
-  }, [booking.checkIn, booking.status, nights]);
+  // 2. High-resiliency stay-wide payment audit
+  const stayTotalPayments = useMemo(() => {
+    return allStayBookings.reduce((staySum, b) => {
+      // Sum of all recorded payments in the audit trail for this specific booking
+      const auditPaymentsTotal = (b.payments || [])
+        .filter((p) => p.status === "Completed")
+        .reduce((sum, p) => sum + p.amount, 0);
 
-  // Room rate calculation
-  // Handle case where user might have entered the daily rate as the total amount
-  // If the calculated rate is very low compared to base price, or if user explicitly requested it
-  const roomRate = (booking.amount || 0) / (nights || 1);
+      // Sum of any folio items marked as paid that don't have a corresponding audit payment
+      const extraManualPaidFolioTotal = (b.folio || [])
+        .filter(
+          (f) =>
+            f.isPaid &&
+            (!f.paymentId ||
+              !(b.payments || []).some(
+                (p) => p.id === f.paymentId && p.status === "Completed",
+              )),
+        )
+        .reduce((sum, f) => sum + f.amount, 0);
 
-  // For display and ledger: if in-house, we only charge for sessions stayed so far.
-  // This matches the user's request: "total outstanding should show for one night"
-  const roomBaseTotal =
-    booking.status === "CheckedIn"
-      ? roomRate * elapsedNights
-      : booking.amount || 0;
+      return staySum + auditPaymentsTotal + extraManualPaidFolioTotal;
+    }, 0);
+  }, [allStayBookings]);
 
-  // Calculate Bill Summary with Taxes to match Invoice
+  // For backward compatibility and local display
+  const totalPayments = stayTotalPayments;
+
+  // Calculate Stay-wide Room Revenue
+  const stayRoomRevenueItems = useMemo(() => {
+    return allStayBookings.map((b) => {
+      const bRoomType = roomTypes.find((rt) => rt.id === b.roomTypeId);
+      const bNights = Math.max(
+        1,
+        Math.ceil(
+          (new Date(b.checkOut).getTime() - new Date(b.checkIn).getTime()) /
+            (1000 * 3600 * 24),
+        ),
+      );
+
+      // Elapsed nights for this specific booking in the stay
+      let bElapsed = bNights;
+      if (b.status === "Confirmed") bElapsed = 0;
+      else if (b.status === "CheckedIn") {
+        const start = new Date(b.checkIn);
+        const today = new Date();
+        const d1 = new Date(
+          start.getFullYear(),
+          start.getMonth(),
+          start.getDate(),
+        );
+        const d2 = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate(),
+        );
+        const diffDays = Math.round(
+          (d2.getTime() - d1.getTime()) / (1000 * 3600 * 24),
+        );
+        bElapsed = Math.max(1, Math.min(bNights, diffDays + 1));
+      }
+
+      // Rate heuristic
+      let bRate = (b.amount || 0) / (bNights || 1);
+      const bBasePrice = bRoomType?.basePrice || 0;
+      if (bNights > 1 && bBasePrice > 0) {
+        if (
+          bRate < bBasePrice * 0.6 &&
+          Math.abs((b.amount || 0) - bBasePrice) < bBasePrice * 0.3
+        ) {
+          bRate = b.amount || 0;
+        }
+      }
+
+      const bTotal = bRate * bElapsed;
+
+      return {
+        bookingId: b.id,
+        roomNumber: b.roomNumber,
+        roomTypeName: bRoomType?.name || "Standard",
+        nights: bNights,
+        elapsed: bElapsed,
+        rate: bRate,
+        total: bTotal,
+        discount: b.discount,
+      };
+    });
+  }, [allStayBookings, roomTypes]);
+
+  // Combined Bill Summary with Taxes
   const billSummary = useMemo(() => {
     let totalBase = 0;
     let totalTax = 0;
-
-    // 1. Room Rent Tax (NOW INCLUSIVE)
-    let roomAmount = roomBaseTotal;
-
-    // Apply discount if present
-    if (booking.discount) {
-      if (booking.discount.type === "percentage") {
-        roomAmount = roomAmount * (1 - booking.discount.value / 100);
-      } else {
-        roomAmount = Math.max(0, roomAmount - booking.discount.value);
-      }
-    }
-
-    // Use consistent GST rate from settings (or default to 12%)
     const roomGstRate = propertySettings?.gstRate || 12.0;
 
-    // Derived base through backing out the tax from SHOULD-BE-NET-TOTAL
-    const roomBase = roomAmount / (1 + roomGstRate / 100);
-    const roomTax = roomAmount - roomBase;
-
-    totalBase += roomBase;
-    totalTax += roomTax;
-
-    // 2. Folio Items Tax
-    (booking.folio || []).forEach((item) => {
-      const descUpper = (item.description || "").toUpperCase();
-      const isInclusive =
-        item.isInclusive === true ||
-        descUpper.includes("EXTRA ADULT") ||
-        descUpper.includes("EXTRA CHILD") ||
-        descUpper.includes("EXTRA BED");
-
-      // Determine the GST rate based on category
-      let rate = propertySettings?.otherGstRate || 18; // Default for Service/Other
-      if (item.category === "F&B") rate = propertySettings?.foodGstRate || 5;
-      else if (item.category === "Laundry")
-        rate = propertySettings?.otherGstRate || 18;
-
-      if (isInclusive) {
-        // For inclusive items, back out the tax from the amount (amount already includes tax)
-        const itemBase = item.amount / (1 + rate / 100);
-        const itemTax = item.amount - itemBase;
-        totalBase += itemBase;
-        totalTax += itemTax;
-      } else {
-        // For exclusive items, tax is added on top
-        totalBase += item.amount;
-        totalTax += item.amount * (rate / 100);
+    // 1. Sum up all room revenues from the stay
+    stayRoomRevenueItems.forEach((ri) => {
+      let roomAmount = ri.total;
+      if (ri.discount) {
+        if (ri.discount.type === "percentage") {
+          roomAmount = roomAmount * (1 - ri.discount.value / 100);
+        } else {
+          roomAmount = Math.max(0, roomAmount - ri.discount.value);
+        }
       }
+      const roomBase = roomAmount / (1 + roomGstRate / 100);
+      const roomTax = roomAmount - roomBase;
+      totalBase += roomBase;
+      totalTax += roomTax;
+    });
+
+    // 2. Sum up all folio items from all bookings in the stay
+    allStayBookings.forEach((b) => {
+      (b.folio || []).forEach((item) => {
+        const descUpper = (item.description || "").toUpperCase();
+        const isInclusive =
+          item.isInclusive === true ||
+          descUpper.includes("EXTRA ADULT") ||
+          descUpper.includes("EXTRA CHILD") ||
+          descUpper.includes("EXTRA BED");
+
+        let rate = propertySettings?.otherGstRate || 18;
+        if (item.category === "F&B") rate = propertySettings?.foodGstRate || 5;
+        else if (item.category === "Laundry")
+          rate = propertySettings?.otherGstRate || 18;
+
+        if (isInclusive) {
+          const itemBase = item.amount / (1 + rate / 100);
+          const itemTax = item.amount - itemBase;
+          totalBase += itemBase;
+          totalTax += itemTax;
+        } else {
+          totalBase += item.amount;
+          totalTax += item.amount * (rate / 100);
+        }
+      });
     });
 
     return { totalBase, totalTax, grandTotal: totalBase + totalTax };
-  }, [
-    roomBaseTotal,
-    booking.folio,
-    booking.discount,
-    roomType,
-    propertySettings,
-  ]);
+  }, [stayRoomRevenueItems, allStayBookings, propertySettings]);
 
   const handleApplyDiscount = () => {
     const val = parseFloat(discountValue);
@@ -531,6 +580,51 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     }
     setShowDiscountModal(false);
   };
+
+  const stayRoomBaseTotal = useMemo(() => {
+    return stayRoomRevenueItems.reduce((sum, item) => sum + item.total, 0);
+  }, [stayRoomRevenueItems]);
+
+  const stayUnpaidFolioTotal = useMemo(() => {
+    return allStayBookings.reduce((staySum, b) => {
+      return (
+        staySum +
+        (b.folio || [])
+          .filter((item) => !item.isPaid)
+          .reduce((sum, item) => sum + item.amount, 0)
+      );
+    }, 0);
+  }, [allStayBookings]);
+
+  // For compatibility with UI segments
+  const roomBaseTotal = stayRoomBaseTotal;
+  const unpaidFolioTotal = stayUnpaidFolioTotal;
+
+  const currentRoomInfo = stayRoomRevenueItems.find(
+    (ri) => ri.bookingId === booking.id,
+  );
+  const roomRate = currentRoomInfo?.rate || 0;
+  const elapsedNights = currentRoomInfo?.elapsed || 0;
+
+  const stayAllFolioItems = useMemo(() => {
+    const items: (FolioItem & { sourceBookingId: string })[] = [];
+    allStayBookings.forEach((b) => {
+      (b.folio || []).forEach((f) => {
+        items.push({ ...f, sourceBookingId: b.id } as any);
+      });
+    });
+    return items;
+  }, [allStayBookings]);
+
+  const stayAllPayments = useMemo(() => {
+    const payments: (Payment & { sourceBookingId: string })[] = [];
+    allStayBookings.forEach((b) => {
+      (b.payments || []).forEach((p) => {
+        payments.push({ ...p, sourceBookingId: b.id } as any);
+      });
+    });
+    return payments;
+  }, [allStayBookings]);
 
   const totalBill = billSummary.grandTotal;
   const netOutstanding = totalBill - totalPayments;
@@ -641,6 +735,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
   const finishScanning = async () => {
     stopCamera();
+    if (!isOcrEnabled) {
+      setOcrStep("success");
+      return;
+    }
+
     if (ocrStep === "scan_front" || ocrStep === "scan_back") {
       setOcrStep("processing");
       try {
@@ -694,16 +793,32 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
         try {
           const data = JSON.parse(jsonStr);
-          setEditableDetails((prev) => ({
-            ...prev,
-            name: data.name || data.Name || prev.name,
-            idNumber: data.idNumber || data.ID_Number || prev.idNumber,
-            address: data.address || data.Address || prev.address,
-            dob: data.dob || data.DOB || prev.dob,
-            gender: data.gender || data.Gender || prev.gender,
-            nationality:
-              data.nationality || data.Nationality || prev.nationality,
-          }));
+          setEditableDetails((prev) => {
+            const next = { ...prev };
+            const updateField = (
+              field: keyof GuestDetails,
+              val: any,
+              alternateVal?: any,
+            ) => {
+              const finalVal = val || alternateVal;
+              if (
+                finalVal !== null &&
+                finalVal !== undefined &&
+                (typeof finalVal === "string" ? finalVal.trim() !== "" : true)
+              ) {
+                (next as any)[field] = finalVal;
+              }
+            };
+
+            updateField("name", data.name, data.Name);
+            updateField("idNumber", data.idNumber, data.ID_Number);
+            updateField("address", data.address, data.Address);
+            updateField("dob", data.dob, data.DOB);
+            updateField("gender", data.gender, data.Gender);
+            updateField("nationality", data.nationality, data.Nationality);
+
+            return next;
+          });
           setToastMessage(
             `Processed ${type === "id_front" ? "Front" : "Back"} of ID`,
           );
@@ -749,7 +864,21 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
         try {
           const data = JSON.parse(jsonStr);
-          setEditableDetails((prev) => ({ ...prev, ...data }));
+          setEditableDetails((prev) => {
+            const next = { ...prev };
+            Object.keys(data).forEach((key) => {
+              const val = data[key];
+              // Only overwrite if the new value is truthy and not just whitespace
+              if (
+                val !== null &&
+                val !== undefined &&
+                (typeof val === "string" ? val.trim() !== "" : true)
+              ) {
+                (next as any)[key] = val;
+              }
+            });
+            return next;
+          });
           setOcrStep("success");
           setToastMessage("Form analyzed successfully!");
         } catch (e) {
@@ -2472,50 +2601,56 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           className="w-full h-full object-cover"
                         />
                         <canvas ref={canvasRef} className="hidden" />
-                        <div className="absolute inset-x-0 bottom-8 flex justify-center items-center gap-4">
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-6 flex justify-center items-center gap-5">
                           <button
                             onClick={stopCamera}
-                            className="p-4 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-all"
+                            className="p-2.5 bg-white/10 backdrop-blur-md rounded-xl text-white hover:bg-rose-500/20 hover:text-rose-400 transition-all border border-white/10"
+                            title="Cancel OCR"
                           >
-                            <X className="w-6 h-6" />
+                            <X className="w-4 h-4" />
                           </button>
+
+                          <button
+                            onClick={triggerFileUpload}
+                            className="p-2.5 bg-white/10 backdrop-blur-md rounded-xl text-white hover:bg-indigo-500/20 hover:text-indigo-400 transition-all border border-white/20"
+                            title="Upload from Device"
+                          >
+                            <Upload className="w-4 h-4" />
+                          </button>
+
                           <button
                             onClick={captureImage}
-                            className="w-20 h-20 bg-white rounded-full border-8 border-indigo-400/50 flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-2xl"
+                            className="w-14 h-14 bg-white rounded-full border-[5px] border-indigo-400/20 flex items-center justify-center hover:scale-105 active:scale-90 transition-all shadow-[0_0_20px_rgba(79,70,229,0.4)] group mx-2"
                           >
-                            <div className="w-12 h-12 bg-indigo-600 rounded-full"></div>
+                            <div className="w-8 h-8 bg-indigo-600 rounded-full group-hover:bg-indigo-500 transition-colors shadow-inner flex items-center justify-center">
+                              <div className="w-1.5 h-1.5 bg-white rounded-full opacity-40"></div>
+                            </div>
                           </button>
+
                           {/* Finish button for ID scanning */}
                           {(ocrStep === "scan_front" ||
                             ocrStep === "scan_back") &&
                             (idImages.front || idImages.back) && (
                               <button
                                 onClick={finishScanning}
-                                className="px-6 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl"
+                                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 border border-emerald-400/30 flex items-center gap-2"
                               >
-                                Finish (
-                                {(idImages.front ? 1 : 0) +
-                                  (idImages.back ? 1 : 0) +
-                                  idImages.additional.length}{" "}
-                                pgs)
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                Done
                               </button>
                             )}
+
                           {/* Finish button for Form scanning */}
                           {ocrStep === "scan_form" &&
                             idImages.formPages.length > 0 && (
                               <button
                                 onClick={finishScanning}
-                                className="px-6 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl"
+                                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 border border-emerald-400/30 flex items-center gap-2"
                               >
-                                Finish ({idImages.formPages.length} pgs)
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                Done ({idImages.formPages.length})
                               </button>
                             )}
-                          <button
-                            onClick={triggerFileUpload}
-                            className="p-4 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-all"
-                          >
-                            <Upload className="w-6 h-6" />
-                          </button>
                         </div>
                         <div className="absolute top-4 left-4 right-4 text-center">
                           <span className="px-4 py-2 bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg">
@@ -2679,6 +2814,35 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
                   {/* ACTION BUTTONS - Below ID Image */}
                   <div className="flex flex-col gap-3 mt-4">
+                    {/* OCR Toggle Switch */}
+                    <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-1">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`p-2 rounded-xl border transition-all ${isOcrEnabled ? "bg-indigo-50 border-indigo-100 text-indigo-600" : "bg-white border-slate-200 text-slate-400"}`}
+                        >
+                          <Sparkles className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest leading-none mb-1">
+                            Gemini AI OCR
+                          </p>
+                          <p className="text-[9px] font-bold text-slate-500 uppercase leading-none">
+                            {isOcrEnabled
+                              ? "Auto-fill Enabled"
+                              : "Manual Fill Only"}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setIsOcrEnabled(!isOcrEnabled)}
+                        className={`w-10 h-6 rounded-full relative transition-all duration-300 ${isOcrEnabled ? "bg-indigo-600 shadow-lg shadow-indigo-100" : "bg-slate-300"}`}
+                      >
+                        <div
+                          className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300 ${isOcrEnabled ? "left-5" : "left-1"}`}
+                        />
+                      </button>
+                    </div>
+
                     {canEdit && (
                       <button
                         onClick={() => startCamera("scan_front")}
@@ -3630,36 +3794,52 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           {new Date(booking.checkIn).toLocaleDateString()}
                         </span>
                       </div>
-                      <div className="flex justify-between items-center">
+                      <div className="flex justify-between items-start">
                         <div className="flex items-center gap-3">
                           <div className="p-2 bg-white/5 rounded-lg border border-white/10">
                             <Bed className="w-4 h-4 text-indigo-400" />
                           </div>
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                            Room Rate
-                          </span>
-                        </div>
-                        <span className="text-xs font-bold text-slate-200 tabular-nums">
-                          ₹
-                          {roomRate.toLocaleString(undefined, {
-                            maximumFractionDigits: 0,
-                          })}{" "}
-                          / N
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-white/5 rounded-lg border border-white/10">
-                            <Hash className="w-4 h-4 text-indigo-400" />
+                          <div className="space-y-3">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
+                              Total Stay Revenue
+                            </span>
+                            <div className="space-y-4">
+                              {stayRoomRevenueItems.map((ri, idx) => (
+                                <div key={ri.bookingId} className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-black text-indigo-400 bg-indigo-400/10 px-1.5 py-0.5 rounded shadow-sm">
+                                      #{ri.roomNumber}
+                                    </span>
+                                    <span className="text-[10px] font-black text-slate-200 uppercase tracking-wider">
+                                      {ri.roomTypeName}
+                                    </span>
+                                  </div>
+                                  <div className="text-[9px] font-bold text-slate-500 flex items-center gap-2 whitespace-nowrap">
+                                    ₹
+                                    {ri.rate.toLocaleString(undefined, {
+                                      maximumFractionDigits: 0,
+                                    })}{" "}
+                                    × {ri.elapsed} / {ri.nights} Night
+                                    {ri.nights !== 1 ? "s" : ""}
+                                    {ri.bookingId === booking.id && (
+                                      <span className="text-[7px] font-black text-indigo-400 bg-indigo-400/10 px-1 rounded uppercase tracking-[0.1em] border border-indigo-400/20">
+                                        Active
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-right mt-0.5">
+                                    <span className="text-xs font-black text-slate-200 tabular-nums block">
+                                      ₹{ri.total.toLocaleString()}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                            Stay Total (Incl. Tax)
-                          </span>
                         </div>
-                        <span className="text-xs font-bold text-slate-200 tabular-nums">
-                          ₹{roomBaseTotal.toLocaleString()}
-                        </span>
                       </div>
+                      {/* Sub-text moved into revenue block above */}
+
                       {booking.discount && (
                         <div className="flex justify-between items-center bg-rose-500/10 p-3 rounded-2xl border border-rose-500/20">
                           <div className="flex items-center gap-3">
@@ -3704,9 +3884,13 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           Audit Stream
                         </p>
                         <div className="space-y-2">
-                          {(booking.payments || [])
+                          {stayAllPayments
                             .slice()
-                            .reverse()
+                            .sort(
+                              (a, b) =>
+                                new Date(b.timestamp).getTime() -
+                                new Date(a.timestamp).getTime(),
+                            )
                             .slice(0, 3)
                             .map((p) => (
                               <div
@@ -3777,12 +3961,14 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     <div className="flex items-center justify-between mb-4 px-2">
                       <div className="flex items-center gap-3">
                         <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">
-                          Folio Entries ({booking.folio?.length || 0})
+                          Stay Folio Entries ({stayAllFolioItems.length})
                         </span>
                       </div>
                       <div className="flex gap-2">
                         {Array.from(
-                          new Set(booking.folio?.map((f) => f.category) || []),
+                          new Set(
+                            stayAllFolioItems.map((f) => f.category) || [],
+                          ),
                         ).map((cat) => (
                           <div
                             key={cat}
@@ -3798,8 +3984,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     </div>
 
                     <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-3 custom-scrollbar-dark pb-4">
-                      {booking.folio && booking.folio.length > 0 ? (
-                        [...booking.folio]
+                      {stayAllFolioItems && stayAllFolioItems.length > 0 ? (
+                        [...stayAllFolioItems]
                           .sort(
                             (a, b) =>
                               new Date(b.timestamp).getTime() -
@@ -3807,7 +3993,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           )
                           .map((item) => (
                             <div
-                              key={item.id}
+                              key={`${item.id}-${item.sourceBookingId}`}
                               className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/[0.08] transition-all group/item shadow-sm"
                             >
                               <div className="flex items-center gap-4">
@@ -3822,11 +4008,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                     <Zap className="w-5 h-5" />
                                   )}
                                 </div>
-                                <div>
-                                  <p className="text-sm font-bold text-slate-100 uppercase tracking-tight">
+                                <div className="max-w-[200px] md:max-w-md">
+                                  <p className="text-sm font-bold text-slate-100 uppercase tracking-tight truncate">
                                     {item.description}
                                   </p>
-                                  <div className="flex items-center gap-2 mt-0.5">
+                                  <div className="flex items-center gap-2 mt-0.5 whitespace-nowrap overflow-hidden">
                                     <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest tabular-nums">
                                       {new Date(item.timestamp).toLocaleString(
                                         undefined,
@@ -3839,6 +4025,18 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                       )}
                                     </p>
                                     <span className="w-1 h-1 bg-white/10 rounded-full"></span>
+                                    {allStayBookings.length > 1 && (
+                                      <>
+                                        <span className="text-[7px] font-black text-white/40 uppercase tracking-widest border border-white/10 px-1 rounded">
+                                          Room #
+                                          {allStayBookings.find(
+                                            (b) =>
+                                              b.id === item.sourceBookingId,
+                                          )?.roomNumber || "?"}
+                                        </span>
+                                        <span className="w-1 h-1 bg-white/10 rounded-full"></span>
+                                      </>
+                                    )}
                                     <span className="text-[9px] font-black text-indigo-400/80 uppercase">
                                       {item.category}
                                     </span>
@@ -3861,8 +4059,15 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                     onClick={() => {
                                       if (!canEdit) return;
                                       if (item.isPaid) {
+                                        const targetBooking =
+                                          allStayBookings.find(
+                                            (b) =>
+                                              b.id === item.sourceBookingId,
+                                          );
+                                        if (!targetBooking) return;
+
                                         const newFolio = (
-                                          booking.folio || []
+                                          targetBooking.folio || []
                                         ).map((f) =>
                                           f.id === item.id
                                             ? {
@@ -3873,7 +4078,18 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                               }
                                             : f,
                                         );
-                                        onUpdateFolio?.(booking.id, newFolio);
+
+                                        if (onUpdateBooking) {
+                                          onUpdateBooking({
+                                            ...targetBooking,
+                                            folio: newFolio,
+                                          });
+                                        } else {
+                                          onUpdateFolio?.(
+                                            targetBooking.id,
+                                            newFolio,
+                                          );
+                                        }
                                       } else {
                                         setTargetFolioItem(item);
                                         setPaymentAmount(
@@ -4220,7 +4436,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         Extra Adults
                       </p>
                       <p className="text-sm font-bold text-slate-800">
-                        {booking.extraAdults || 0} Adults Added
+                        {localExtraAdults} Adults Added
                       </p>
                     </div>
                   </div>
@@ -4232,8 +4448,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       <Minus className="w-4 h-4" />
                     </button>
                     <span className="w-8 text-center text-sm font-black text-slate-700 tabular-nums">
-                      {booking.extraAdults || 0}
+                      {localExtraAdults}
                     </span>
+
                     <button
                       onClick={() => handleExtraOccupancyChange("adults", 1)}
                       className="p-2 text-slate-400 hover:text-emerald-500 transition-all active:scale-75"
@@ -4254,7 +4471,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         Extra Children
                       </p>
                       <p className="text-sm font-bold text-slate-800">
-                        {booking.extraChildren || 0} Children Added
+                        {localExtraChildren} Children Added
                       </p>
                     </div>
                   </div>
@@ -4266,8 +4483,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       <Minus className="w-4 h-4" />
                     </button>
                     <span className="w-8 text-center text-sm font-black text-slate-700 tabular-nums">
-                      {booking.extraChildren || 0}
+                      {localExtraChildren}
                     </span>
+
                     <button
                       onClick={() => handleExtraOccupancyChange("children", 1)}
                       className="p-2 text-slate-400 hover:text-emerald-500 transition-all active:scale-75"
