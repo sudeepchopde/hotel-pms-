@@ -22,6 +22,7 @@ import LoginPage from "./components/LoginPage";
 import UserManagement from "./components/UserManagement";
 import SettingsLayout from "./components/SettingsLayout";
 import PaymentSettingsPanel from "./components/PaymentSettingsPanel";
+import EmailParsingView from "./components/EmailParsingView";
 // import NotificationsPanel from './components/NotificationsPanel'; // Removed
 import {
   LayoutDashboard,
@@ -50,6 +51,7 @@ import {
   Brush,
   ChevronRight,
   CreditCard,
+  Inbox,
 } from "lucide-react";
 import {
   Hotel,
@@ -179,6 +181,12 @@ const DEFAULT_NAV_ITEMS = [
     icon: FileBadge,
     label: "Police Compliance",
     color: "text-amber-400",
+  },
+  {
+    id: "email_parsing",
+    icon: Inbox,
+    label: "Email Parsing",
+    color: "text-purple-400",
   },
   {
     id: "security",
@@ -1469,6 +1477,19 @@ const App: React.FC = () => {
             roomTypes={roomTypes}
             syncEvents={syncEvents}
             setSyncEvents={setSyncEvents}
+          />
+        )}
+        {activeTab === "email_parsing" && (
+          <EmailParsingView
+            bookings={
+              syncEvents.filter((e) => e.type === "booking") as Booking[]
+            }
+            roomTypes={roomTypes}
+            propertySettings={propertySettings}
+            onSelectBooking={(b) => {
+              setActiveTab("frontdesk");
+              // Small delay for tab switch then trigger booking open via syncEvents
+            }}
           />
         )}
         {activeTab === "analysis" && <AnalysisView />}

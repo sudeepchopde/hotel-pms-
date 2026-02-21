@@ -860,7 +860,8 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
             pax=parsed_data.get('pax', 2),
             is_auto_generated=True,
             external_reference_id=external_ref,
-            payments=initial_payments
+            payments=initial_payments,
+            guest_details={"name": parsed_data.get('guestName', 'Parsed Guest')}
         )
 
         
@@ -1185,6 +1186,11 @@ def db_booking_to_pydantic(db_booking):
                 return {}
         return {}
     
+    # Ensure guest name is always populated inside guestDetails
+    guest_details_dict = safe_json_dict(db_booking.guest_details)
+    if not guest_details_dict.get('name') and db_booking.guest_name:
+        guest_details_dict['name'] = db_booking.guest_name
+
     return Booking(
         id=db_booking.id,
         roomTypeId=db_booking.room_type_id,
@@ -1199,7 +1205,7 @@ def db_booking_to_pydantic(db_booking):
         channelSync=safe_json_dict(db_booking.channel_sync),
         amount=db_booking.amount,
         rejectionReason=db_booking.rejection_reason,
-        guestDetails=safe_json_dict(db_booking.guest_details),
+        guestDetails=guest_details_dict,
         numberOfRooms=db_booking.number_of_rooms,
         pax=db_booking.pax,
         accessoryGuests=safe_json_list(db_booking.accessory_guests),

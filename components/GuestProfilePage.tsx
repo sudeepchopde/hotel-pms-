@@ -235,7 +235,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       arrivalPort: "Delhi (DEL)",
     };
     if (booking.guestDetails) {
-      return { ...defaultDetails, ...booking.guestDetails };
+      const merged = { ...defaultDetails, ...booking.guestDetails };
+      // Ensure guest name always comes from booking.guestName when guestDetails.name is empty/null
+      if (!merged.name && booking.guestName) {
+        merged.name = booking.guestName;
+      }
+      return merged;
     }
     return defaultDetails;
   });
@@ -1731,34 +1736,51 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     const foodGstRate = propertySettings?.foodGstRate || 5.0;
     const otherGstRate = propertySettings?.otherGstRate || 18.0;
 
-    let roomDiscountAmount = 0;
-    if (booking.discount) {
-      if (booking.discount.type === "percentage") {
-        roomDiscountAmount = roomBaseTotal * (booking.discount.value / 100);
-      } else {
-        roomDiscountAmount = booking.discount.value;
+    // --- Room-wise breakdown ---
+    let totalRoomBase = 0;
+    let totalRoomTax = 0;
+    const roomRows = stayRoomRevenueItems.map((ri) => {
+      let roomAmount = ri.total;
+      let segDiscountAmount = 0;
+      if (ri.discount) {
+        if (ri.discount.type === "percentage") {
+          segDiscountAmount = roomAmount * (ri.discount.value / 100);
+        } else {
+          segDiscountAmount = ri.discount.value;
+        }
       }
-    }
+      const discounted = roomAmount - segDiscountAmount;
+      const segBase = discounted / (1 + roomGstRate / 100);
+      const segTax = discounted - segBase;
+      totalRoomBase += segBase;
+      totalRoomTax += segTax;
 
-    const discountedRoomTotal = roomBaseTotal - roomDiscountAmount;
+      return {
+        roomNumber: ri.roomNumber,
+        roomTypeName: ri.roomTypeName,
+        nights: ri.elapsed,
+        rate: ri.rate,
+        total: roomAmount,
+        base: segBase,
+        tax: segTax,
+        discount: ri.discount,
+        discountAmount: segDiscountAmount,
+        isCurrent: ri.bookingId === booking.id,
+      };
+    });
 
-    // Room is now inclusive of taxes (calculated from the final discounted amount)
-    const roomBase = discountedRoomTotal / (1 + roomGstRate / 100);
-    const roomTax = discountedRoomTotal - roomBase;
-
+    // --- Folio rows (stay-wide) ---
     let totalFolioTax = 0;
     let totalFolioBase = 0;
 
-    const folioRows = (booking.folio || []).map((item) => {
+    const folioRows = stayAllFolioItems.map((item) => {
       const rate = item.category === "F&B" ? foodGstRate : otherGstRate;
       let base, tax;
 
       if (item.isInclusive) {
-        // Derive base from total (inclusive)
         base = item.amount / (1 + rate / 100);
         tax = item.amount - base;
       } else {
-        // Add tax on top of base (exclusive)
         base = item.amount;
         tax = item.amount * (rate / 100);
       }
@@ -1771,15 +1793,26 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         base,
         tax,
         rate,
-        displayAmount: base + tax, // Total for this item
+        displayAmount: base + tax,
       };
     });
 
-    const netSubtotal = roomBase + totalFolioBase;
-    const totalTax = roomTax + totalFolioTax;
+    const netSubtotal = totalRoomBase + totalFolioBase;
+    const totalTax = totalRoomTax + totalFolioTax;
     const finalNetInvoiceTotal = netSubtotal + totalTax;
     const cgst = totalTax / 2;
     const sgst = totalTax / 2;
+
+    // --- Stay period (earliest checkin to latest checkout across all segments) ---
+    const allCheckIns = allStayBookings.map((b) => new Date(b.checkIn));
+    const allCheckOuts = allStayBookings.map((b) => new Date(b.checkOut));
+    const earliestCheckIn = new Date(
+      Math.min(...allCheckIns.map((d) => d.getTime())),
+    );
+    const latestCheckOut = new Date(
+      Math.max(...allCheckOuts.map((d) => d.getTime())),
+    );
+    const hasMultipleRooms = stayRoomRevenueItems.length > 1;
 
     const invoiceHtml = `
       <html>
@@ -1832,6 +1865,14 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               <div class="text-right">
                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Stay Information</p>
                 <div class="space-y-4">
+                  ${
+                    hasMultipleRooms
+                      ? `
+                  <div class="flex justify-between text-xs font-bold">
+                    <span class="text-slate-400 uppercase">Rooms</span>
+                    <span class="text-slate-900 font-black">${stayRoomRevenueItems.map((r) => "#" + r.roomNumber).join(" → ")}</span>
+                  </div>`
+                      : `
                   <div class="flex justify-between text-xs font-bold">
                     <span class="text-slate-400 uppercase">Room No</span>
                     <span class="text-slate-900 font-black">#${booking.roomNumber || "TBD"}</span>
@@ -1839,14 +1880,15 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   <div class="flex justify-between text-xs font-bold">
                     <span class="text-slate-400 uppercase">Room Type</span>
                     <span class="text-slate-900 font-black">${roomType?.name || "Standard"}</span>
-                  </div>
+                  </div>`
+                  }
                   <div class="flex justify-between text-xs font-bold">
                     <span class="text-slate-400 uppercase">Check-In</span>
-                    <span class="text-slate-900 font-black">${new Date(booking.checkIn).toLocaleDateString()}</span>
+                    <span class="text-slate-900 font-black">${earliestCheckIn.toLocaleDateString()}</span>
                   </div>
                   <div class="flex justify-between text-xs font-bold">
                     <span class="text-slate-400 uppercase">Check-Out</span>
-                    <span class="text-slate-900 font-black">${new Date(booking.checkOut).toLocaleDateString()}</span>
+                    <span class="text-slate-900 font-black">${latestCheckOut.toLocaleDateString()}</span>
                   </div>
                 </div>
               </div>
@@ -1862,41 +1904,46 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
+                ${roomRows
+                  .map(
+                    (seg) => `
                 <tr>
                   <td class="py-6">
-                    <p class="text-sm font-black text-slate-900 uppercase">Room Rent</p>
-                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">Accommodation (Inclusive of ${roomGstRate}% GST)</p>
+                    <p class="text-sm font-black text-slate-900 uppercase">Room Rent — #${seg.roomNumber} ${seg.roomTypeName}</p>
+                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">${!seg.isCurrent && hasMultipleRooms ? '<span class="text-amber-500 font-black">[PREVIOUS] </span>' : ""}Accommodation (Inclusive of ${roomGstRate}% GST)</p>
                   </td>
-                  <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">${elapsedNights}</td>
-                  <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${roomRate.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                  <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${roomBaseTotal.toLocaleString()}</td>
+                  <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">${seg.nights}</td>
+                  <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${seg.rate.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                  <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${seg.total.toLocaleString()}</td>
                 </tr>
                 ${
-                  booking.discount
+                  seg.discountAmount > 0
                     ? `
                 <tr>
                   <td class="py-6">
-                    <p class="text-sm font-black text-rose-600 uppercase">Discount</p>
-                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">${booking.discount.type === "percentage" ? `${booking.discount.value}% Applied` : "Fixed Deduction"}</p>
+                    <p class="text-sm font-black text-rose-600 uppercase">Discount on #${seg.roomNumber}</p>
+                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">${seg.discount?.type === "percentage" ? `${seg.discount?.value}% Applied` : "Fixed Deduction"}</p>
                   </td>
                   <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">-</td>
-                  <td class="py-6 text-right text-sm font-black text-rose-600 tabular-nums">-₹${roomDiscountAmount.toLocaleString()}</td>
-                  <td class="py-6 text-right text-sm font-black text-rose-600 tabular-nums">-₹${roomDiscountAmount.toLocaleString()}</td>
+                  <td class="py-6 text-right text-sm font-black text-rose-600 tabular-nums">-₹${seg.discountAmount.toLocaleString()}</td>
+                  <td class="py-6 text-right text-sm font-black text-rose-600 tabular-nums">-₹${seg.discountAmount.toLocaleString()}</td>
                 </tr>
                 `
                     : ""
-                }
+                }`,
+                  )
+                  .join("")}
                 ${folioRows
                   .map(
                     (item) => `
                   <tr>
                     <td class="py-6">
                       <p class="text-sm font-black text-slate-900 uppercase">${item.description}</p>
-                      <p class="text-[10px] font-bold text-slate-400 mt-0.5">${item.category} Service (${item.rate}% GST)</p>
+                      <p class="text-[10px] font-bold text-slate-400 mt-0.5">${item.category} (${item.isInclusive ? "Incl." : "+"} ${item.rate}% GST)</p>
                     </td>
                     <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">1</td>
-                    <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${item.base.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${item.base.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   </tr>
                 `,
                   )
