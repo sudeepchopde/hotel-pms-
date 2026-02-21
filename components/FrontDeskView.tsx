@@ -489,33 +489,105 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
           e.status === "CheckedOut" ||
           e.status === "Rejected"),
     ) as Booking[];
-    return bookings.map((b) => {
+
+    // Two-pass: first identify already-assigned, then assign unassigned to non-conflicting rooms
+    const result: Booking[] = [];
+    // Track which rooms are occupied for which date ranges
+    const roomOccupancy: Record<
+      string,
+      { checkIn: string; checkOut: string }[]
+    > = {};
+
+    // Pass 1: process bookings with valid room assignments
+    const unassigned: { booking: Booking; rt: RoomType }[] = [];
+    bookings.forEach((b) => {
       const rt = roomTypes.find((t) => t.id === b.roomTypeId);
-      if (!rt) return b;
+      if (!rt) {
+        result.push(b);
+        return;
+      }
 
       const availableRooms =
         rt.roomNumbers && rt.roomNumbers.length > 0 ? rt.roomNumbers : [];
-
-      // Check if booking has a room number AND if it's still valid for this room type
       const hasValidRoom =
         b.roomNumber &&
         b.roomNumber !== "Unassigned" &&
         availableRooms.includes(b.roomNumber);
 
-      if (hasValidRoom) return b;
-
-      // Room number is missing or no longer valid for this room type - reassign
-      if (availableRooms.length === 0)
-        return { ...b, roomNumber: "Unassigned" };
-
-      const hash = b.id
-        .split("")
-        .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const roomIndex = hash % availableRooms.length;
-      const assignedNum = availableRooms[roomIndex];
-      return { ...b, roomNumber: assignedNum };
+      if (hasValidRoom) {
+        result.push(b);
+        if (!roomOccupancy[b.roomNumber!]) roomOccupancy[b.roomNumber!] = [];
+        roomOccupancy[b.roomNumber!].push({
+          checkIn: b.checkIn,
+          checkOut: b.checkOut,
+        });
+      } else {
+        unassigned.push({ booking: b, rt });
+      }
     });
+
+    // Pass 2: assign unassigned bookings to first non-conflicting room
+    unassigned.forEach(({ booking: b, rt }) => {
+      const availableRooms =
+        rt.roomNumbers && rt.roomNumbers.length > 0 ? rt.roomNumbers : [];
+      if (availableRooms.length === 0) {
+        result.push({ ...b, roomNumber: "Unassigned" });
+        return;
+      }
+
+      // Find first room with no date overlap
+      const freeRoom = availableRooms.find((room) => {
+        const occupancies = roomOccupancy[room] || [];
+        return !occupancies.some(
+          (occ) => b.checkIn < occ.checkOut && b.checkOut > occ.checkIn,
+        );
+      });
+
+      const assignedRoom = freeRoom || availableRooms[0]; // fallback to first room if all are busy
+      if (!roomOccupancy[assignedRoom]) roomOccupancy[assignedRoom] = [];
+      roomOccupancy[assignedRoom].push({
+        checkIn: b.checkIn,
+        checkOut: b.checkOut,
+      });
+      result.push({ ...b, roomNumber: assignedRoom });
+    });
+
+    return result;
   }, [syncEvents, roomTypes]);
+
+  // Persist auto-assigned rooms to the database so other views (Guests, etc.) show the correct room
+  const persistedAutoAssignRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    assignedBookings.forEach((b) => {
+      // Find the original booking from syncEvents
+      const original = syncEvents.find((e) => e.id === b.id) as
+        | Booking
+        | undefined;
+      if (!original) return;
+      const wasUnassigned =
+        !original.roomNumber || original.roomNumber === "Unassigned";
+      const nowAssigned = b.roomNumber && b.roomNumber !== "Unassigned";
+      if (
+        wasUnassigned &&
+        nowAssigned &&
+        !persistedAutoAssignRef.current.has(b.id)
+      ) {
+        persistedAutoAssignRef.current.add(b.id);
+        // Persist the room assignment silently
+        updateBooking({ ...b, roomNumber: b.roomNumber })
+          .then((updated) => {
+            // Update syncEvents so the source of truth is consistent
+            setSyncEvents((prev) =>
+              prev.map((e) => (e.id === updated.id ? { ...e, ...updated } : e)),
+            );
+          })
+          .catch(() => {
+            // Remove from persisted set so it can retry
+            persistedAutoAssignRef.current.delete(b.id);
+          });
+      }
+    });
+  }, [assignedBookings, syncEvents]);
 
   // Search results
   const searchResults = useMemo(() => {
