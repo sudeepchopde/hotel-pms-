@@ -82,23 +82,24 @@ const NotificationsView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
 
-  const loadNotifications = useCallback(async () => {
-    setLoading(true);
+  const loadNotifications = useCallback(async (isInitial = false) => {
+    if (isInitial) setLoading(true);
     try {
       const data = await fetchNotifications();
       setNotifications(data);
     } catch (error) {
       console.error("Failed to load notifications:", error);
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadNotifications();
+    loadNotifications(true);
 
-    // Refresh every 30 seconds
-    const interval = setInterval(loadNotifications, 30000);
+    // Refresh every 30 seconds in background
+    const interval = setInterval(() => loadNotifications(false), 30000);
+
     return () => clearInterval(interval);
   }, [loadNotifications]);
 

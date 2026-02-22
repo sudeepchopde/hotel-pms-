@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
+import time
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
 from fpdf import FPDF
@@ -242,6 +243,13 @@ async def startup_db():
     except Exception as e:
         print(f"=== STARTUP: [FAIL] Exception in _load_db_imports: {e} ===")
         traceback.print_exc()
+    
+    # Debug: List all registered routes
+    print("=== REGISTERED ROUTES ===")
+    for route in app.routes:
+        if hasattr(route, 'path'):
+            print(f"Route: {route.path} -> {route.methods if hasattr(route, 'methods') else ''}")
+    print("=========================")
 
 @app.get("/ping")
 def ping():
@@ -2031,6 +2039,97 @@ def generate_booking_report(
     
     return FileResponse(report_path, filename=f"Booking_List_{datetime.now().strftime('%Y%m%d')}.pdf", media_type='application/pdf')
 
+def generate_upfront_folio_for_booking(booking: Booking, db) -> list:
+    """Generates the whole stay's room logic from checkIn to checkOut as folio items."""
+    import uuid
+    from datetime import datetime, timedelta
+    from backend.db_models import RoomTypeDB, PropertySettingsDB
+    
+    existing_folio = [f.dict() for f in booking.folio] if booking.folio else []
+    
+    clean_folio = []
+    for f in existing_folio:
+        desc = f.get('description', '')
+        if "Daily Room Rent" in desc or "Extra Adult Charge" in desc or "Extra Child Charge" in desc or "Extra Bed Charge" in desc:
+            continue
+        clean_folio.append(f)
+        
+    try:
+        prop_res = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == 'default').first()
+        prop_gst = prop_res.gst_rate if prop_res and prop_res.gst_rate is not None else 12.0
+        
+        rt_db = db.query(RoomTypeDB).filter(RoomTypeDB.id == booking.roomTypeId).first()
+        if not rt_db:
+            return existing_folio
+            
+        d_start = datetime.strptime(booking.checkIn, '%Y-%m-%d').date()
+        d_end = datetime.strptime(booking.checkOut, '%Y-%m-%d').date()
+        total_nights = (d_end - d_start).days
+        if total_nights < 1: total_nights = 1
+        
+        nightly_total_incl = (booking.amount or 0) / total_nights
+        if nightly_total_incl <= 0: nightly_total_incl = rt_db.base_price or 0
+        
+        e_adult_c_incl = (booking.extraAdults or 0) * (rt_db.extra_adult_rate or 0)
+        e_child_c_incl = (booking.extraChildren or 0) * (rt_db.extra_child_rate or 0)
+        e_bed_c_incl = (booking.extraBeds or 0) * (rt_db.extra_bed_charge or 0)
+        
+        extras_sum_incl = e_adult_c_incl + e_child_c_incl + e_bed_c_incl
+        room_only_incl = nightly_total_incl - extras_sum_incl
+        if room_only_incl < 0:
+            room_only_incl = nightly_total_incl
+            e_adult_c_incl = e_child_c_incl = e_bed_c_incl = 0
+            
+        curr_d = d_start
+        while curr_d < d_end:
+            date_key = curr_d.strftime('%Y-%m-%d')
+            
+            clean_folio.append({
+                "id": f"folio-room-{str(uuid.uuid4())[:8]}",
+                "description": f"Daily Room Rent ({date_key})",
+                "amount": round(room_only_incl, 2),
+                "category": "Room",
+                "isPaid": False,
+                "isInclusive": True,
+                "date": date_key
+            })
+            if e_adult_c_incl > 0:
+                clean_folio.append({
+                    "id": f"folio-ext-a-{str(uuid.uuid4())[:8]}",
+                    "description": f"Extra Adult Charge ({date_key})",
+                    "amount": round(e_adult_c_incl, 2),
+                    "category": "Room",
+                    "isPaid": False,
+                    "isInclusive": True,
+                    "date": date_key
+                })
+            if e_child_c_incl > 0:
+                clean_folio.append({
+                    "id": f"folio-ext-c-{str(uuid.uuid4())[:8]}",
+                    "description": f"Extra Child Charge ({date_key})",
+                    "amount": round(e_child_c_incl, 2),
+                    "category": "Room",
+                    "isPaid": False,
+                    "isInclusive": True,
+                    "date": date_key
+                })
+            if e_bed_c_incl > 0:
+                clean_folio.append({
+                    "id": f"folio-ext-b-{str(uuid.uuid4())[:8]}",
+                    "description": f"Extra Bed Charge ({date_key})",
+                    "amount": round(e_bed_c_incl, 2),
+                    "category": "Room",
+                    "isPaid": False,
+                    "isInclusive": True,
+                    "date": date_key
+                })
+            curr_d += timedelta(days=1)
+            
+        return clean_folio
+    except Exception as e:
+        logger.error(f"Error generating upfront folio: {e}")
+        return existing_folio
+
 @app.post("/api/bookings")
 def create_booking(booking: Booking, db=Depends(get_db)):
     db_available = USE_DATABASE()
@@ -2060,7 +2159,7 @@ def create_booking(booking: Booking, db=Depends(get_db)):
                 guest_details=booking.guestDetails.dict() if booking.guestDetails else None,
                 number_of_rooms=booking.numberOfRooms or 1,
                 pax=booking.pax or 1,
-                folio=[f.dict() for f in booking.folio] if booking.folio else [],
+                folio=generate_upfront_folio_for_booking(booking, db),
                 discount=booking.discount,
                 extra_adults=booking.extraAdults or 0,
                 extra_children=booking.extraChildren or 0,
@@ -2147,7 +2246,7 @@ def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
                     extra_beds=booking.extraBeds,
                     special_requests=booking.specialRequests,
                     is_vip=booking.isVIP or False,
-                    folio=[f.dict() for f in booking.folio] if booking.folio else [],
+                    folio=generate_upfront_folio_for_booking(booking, db),
                     discount=booking.discount,
                     extra_adults=booking.extraAdults or 0,
                     extra_children=booking.extraChildren or 0,
@@ -2287,7 +2386,7 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
             db_booking.is_vip = booking.isVIP or False
             db_booking.is_settled = booking.isSettled or False
             db_booking.invoice_number = booking.invoiceNumber
-            db_booking.folio = [f.dict() for f in booking.folio] if booking.folio else []
+            db_booking.folio = generate_upfront_folio_for_booking(booking, db)
             db_booking.payments = [p.dict() for p in booking.payments] if booking.payments else []
             db_booking.discount = booking.discount
             
@@ -2720,9 +2819,6 @@ def checkout_booking(booking_id: str, db=Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Checkout failed: {str(e)}")
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 # ========== NOTIFICATIONS API ==========
 import uuid
@@ -2952,7 +3048,7 @@ def audit_late_checkouts():
 
 def audit_daily_charges():
     """Post daily room and extra person/bed charges to folio for in-house guests."""
-    import os
+    return # DISABLED: Charges are now posted upfront via generate_upfront_folio_for_booking
     import json
     import uuid
     import time
@@ -3101,15 +3197,34 @@ def audit_daily_charges():
     except Exception as e:
         print(f"Error in daily charge audit: {e}")
 
+# Automated Audit Throttling
+LAST_AUDIT_RUN = 0
+AUDIT_COOLDOWN = 1800 # 30 minutes
+
+def run_audits():
+    """Trigger automated audits with cooldown to prevent database overload."""
+    global LAST_AUDIT_RUN
+    now = time.time()
+    if now - LAST_AUDIT_RUN < AUDIT_COOLDOWN:
+        return
+    
+    LAST_AUDIT_RUN = now
+    print(">>> Starting background property audits...")
+    try:
+        audit_no_shows()
+        audit_late_checkouts()
+        audit_daily_charges()
+        print(">>> Audits completed.")
+    except Exception as e:
+        print(f">>> Audits failed: {e}")
+
 @app.get("/api/notifications")
-def get_notifications(unread_only: bool = False, type_filter: str = None, limit: int = 50, history_mode: bool = False):
+def get_notifications(background_tasks: BackgroundTasks, unread_only: bool = False, type_filter: str = None, limit: int = 50, history_mode: bool = False):
     """Get notifications with optional filters. history_mode=True fetches dismissed notifications."""
     import os
     
-    # Run audit logic on every fetch to keep alerts fresh
-    audit_no_shows()
-    audit_late_checkouts()
-    audit_daily_charges()
+    # Run audit logic in background with throttling
+    background_tasks.add_task(run_audits)
     
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
@@ -3170,18 +3285,16 @@ def get_notifications(unread_only: bool = False, type_filter: str = None, limit:
         return []
 
 @app.get("/api/notifications/unread-count")
-def get_unread_notification_count():
+def get_unread_notification_count(background_tasks: BackgroundTasks):
     """Get count of unread notifications"""
     import os
+    
+    # Run audits periodically in background
+    background_tasks.add_task(run_audits)
     
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         return {"count": 0}
-    
-    # Run audits periodically to keep unread counts updated
-    audit_no_shows()
-    audit_late_checkouts()
-    audit_daily_charges()
     
     try:
         from sqlalchemy import create_engine, text
@@ -3500,5 +3613,5 @@ if __name__ == "__main__":
     import uvicorn
     # Use PORT env var for Render compat
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=port, reload=False)
 
