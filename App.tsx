@@ -1306,12 +1306,11 @@ const App: React.FC = () => {
             className={`flex items-center min-w-0 transition-all ${isSidebarCollapsed ? "justify-center" : ""}`}
           >
             {isSidebarCollapsed ? (
-              <div className="w-10 h-10 overflow-hidden relative rounded-lg bg-slate-800/50 shrink-0">
+              <div className="w-12 h-12 overflow-hidden relative rounded-xl bg-slate-800/50 shrink-0 flex items-center justify-center border border-white/5 shadow-inner p-1">
                 <img
-                  src="/logo.png"
+                  src="/icon.png"
                   alt="Hotel Sathi"
-                  className="absolute top-0 left-0 h-full w-auto max-w-none"
-                  style={{ objectFit: "cover", objectPosition: "left" }}
+                  className="w-full h-full object-contain"
                 />
               </div>
             ) : (
