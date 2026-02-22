@@ -84,16 +84,25 @@ def generate_invoice_pdf(booking_data, property_settings, invoice_num, filepath)
     actual_room_tax = 0
 
     # Stay History consolidation
-    stay_history = booking_data.get('stayHistory', [])
-    if not stay_history:
-        stay_history = [{
-            "roomNumber": booking_data.get('roomNumber'),
-            "roomTypeName": booking_data.get('roomTypeName'),
-            "checkIn": booking_data.get('checkIn'),
-            "checkOut": booking_data.get('checkOut'),
-            "amount": booking_data.get('amount'),
-            "discount": booking_data.get('discount')
-        }]
+    # Check if folio already contains granular room charges to avoid doubling up
+    has_granular_room_charges = False
+    for item in booking_data.get('folio', []):
+        if any(tag in item.get('description', '') for tag in ['Daily Room Rent', 'Late Checkout Charge', 'Late Checkout Auto-Charge']):
+            has_granular_room_charges = True
+            break
+
+    stay_history = []
+    if not has_granular_room_charges:
+        stay_history = booking_data.get('stayHistory', [])
+        if not stay_history:
+            stay_history = [{
+                "roomNumber": booking_data.get('roomNumber'),
+                "roomTypeName": booking_data.get('roomTypeName'),
+                "checkIn": booking_data.get('checkIn'),
+                "checkOut": booking_data.get('checkOut'),
+                "amount": booking_data.get('amount'),
+                "discount": booking_data.get('discount')
+            }]
 
     for segment in stay_history:
         check_in = datetime.strptime(segment['checkIn'], '%Y-%m-%d')
@@ -135,21 +144,30 @@ def generate_invoice_pdf(booking_data, property_settings, invoice_num, filepath)
             pdf.cell(40, 10, f"-{seg_disc_base:,.2f}", 1, 1, 'R')
             total_base -= seg_disc_base
 
-    # Folio items (Exclusive logic - tax added later)
+    # Folio items
     total_folio_tax = 0
     for item in booking_data.get('folio', []):
         cat = item.get('category', 'Other')
         f_rate = 18
         if cat == 'F&B': f_rate = property_settings.get('foodGstRate', 5)
         elif cat == 'Laundry': f_rate = property_settings.get('otherGstRate', 18)
+        elif cat == 'Room': f_rate = gst_rate
         else: f_rate = property_settings.get('otherGstRate', 18)
         
+        amount = item.get('amount', 0)
+        if item.get('isInclusive'):
+            base = amount / (1 + f_rate / 100)
+            tax = amount - base
+        else:
+            base = amount
+            tax = amount * (f_rate / 100)
+
         pdf.cell(100, 10, f" {item['description']} ({cat})", 1)
         pdf.cell(20, 10, '1', 1, 0, 'C')
-        pdf.cell(30, 10, f"{item['amount']:,.2f}", 1, 0, 'R')
-        pdf.cell(40, 10, f"{item['amount']:,.2f}", 1, 1, 'R')
-        total_base += item['amount']
-        total_folio_tax += item['amount'] * (f_rate / 100)
+        pdf.cell(30, 10, f"{base:,.2f}", 1, 0, 'R')
+        pdf.cell(40, 10, f"{base:,.2f}", 1, 1, 'R')
+        total_base += base
+        total_folio_tax += tax
         
     # --- Totals ---
     pdf.ln(5)

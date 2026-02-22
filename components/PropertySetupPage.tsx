@@ -84,6 +84,8 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
     otherGstRate: 18.0,
     geminiApiKey: "",
     loyaltyTiers: [],
+    checkInTime: "12:00",
+    checkOutTime: "11:00",
   });
 
   useEffect(() => {
@@ -455,6 +457,45 @@ const PropertySetupPage: React.FC<PropertySetupPageProps> = ({
                   placeholder="contact@property.com"
                   className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all"
                 />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-slate-100">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                  Standard Check-in Time
+                </label>
+                <input
+                  type="time"
+                  value={profileFormData.checkInTime || "12:00"}
+                  onChange={(e) =>
+                    setProfileFormData({
+                      ...profileFormData,
+                      checkInTime: e.target.value,
+                    })
+                  }
+                  className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">
+                  Standard Check-out Time
+                </label>
+                <input
+                  type="time"
+                  value={profileFormData.checkOutTime || "11:00"}
+                  onChange={(e) =>
+                    setProfileFormData({
+                      ...profileFormData,
+                      checkOutTime: e.target.value,
+                    })
+                  }
+                  className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all"
+                />
+                <p className="text-[10px] text-slate-400 mt-1 ml-1 font-medium">
+                  * Late checkout past this time will automatically incur next
+                  day room charges.
+                </p>
               </div>
             </div>
           </section>

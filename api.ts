@@ -276,6 +276,20 @@ export const dismissNotification = async (
   });
 };
 
+export const handleNotificationAction = async (
+  notificationId: string,
+  action: "yes" | "no",
+): Promise<{ status: string; action: string }> => {
+  const response = await fetch(
+    `${API_BASE_URL}/notifications/${notificationId}/action?action=${action}`,
+    {
+      method: "POST",
+    },
+  );
+  if (!response.ok) throw new Error("Failed to handle notification action");
+  return response.json();
+};
+
 export const fetchRoomStatuses = async (): Promise<RoomStatus[]> => {
   const response = await fetch(`${API_BASE_URL}/room-status`);
   if (!response.ok) return [];

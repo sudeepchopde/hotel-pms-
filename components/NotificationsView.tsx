@@ -15,6 +15,7 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   dismissNotification,
+  handleNotificationAction,
 } from "../api";
 import { formatDate } from "../utils";
 
@@ -118,6 +119,16 @@ const NotificationsView: React.FC = () => {
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     } catch (error) {
       console.error("Failed to mark all as read:", error);
+    }
+  };
+
+  const handleAction = async (notificationId: string, action: "yes" | "no") => {
+    try {
+      await handleNotificationAction(notificationId, action);
+      // Remove from list or mark as read/dismissed
+      setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+    } catch (error) {
+      console.error("Failed to handle notification action:", error);
     }
   };
 
@@ -252,10 +263,36 @@ const NotificationsView: React.FC = () => {
                         </span>
                       )}
                       <span className="text-[10px] uppercase font-bold px-2 py-1 bg-white border border-slate-200 rounded-md text-slate-500">
-                        {notification.category}
+                        {notification.category === "late_checkout_approval"
+                          ? "Late Checkout"
+                          : notification.category}
                       </span>
                     </div>
                   )}
+
+                  {notification.category === "late_checkout_approval" &&
+                    !notification.isRead && (
+                      <div className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-100">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAction(notification.id, "yes");
+                          }}
+                          className="flex-1 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-100"
+                        >
+                          Yes, Add Charge
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAction(notification.id, "no");
+                          }}
+                          className="flex-1 px-4 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-50 transition-colors"
+                        >
+                          No, Give Leeway
+                        </button>
+                      </div>
+                    )}
                 </div>
 
                 {/* Actions */}

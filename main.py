@@ -2847,6 +2847,260 @@ def audit_no_shows():
     except Exception as e:
         print(f"Error in no-show audit: {e}")
 
+def audit_late_checkouts():
+    """Check for guests who are still checked in past their checkout time and create notification for approval."""
+    import os
+    import json
+    import uuid
+    import time
+    from datetime import datetime, timedelta, timezone
+    
+    db_url = get_db_url()
+    if not db_url: return
+    
+    try:
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.pool import NullPool
+        engine = create_engine(db_url, poolclass=NullPool)
+        
+        now = datetime.now()
+        today_str = now.strftime('%Y-%m-%d')
+        current_time_str = now.strftime('%H:%M')
+        
+        with engine.connect() as conn:
+            # 1. Get checkout time from property settings
+            prop_res = conn.execute(text("SELECT check_out_time FROM property_settings WHERE id = 'default'")).fetchone()
+            checkout_cutoff = prop_res[0] if prop_res and prop_res[0] else "11:00"
+            
+            # Only run if we are strictly past the cutoff time today
+            if current_time_str <= checkout_cutoff:
+                return
+            
+            # 2. Find Checked-In bookings where check_out <= today
+            # These guests are still in-house past their scheduled departure time
+            query = text("""
+                SELECT id, guest_name, check_in, check_out, amount, folio, room_number, room_type_id 
+                FROM bookings 
+                WHERE status = 'CheckedIn' AND check_out <= :today
+            """)
+            result = conn.execute(query, {"today": today_str})
+            late_bookings = result.fetchall()
+            
+            for b_id, guest_name, b_check_in, b_check_out, b_amount, b_folio, b_room_number, b_room_type_id in late_bookings:
+                # Prevent duplicate approval notifications for the same day
+                notif_check = conn.execute(text("""
+                    SELECT id FROM notifications 
+                    WHERE booking_id = :bid 
+                    AND category = 'late_checkout_approval' 
+                    AND created_at LIKE :date_prefix
+                """), {"bid": b_id, "date_prefix": f"{today_str}%"}).fetchone()
+                
+                if notif_check:
+                    continue
+
+                # Also check if already charged (fallback)
+                folio = b_folio or []
+                if isinstance(folio, str):
+                    folio = json.loads(folio)
+                
+                charge_tag = f"Late Checkout Charge ({today_str})"
+                # Prevent double-charging if the audit runs multiple times in the same day
+                if any(item.get('description') == charge_tag for item in folio):
+                    continue
+                
+                # Calculate daily rate (heuristic: total base amount / original nights)
+                try:
+                    d1 = datetime.strptime(b_check_in, '%Y-%m-%d')
+                    d2 = datetime.strptime(b_check_out, '%Y-%m-%d')
+                    nights = (d2 - d1).days
+                    if nights <= 0: nights = 1
+                    rate = (b_amount or 0) / nights
+                except:
+                    # Fallback to room type base price
+                    rt_res = conn.execute(text("SELECT base_price FROM room_types WHERE id = :rtid"), {"rtid": b_room_type_id}).fetchone()
+                    rate = rt_res[0] if rt_res else 0
+                
+                # Create a system notification to ask staff
+                notif_id = f"notif-lc-req-{str(uuid.uuid4())[:8]}"
+                now_iso = datetime.now(timezone.utc).isoformat()
+                msg = f"Guest {guest_name} (Room {b_room_number}) has not checked out by {checkout_cutoff}. Add late checkout charge of {rate}?"
+                
+                # Metadata for the action
+                metadata = {
+                    "actionType": "approve_late_charge",
+                    "chargeAmount": rate,
+                    "bookingId": b_id,
+                    "chargeDescription": charge_tag,
+                    "newCheckoutDate": (datetime.strptime(b_check_out, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+                }
+                
+                conn.execute(text("""
+                    INSERT INTO notifications (id, type, category, title, message, priority, is_read, is_dismissed, created_at, booking_id, room_number, metadata)
+                    VALUES (:id, 'system', 'late_checkout_approval', 'Late Checkout Charge Approval', :msg, 'high', FALSE, FALSE, :ca, :bid, :rn, :md)
+                """), {
+                    "id": notif_id,
+                    "msg": msg,
+                    "ca": now_iso,
+                    "bid": b_id,
+                    "rn": b_room_number,
+                    "md": json.dumps(metadata)
+                })
+            
+            conn.commit()
+    except Exception as e:
+        print(f"Error in late checkout audit: {e}")
+
+def audit_daily_charges():
+    """Post daily room and extra person/bed charges to folio for in-house guests."""
+    import os
+    import json
+    import uuid
+    import time
+    from datetime import datetime, timedelta, timezone
+    
+    db_url = get_db_url()
+    if not db_url: return
+    
+    try:
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.pool import NullPool
+        engine = create_engine(db_url, poolclass=NullPool)
+        
+        now = datetime.now()
+        today_date = now.date()
+        current_time_str = now.strftime('%H:%M')
+        
+        with engine.connect() as conn:
+            # 1. Get property settings for taxes and checkout time
+            prop_res = conn.execute(text("SELECT check_out_time, gst_rate FROM property_settings WHERE id = 'default'")).fetchone()
+            checkout_cutoff = prop_res[0] if prop_res and prop_res[0] else "11:00"
+            prop_gst = prop_res[1] if prop_res and prop_res[1] is not None else 12.0
+            
+            # 2. Only run past checkout hour
+            if current_time_str < checkout_cutoff:
+                return
+            
+            # 3. Find CheckedIn bookings
+            query = text("""
+                SELECT b.id, b.guest_name, b.check_in, b.check_out, b.amount, b.folio, b.room_number,
+                       rt.base_price, rt.extra_adult_rate, rt.extra_child_rate, rt.extra_bed_charge,
+                       b.extra_adults, b.extra_children, b.extra_beds, b.room_type_id
+                FROM bookings b
+                LEFT JOIN room_types rt ON b.room_type_id = rt.id
+                WHERE b.status = 'CheckedIn'
+            """)
+            result = conn.execute(query)
+            active_bookings = result.fetchall()
+            
+            for row in active_bookings:
+                b_id, guest_name, b_check_in, b_check_out, b_amount, b_folio, b_room_num, \
+                rt_base, rt_ext_adult, rt_ext_child, rt_ext_bed_c, \
+                b_ext_adults, b_ext_children, b_ext_beds, b_rt_id = row
+
+                folio = b_folio or []
+                if isinstance(folio, str):
+                    folio = json.loads(folio)
+
+                try:
+                    d_start = datetime.strptime(b_check_in, '%Y-%m-%d').date()
+                    d_end = datetime.strptime(b_check_out, '%Y-%m-%d').date()
+                    
+                    # Target: today + 1 (as requested: "on second day add for next day")
+                    target_date = today_date + timedelta(days=1)
+                    curr_d = d_start
+                    folio_updated = False
+                    
+                    while curr_d < d_end and curr_d <= target_date:
+                        date_key = curr_d.strftime('%Y-%m-%d')
+                        charge_tag = f"Daily Room Rent ({date_key})"
+                        
+                        # Check if already posted
+                        if not any(item.get('description') == charge_tag for item in folio):
+                            total_nights = (d_end - d_start).days
+                            if total_nights <= 0: total_nights = 1
+                            
+                            # Booking amount is assumed INCLUSIVE
+                            nightly_total_incl = (b_amount or 0) / total_nights
+                            if nightly_total_incl <= 0: nightly_total_incl = rt_base or 0
+                            
+                            # Convert to EXCLUSIVE for folio posting
+                            # Base room tax is prop_gst
+                            # Extras also usually use base stay tax or other_gst? 
+                            # Usually room extras use room tax.
+                            
+                            nightly_total_excl = nightly_total_incl / (1 + prop_gst / 100)
+                            
+                            # Breakdown
+                            e_adult_c_incl = (b_ext_adults or 0) * (rt_ext_adult or 0)
+                            e_child_c_incl = (b_ext_children or 0) * (rt_ext_child or 0)
+                            e_bed_c_incl = (b_ext_beds or 0) * (rt_ext_bed_c or 0)
+                            
+                            extras_sum_incl = e_adult_c_incl + e_child_c_incl + e_bed_c_incl
+                            room_only_incl = nightly_total_incl - extras_sum_incl
+                            
+                            if room_only_incl < 0:
+                                room_only_incl = nightly_total_incl
+                                e_adult_c_incl = e_child_c_incl = e_bed_c_incl = 0
+                            
+                            # Post Inclusive amounts as requested
+                            folio.append({
+                                "id": f"folio-room-{str(uuid.uuid4())[:8]}",
+                                "description": charge_tag,
+                                "amount": round(room_only_incl, 2),
+                                "category": "Room",
+                                "isPaid": False,
+                                "isInclusive": True,
+                                "date": date_key
+                            })
+                            
+                            if e_adult_c_incl > 0:
+                                folio.append({
+                                    "id": f"folio-ext-a-{str(uuid.uuid4())[:8]}",
+                                    "description": f"Extra Adult Charge ({date_key})",
+                                    "amount": round(e_adult_c_incl, 2),
+                                    "category": "Room",
+                                    "isPaid": False,
+                                    "isInclusive": True,
+                                    "date": date_key
+                                })
+                            if e_child_c_incl > 0:
+                                folio.append({
+                                    "id": f"folio-ext-c-{str(uuid.uuid4())[:8]}",
+                                    "description": f"Extra Child Charge ({date_key})",
+                                    "amount": round(e_child_c_incl, 2),
+                                    "category": "Room",
+                                    "isPaid": False,
+                                    "isInclusive": True,
+                                    "date": date_key
+                                })
+                            if e_bed_c_incl > 0:
+                                folio.append({
+                                    "id": f"folio-ext-b-{str(uuid.uuid4())[:8]}",
+                                    "description": f"Extra Bed Charge ({date_key})",
+                                    "amount": round(e_bed_c_incl, 2),
+                                    "category": "Room",
+                                    "isPaid": False,
+                                    "isInclusive": True,
+                                    "date": date_key
+                                })
+                            
+                            folio_updated = True
+                        
+                        curr_d += timedelta(days=1)
+                        
+                    if folio_updated:
+                        conn.execute(text("UPDATE bookings SET folio = :nf, timestamp = :ts WHERE id = :id"), {
+                            "nf": json.dumps(folio),
+                            "ts": int(time.time() * 1000),
+                            "id": b_id
+                        })
+                except Exception as e:
+                    print(f"Error processing daily charge for {b_id}: {e}")
+            
+            conn.commit()
+    except Exception as e:
+        print(f"Error in daily charge audit: {e}")
+
 @app.get("/api/notifications")
 def get_notifications(unread_only: bool = False, type_filter: str = None, limit: int = 50, history_mode: bool = False):
     """Get notifications with optional filters. history_mode=True fetches dismissed notifications."""
@@ -2854,6 +3108,8 @@ def get_notifications(unread_only: bool = False, type_filter: str = None, limit:
     
     # Run audit logic on every fetch to keep alerts fresh
     audit_no_shows()
+    audit_late_checkouts()
+    audit_daily_charges()
     
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
@@ -2921,6 +3177,11 @@ def get_unread_notification_count():
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         return {"count": 0}
+    
+    # Run audits periodically to keep unread counts updated
+    audit_no_shows()
+    audit_late_checkouts()
+    audit_daily_charges()
     
     try:
         from sqlalchemy import create_engine, text
@@ -3005,7 +3266,111 @@ def mark_notification_read(notification_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.put("/api/notifications/read-all")
+@app.post("/api/notifications/{notification_id}/action")
+def handle_notification_action(notification_id: str, action: str):
+    """Handle interactive actions on notifications (e.g. approving a late checkout charge)"""
+    import os
+    import json
+    import uuid
+    import time
+    from datetime import datetime, timedelta, timezone
+    
+    db_url = get_db_url()
+    if not db_url:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.pool import NullPool
+        engine = create_engine(db_url, poolclass=NullPool)
+        
+        with engine.connect() as conn:
+            # 1. Get the notification and its metadata
+            notif = conn.execute(text("SELECT metadata, booking_id, is_dismissed FROM notifications WHERE id = :id"), {"id": notification_id}).fetchone()
+            if not notif:
+                raise HTTPException(status_code=404, detail="Notification not found")
+            
+            if notif[2]: # is_dismissed
+                return {"status": "ignored", "message": "Action already processed or dismissed"}
+            
+            metadata = notif[0]
+            if isinstance(metadata, str):
+                metadata = json.loads(metadata)
+            
+            if not metadata or metadata.get("actionType") != "approve_late_charge":
+                raise HTTPException(status_code=400, detail="Invalid action for this notification")
+            
+            if action == "yes":
+                # Execute the charge
+                b_id = metadata.get("bookingId")
+                charge_amount = metadata.get("chargeAmount")
+                charge_desc = metadata.get("chargeDescription")
+                new_checkout = metadata.get("newCheckoutDate")
+                
+                # Get current booking data
+                booking = conn.execute(text("SELECT amount, folio, guest_name, room_number FROM bookings WHERE id = :id"), {"id": b_id}).fetchone()
+                if not booking:
+                    raise HTTPException(status_code=404, detail="Booking not found")
+                
+                amount = booking[0] or 0
+                folio = booking[1] or []
+                if isinstance(folio, str):
+                    folio = json.loads(folio)
+                
+                guest_name = booking[2]
+                room_number = booking[3]
+                
+                # Add folio item
+                new_item = {
+                    "id": f"folio-{str(uuid.uuid4())[:8]}",
+                    "description": charge_desc,
+                    "amount": charge_amount,
+                    "category": "Room Charge",
+                    "isPaid": False,
+                    "date": datetime.now().strftime('%Y-%m-%d')
+                }
+                folio.append(new_item)
+                
+                # Update booking
+                conn.execute(text("""
+                    UPDATE bookings 
+                    SET check_out = :nc, amount = :na, folio = :nf, timestamp = :ts
+                    WHERE id = :id
+                """), {
+                    "nc": new_checkout,
+                    "na": amount + charge_amount,
+                    "nf": json.dumps(folio),
+                    "ts": int(time.time() * 1000),
+                    "id": b_id
+                })
+                
+                # Also create a follow-up notification confirming the action
+                confirm_notif_id = f"notif-lc-confirmed-{str(uuid.uuid4())[:8]}"
+                now_iso = datetime.now(timezone.utc).isoformat()
+                msg = f"Late checkout charge of {charge_amount} applied to {guest_name} (Room {room_number}). Checkout date updated to {new_checkout}."
+                
+                conn.execute(text("""
+                    INSERT INTO notifications (id, type, category, title, message, priority, is_read, is_dismissed, created_at, booking_id, room_number)
+                    VALUES (:id, 'system', 'late_checkout', 'Charge Applied', :msg, 'normal', FALSE, FALSE, :ca, :bid, :rn)
+                """), {
+                    "id": confirm_notif_id,
+                    "msg": msg,
+                    "ca": now_iso,
+                    "bid": b_id,
+                    "rn": room_number
+                })
+            
+            # Dismiss the notification regardless of yes/no (user has responded)
+            conn.execute(text("UPDATE notifications SET is_read = TRUE, is_dismissed = TRUE WHERE id = :id"), {"id": notification_id})
+            conn.commit()
+            
+            return {"status": "success", "action": action}
+            
+    except Exception as e:
+        print(f"Error handling notification action: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/notifications/dismiss-all")
 def mark_all_notifications_read():
     """Mark all notifications as read"""
     import os
