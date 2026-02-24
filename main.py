@@ -2091,7 +2091,7 @@ def generate_upfront_folio_for_booking(booking: Booking, db) -> list:
                 "category": "Room",
                 "isPaid": False,
                 "isInclusive": True,
-                "date": date_key
+                "timestamp": f"{date_key}T12:00:00Z"
             })
             if e_adult_c_incl > 0:
                 clean_folio.append({
@@ -2101,7 +2101,7 @@ def generate_upfront_folio_for_booking(booking: Booking, db) -> list:
                     "category": "Room",
                     "isPaid": False,
                     "isInclusive": True,
-                    "date": date_key
+                    "timestamp": f"{date_key}T12:00:00Z"
                 })
             if e_child_c_incl > 0:
                 clean_folio.append({
@@ -2111,7 +2111,7 @@ def generate_upfront_folio_for_booking(booking: Booking, db) -> list:
                     "category": "Room",
                     "isPaid": False,
                     "isInclusive": True,
-                    "date": date_key
+                    "timestamp": f"{date_key}T12:00:00Z"
                 })
             if e_bed_c_incl > 0:
                 clean_folio.append({
@@ -2121,7 +2121,7 @@ def generate_upfront_folio_for_booking(booking: Booking, db) -> list:
                     "category": "Room",
                     "isPaid": False,
                     "isInclusive": True,
-                    "date": date_key
+                    "timestamp": f"{date_key}T12:00:00Z"
                 })
             curr_d += timedelta(days=1)
             
