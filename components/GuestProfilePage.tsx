@@ -839,6 +839,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       console.error("OCR failed", err);
       const errorMessage = err.message || "Unknown error";
       setToastMessage(`OCR Failed: ${errorMessage.substring(0, 40)}...`);
+    } finally {
+      setOcrStep("success");
     }
   };
 
@@ -884,18 +886,17 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
             });
             return next;
           });
-          setOcrStep("success");
           setToastMessage("Form analyzed successfully!");
         } catch (e) {
           console.error("JSON Parse Error", e);
           setToastMessage("OCR Error: Could not parse Form data.");
-          setOcrStep("success");
         }
       }
     } catch (err: any) {
       console.error("Form OCR failed", err);
-      setOcrStep("success");
       setToastMessage(`Form Analysis Failed: ${err.message}`);
+    } finally {
+      setOcrStep("success");
     }
   };
 
@@ -1269,6 +1270,47 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     );
     setShowDeleteConfirm(false);
     setPendingDeleteSide(null);
+  };
+
+  const handleRetakeScan = () => {
+    const side = activeSide;
+    const addIdx = activeAdditionalIndex;
+
+    if (!canEdit) {
+      setToastMessage("Permission denied: Cannot edit documents.");
+      return;
+    }
+
+    // Determine the correct camera step
+    let targetStep: typeof ocrStep = "scan_front";
+    if (side === "front") targetStep = "scan_front";
+    else if (side === "back") targetStep = "scan_back";
+    else if (side === "visa") targetStep = "scan_visa";
+    else if (side === "additional") {
+      targetStep = addIdx >= 100 ? "scan_form" : "scan_additional";
+    }
+
+    // 1. Clear the specific image
+    setIdImages((prev) => {
+      const updated = { ...prev };
+      if (side === "front") updated.front = null;
+      else if (side === "back") updated.back = null;
+      else if (side === "visa") updated.visa = null;
+      else if (side === "additional") {
+        if (addIdx >= 100) {
+          const idx = addIdx - 100;
+          updated.formPages = updated.formPages.filter((_, i) => i !== idx);
+        } else {
+          updated.additional = updated.additional.filter(
+            (_, i) => i !== addIdx,
+          );
+        }
+      }
+      return updated;
+    });
+
+    // 2. Start camera for that specific side
+    startCamera(targetStep);
   };
 
   const isForeigner =
@@ -2251,33 +2293,6 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 Cancel Booking
               </button>
             )}
-
-            <div
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl border-2 text-xs font-black uppercase tracking-widest bg-white/80 backdrop-blur-sm shadow-sm transition-all
-              ${
-                booking.status === "CheckedIn"
-                  ? "border-emerald-500 text-emerald-600"
-                  : booking.status === "Confirmed"
-                    ? "border-blue-500 text-blue-600"
-                    : booking.status === "CheckedOut"
-                      ? "border-slate-300 text-slate-500 bg-slate-50"
-                      : booking.status === "Cancelled"
-                        ? "border-rose-500 text-rose-600"
-                        : "border-amber-500 text-amber-600"
-              }`}
-            >
-              {booking.status === "CheckedIn" && (
-                <span className="relative flex h-2 w-2 mr-1">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-              )}
-              {booking.status === "Rejected"
-                ? "Warning/Unpaid"
-                : booking.status === "CheckedOut"
-                  ? "Checked Out"
-                  : booking.status}
-            </div>
           </div>
         </div>
       </header>
@@ -2291,15 +2306,40 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
             <section className="bg-white rounded-[2.5rem] border border-slate-200 p-6 shadow-sm">
               <div className="flex items-start justify-between mb-5">
                 <div className="flex items-center gap-6">
-                  <div className="w-20 h-20 bg-indigo-50 rounded-3xl flex items-center justify-center text-indigo-600 shadow-inner relative overflow-hidden">
-                    <User className="w-10 h-10" />
+                  <div
+                    className={`w-16 h-16 shrink-0 rounded-2xl flex flex-col items-center justify-center border-2 text-[8px] font-black uppercase tracking-tighter relative overflow-hidden transition-all shadow-sm
+                    ${
+                      booking.status === "CheckedIn"
+                        ? "border-emerald-500 text-emerald-600 bg-emerald-50"
+                        : booking.status === "Confirmed"
+                          ? "border-blue-500 text-blue-600 bg-blue-50"
+                          : booking.status === "CheckedOut"
+                            ? "border-slate-300 text-slate-500 bg-slate-50"
+                            : booking.status === "Cancelled"
+                              ? "border-rose-500 text-rose-600 bg-rose-50"
+                              : "border-amber-500 text-amber-600 bg-amber-50"
+                    }`}
+                  >
+                    {booking.status === "CheckedIn" && (
+                      <span className="flex h-1.5 w-1.5 mb-1">
+                        <span className="animate-ping absolute inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                      </span>
+                    )}
+                    <span className="text-center px-1 leading-tight">
+                      {booking.status === "Rejected"
+                        ? "Warning"
+                        : booking.status === "CheckedOut"
+                          ? "Out"
+                          : booking.status}
+                    </span>
                     {booking.isVIP && (
-                      <div className="absolute top-0 right-0 bg-violet-500 p-1 rounded-bl-lg">
-                        <Star className="w-3 h-3 text-white fill-white" />
+                      <div className="absolute top-0 right-0 bg-violet-500 p-1 rounded-bl-lg shadow-sm">
+                        <Star className="w-2.5 h-2.5 text-white fill-white" />
                       </div>
                     )}
                   </div>
-                  <div className="flex-1 flex flex-col md:flex-row md:items-end justify-between gap-6">
+                  <div className="flex-1 flex flex-col gap-3 min-w-0">
                     <div className="flex flex-col gap-3">
                       {isAddingAccessory && (
                         <div className="flex items-center gap-3 px-5 py-2.5 bg-indigo-600 text-white rounded-full w-fit mb-4 border-2 border-indigo-400 shadow-xl shadow-indigo-500/20 animate-in fade-in slide-in-from-left-4 transition-all group/badge">
@@ -2316,7 +2356,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           </button>
                         </div>
                       )}
-                      <div className="flex items-center gap-4 flex-1">
+                      <div className="flex flex-wrap items-center gap-3 w-full">
                         <input
                           type="text"
                           value={editableDetails.name || ""}
@@ -2325,10 +2365,10 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           }
                           disabled={!canEdit}
                           placeholder="Guest Name"
-                          className={`text-4xl font-black text-slate-900 tracking-tight leading-tight bg-transparent border-b-2 transition-all px-2 flex-1 outline-none ring-offset-4 rounded-lg ${validationErrors.includes("Full Name") ? "border-rose-300 bg-rose-50 ring-2 ring-rose-200" : "border-transparent hover:border-indigo-300 focus:border-indigo-600"}`}
+                          className={`text-4xl font-black text-slate-900 tracking-tight leading-tight bg-transparent border-b-2 transition-all px-2 min-w-[200px] flex-1 outline-none ring-offset-4 rounded-lg ${validationErrors.includes("Full Name") ? "border-rose-300 bg-rose-50 ring-2 ring-rose-200" : "border-transparent hover:border-indigo-300 focus:border-indigo-600"}`}
                         />
                         {booking.roomNumber && (
-                          <span className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm">
+                          <span className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm shrink-0">
                             Room {booking.roomNumber}
                           </span>
                         )}
@@ -2831,6 +2871,17 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                 title="Print this scan"
                               >
                                 <Printer className="w-5 h-5 shadow-sm" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleRetakeScan();
+                                }}
+                                className="p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-all shadow-2xl active:scale-90 pointer-events-auto flex items-center justify-center border-2 border-white/20"
+                                title="Retake this scan"
+                              >
+                                <RotateCcw className="w-5 h-5 shadow-sm" />
                               </button>
                               <button
                                 onClick={(e) => {

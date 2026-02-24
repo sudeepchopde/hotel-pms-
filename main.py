@@ -1148,19 +1148,31 @@ def db_hotel_to_pydantic(db_hotel):
 
 def db_room_type_to_pydantic(db_room):
     _load_db_imports()
+    # Handle both SQLAlchemy objects and dict-like fallback objects
+    def get_attr(obj, attr, default=0):
+        if hasattr(obj, attr):
+            return getattr(obj, attr)
+        if isinstance(obj, dict):
+            return obj.get(attr, default)
+        try:
+            # Handle SQLAlchemy Row objects
+            return obj._asdict().get(attr, default)
+        except:
+            return default
+
     return RoomType(
-        id=db_room.id,
-        name=db_room.name,
-        totalCapacity=db_room.total_capacity,
-        basePrice=db_room.base_price,
-        floorPrice=db_room.floor_price,
-        ceilingPrice=db_room.ceiling_price,
-        baseOccupancy=db_room.base_occupancy,
-        amenities=db_room.amenities or [],
-        roomNumbers=db_room.room_numbers,
-        extraBedCharge=db_room.extra_bed_charge,
-        extraAdultRate=db_room.extra_adult_rate if hasattr(db_room, 'extra_adult_rate') else 0,
-        extraChildRate=db_room.extra_child_rate if hasattr(db_room, 'extra_child_rate') else 0
+        id=db_room.id if hasattr(db_room, 'id') else db_room.get('id'),
+        name=db_room.name if hasattr(db_room, 'name') else db_room.get('name'),
+        totalCapacity=db_room.total_capacity if hasattr(db_room, 'total_capacity') else db_room.get('total_capacity', 0),
+        basePrice=db_room.base_price if hasattr(db_room, 'base_price') else db_room.get('base_price', 0),
+        floorPrice=db_room.floor_price if hasattr(db_room, 'floor_price') else db_room.get('floor_price', 0),
+        ceilingPrice=db_room.ceiling_price if hasattr(db_room, 'ceiling_price') else db_room.get('ceiling_price', 0),
+        baseOccupancy=db_room.base_occupancy if hasattr(db_room, 'base_occupancy') else db_room.get('base_occupancy', 0),
+        amenities=db_room.amenities if hasattr(db_room, 'amenities') else db_room.get('amenities', []),
+        roomNumbers=db_room.room_numbers if hasattr(db_room, 'room_numbers') else db_room.get('room_numbers', []),
+        extraBedCharge=get_attr(db_room, 'extra_bed_charge', 0),
+        extraAdultRate=get_attr(db_room, 'extra_adult_rate', 0),
+        extraChildRate=get_attr(db_room, 'extra_child_rate', 0)
     )
 
 def db_booking_to_pydantic(db_booking):
@@ -3537,7 +3549,7 @@ def handle_notification_action(notification_id: str, action: str):
         print(f"Error handling notification action: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.put("/api/notifications/dismiss-all")
+@app.put("/api/notifications/read-all")
 def mark_all_notifications_read():
     """Mark all notifications as read"""
     import os
