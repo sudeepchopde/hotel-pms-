@@ -336,7 +336,14 @@ const App: React.FC = () => {
 
   const [propertySettings, setPropertySettings] =
     useState<PropertySettings | null>(null);
-  const [user, setUser] = useState<UserResponse | null>(null);
+  const [user, setUser] = useState<UserResponse | null>(() => {
+    const savedUser = localStorage.getItem("pms_user");
+    try {
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      return null;
+    }
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [notificationToast, setNotificationToast] = useState<{

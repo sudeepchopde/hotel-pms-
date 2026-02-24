@@ -1195,18 +1195,69 @@ def db_booking_to_pydantic(db_booking):
         return {}
     
     # Ensure guest name is always populated inside guestDetails
-    guest_details_dict = safe_json_dict(db_booking.guest_details)
+    def sanitize_guest_details(gd):
+        if not isinstance(gd, dict): return {}
+        # Sanitize Literals
+        if gd.get('idType') not in ['Aadhar', 'Passport', 'Driving License', 'Voter ID', 'Other']:
+            gd['idType'] = 'Other' if gd.get('idType') else None
+        if gd.get('gender') not in ['Male', 'Female', 'Other']:
+            gd['gender'] = 'Other' if gd.get('gender') else None
+        return gd
+
+    # Ensure guest name is always populated inside guestDetails
+    guest_details_dict = sanitize_guest_details(safe_json_dict(db_booking.guest_details))
     if not guest_details_dict.get('name') and db_booking.guest_name:
         guest_details_dict['name'] = db_booking.guest_name
 
+    # Process Folio with sanitization for required Pydantic fields
+    folio_raw = safe_json_list(db_booking.folio)
+    processed_folio = []
+    for item in folio_raw:
+        if not isinstance(item, dict): continue
+        # Ensure required FolioItem fields: id, description, amount, category, timestamp
+        item_sanitized = {
+            "id": item.get('id') or f"f-{str(uuid.uuid4())[:8]}",
+            "description": item.get('description') or "Charge",
+            "amount": float(item.get('amount') if item.get('amount') is not None else 0.0),
+            "category": item.get('category') if item.get('category') in ['F&B', 'Laundry', 'Room', 'Other'] else 'Other',
+            "timestamp": item.get('timestamp') or f"{db_booking.check_in or datetime.now().strftime('%Y-%m-%d')}T12:00:00Z",
+            "isPaid": bool(item.get('isPaid', False)),
+            "isInclusive": bool(item.get('isInclusive', False)),
+            "paymentMethod": item.get('paymentMethod'),
+            "paymentId": item.get('paymentId'),
+            "metadata": item.get('metadata')
+        }
+        processed_folio.append(item_sanitized)
+
+    # Process Payments with sanitization
+    payments_raw = safe_json_list(db_booking.payments)
+    processed_payments = []
+    for p in payments_raw:
+        if not isinstance(p, dict): continue
+        p_sanitized = {
+            "id": p.get('id') or f"p-{str(uuid.uuid4())[:8]}",
+            "amount": float(p.get('amount') if p.get('amount') is not None else 0.0),
+            "method": p.get('method') or "Cash",
+            "timestamp": p.get('timestamp') or int(time.time() * 1000),
+            "category": p.get('category') or "Room",
+            "description": p.get('description'),
+            "notes": p.get('notes'),
+            "status": p.get('status') or "Completed"
+        }
+        processed_payments.append(p_sanitized)
+
+    # Sanitize Accessory Guests
+    acc_guests_raw = safe_json_list(db_booking.accessory_guests)
+    sanitized_acc_guests = [sanitize_guest_details(g) for g in acc_guests_raw if isinstance(g, dict)]
+
     return Booking(
         id=db_booking.id,
-        roomTypeId=db_booking.room_type_id,
+        roomTypeId=db_booking.room_type_id or "",
         roomNumber=db_booking.room_number,
-        guestName=db_booking.guest_name,
+        guestName=db_booking.guest_name or "Unknown Guest",
         source=db_booking.source if db_booking.source in ['MMT', 'Booking.com', 'Expedia', 'Direct'] else 'Direct',
-        status=db_booking.status,
-        timestamp=db_booking.timestamp,
+        status=db_booking.status if db_booking.status in ['Confirmed', 'CheckedIn', 'CheckedOut', 'Cancelled', 'Rejected'] else 'Confirmed',
+        timestamp=db_booking.timestamp if db_booking.timestamp else int(time.time() * 1000),
         checkIn=db_booking.check_in or "",
         checkOut=db_booking.check_out or "",
         reservationId=db_booking.reservation_id,
@@ -1214,22 +1265,22 @@ def db_booking_to_pydantic(db_booking):
         amount=db_booking.amount,
         rejectionReason=db_booking.rejection_reason,
         guestDetails=guest_details_dict,
-        numberOfRooms=db_booking.number_of_rooms,
-        pax=db_booking.pax,
-        accessoryGuests=safe_json_list(db_booking.accessory_guests),
+        numberOfRooms=db_booking.number_of_rooms or 1,
+        pax=db_booking.pax or 1,
+        accessoryGuests=sanitized_acc_guests,
         extraBeds=db_booking.extra_beds,
-        extraAdults=db_booking.extra_adults,
-        extraChildren=db_booking.extra_children,
+        extraAdults=db_booking.extra_adults if hasattr(db_booking, 'extra_adults') else 0,
+        extraChildren=db_booking.extra_children if hasattr(db_booking, 'extra_children') else 0,
         specialRequests=db_booking.special_requests,
-        isVIP=db_booking.is_vip,
-        isSettled=db_booking.is_settled,
+        isVIP=db_booking.is_vip or False,
+        isSettled=db_booking.is_settled or False,
         invoiceNumber=db_booking.invoice_number,
         invoicePath=db_booking.invoice_path,
         receiptPath=db_booking.receipt_path,
         isAutoGenerated=getattr(db_booking, 'is_auto_generated', False),
         externalReferenceId=getattr(db_booking, 'external_reference_id', None),
-        folio=safe_json_list(db_booking.folio),
-        payments=safe_json_list(db_booking.payments),
+        folio=processed_folio,
+        payments=processed_payments,
         discount=getattr(db_booking, 'discount', None)
     )
 
@@ -1738,7 +1789,10 @@ def get_bookings(db=Depends(get_db)):
             try:
                 result.append(db_booking_to_pydantic(b))
             except Exception as e:
-                print(f"CRITICAL: Failed to convert booking {getattr(b, 'id', 'unknown')} to Pydantic: {e}")
+                import traceback
+                error_msg = f"CRITICAL: Failed to convert booking {getattr(b, 'id', 'unknown')} to Pydantic: {str(e)}\n{traceback.format_exc()}"
+                print(error_msg)
+                logger.error(error_msg)
                 # Skip invalid bookings so the rest of the app keeps working
                 continue
         return result

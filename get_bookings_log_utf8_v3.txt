@@ -1,0 +1,24 @@
+﻿python : C:\Users\PC\AppData\Roaming\Python\Python314\sit
+e-packages\pydantic\_internal\_config.py:383: 
+UserWarning: Valid config keys have changed in V2:
+At line:1 char:1
++ python test_get_bookings.py 2>&1 | Out-File -FilePath 
+get_bookings_lo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (C:\Users\PC 
+   \App... changed in V2::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+* 'allow_population_by_field_name' has been renamed to 
+'validate_by_name'
+  warnings.warn(message, UserWarning)
+INFO:hotel-pms:GET /api/bookings - Fetched 4 from 
+PostgreSQL
+DEBUG: Selected Database Source: Other
+DEBUG: DATABASE_URL is set
+[OK] Frontend assets mounted
+[OK] Channel Manager routes loaded
+[OK] Payment Gateway routes loaded
+[OK] Connected to PostgreSQL database
+Calling get_bookings()...
+Success! Returned 4 bookings.
