@@ -788,9 +788,15 @@ const App: React.FC = () => {
       }
     };
 
+    // Expose to window for immediate refresh from NotificationsView
+    (window as any).__refreshUnreadCount = loadNotificationCount;
+
     loadNotificationCount();
     const interval = setInterval(loadNotificationCount, 60000); // Poll every 60 seconds
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      delete (window as any).__refreshUnreadCount;
+    };
   }, []);
 
   // Play sound on new notification toast

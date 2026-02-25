@@ -109,6 +109,10 @@ const NotificationsView: React.FC = () => {
       setNotifications((prev) =>
         prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n)),
       );
+      // Immediately refresh global count
+      if ((window as any).__refreshUnreadCount) {
+        (window as any).__refreshUnreadCount();
+      }
     } catch (error) {
       console.error("Failed to mark notification as read:", error);
     }
@@ -118,6 +122,10 @@ const NotificationsView: React.FC = () => {
     try {
       await markAllNotificationsRead();
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      // Immediately refresh global count
+      if ((window as any).__refreshUnreadCount) {
+        (window as any).__refreshUnreadCount();
+      }
     } catch (error) {
       console.error("Failed to mark all as read:", error);
     }
@@ -137,6 +145,10 @@ const NotificationsView: React.FC = () => {
     try {
       await dismissNotification(notificationId);
       setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+      // Immediately refresh global count
+      if ((window as any).__refreshUnreadCount) {
+        (window as any).__refreshUnreadCount();
+      }
     } catch (error) {
       console.error("Failed to dismiss notification:", error);
     }

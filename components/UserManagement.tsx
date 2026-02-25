@@ -271,6 +271,10 @@ const UserManagement: React.FC = () => {
                   className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-indigo-500"
                   placeholder="••••••••"
                 />
+                <p className="text-[10px] text-slate-400 font-medium leading-tight px-1">
+                  At least 8 characters: Must include uppercase, lowercase &
+                  numbers.
+                </p>
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-500 uppercase">
