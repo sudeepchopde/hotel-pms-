@@ -422,9 +422,16 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
   // 1. Unified stay-wide accounting
   const allStayBookings = useMemo(() => {
-    if (!relatedBookings || relatedBookings.length === 0) return [booking];
+    // Ensure current booking is always part of the set, and unique by ID
+    const combined = [booking, ...relatedBookings];
+    const uniqueMap = new Map();
+    combined.forEach((b) => {
+      if (!uniqueMap.has(b.id)) uniqueMap.set(b.id, b);
+    });
+    const uniqueList = Array.from(uniqueMap.values());
+
     // Sort stay history by check-in date
-    return [...relatedBookings].sort(
+    return uniqueList.sort(
       (a, b) => new Date(a.checkIn).getTime() - new Date(b.checkIn).getTime(),
     );
   }, [booking, relatedBookings]);
@@ -504,8 +511,27 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         }
       }
 
-      const bTotal = (bRate || 0) * (bElapsed || 0);
-      const bFullTotal = (bRate || 0) * (bNights || 1);
+      const bGrossTotal = (bRate || 0) * (bElapsed || 0);
+      const bGrossFullTotal = (bRate || 0) * (bNights || 1);
+
+      let bTotal = bGrossTotal;
+      let bFullTotal = bGrossFullTotal;
+
+      if (b.discount) {
+        const dVal = Number(b.discount.value) || 0;
+        if (b.discount.type === "percentage") {
+          bTotal = bGrossTotal * (1 - dVal / 100);
+          bFullTotal = bGrossFullTotal * (1 - dVal / 100);
+        } else {
+          // Pro-rate fixed discount for the elapsed portion if needed?
+          // For simplicity and to match user expectation of "discount on bill",
+          // we apply the fixed discount to the full total.
+          // For pro-rated 'accrued', we could pro-rate the fixed discount too.
+          const proRatedDiscount = (dVal / bNights) * bElapsed;
+          bTotal = Math.max(0, bGrossTotal - proRatedDiscount);
+          bFullTotal = Math.max(0, bGrossFullTotal - dVal);
+        }
+      }
 
       return {
         bookingId: b.id,
@@ -516,6 +542,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         rate: bRate,
         total: bTotal,
         fullTotal: bFullTotal,
+        grossFullTotal: bGrossFullTotal,
         discount: b.discount,
       };
     });
@@ -557,42 +584,52 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     stayRoomRevenueItems.forEach((ri) => {
       if (!ri) return;
 
-      // Handle Accrued portion: Max of dynamic pro-rata or actual items in folio
-      let dynamicAccrued = Number(ri.total) || 0;
+      const folioAccrued = folioRoomSums[ri.bookingId] || 0;
+
+      // --- Accrued calculation ---
+      // 1. Get gross pro-rated amount (re-calculate gross because ri.total is now net)
+      const grossDynamicAccrued = (ri.rate || 0) * (ri.elapsed || 0);
+      // 2. Max of pro-rated gross vs folio entries
+      const grossAccrued = Math.max(grossDynamicAccrued, folioAccrued);
+
+      // 3. Apply discount to gross
+      let netAccrued = grossAccrued;
       if (ri.discount) {
         const dVal = Number(ri.discount.value) || 0;
         if (ri.discount.type === "percentage") {
-          dynamicAccrued = dynamicAccrued * (1 - dVal / 100);
+          netAccrued = grossAccrued * (1 - dVal / 100);
         } else {
-          dynamicAccrued = Math.max(0, dynamicAccrued - dVal);
+          // Pro-rate fixed discount if nights are partially elapsed
+          const proRatedDiscount =
+            (dVal / (ri.nights || 1)) * (ri.elapsed || 0);
+          netAccrued = Math.max(0, grossAccrued - proRatedDiscount);
         }
       }
 
-      // If the folio already has charges (e.g. upfront billing), ensure we count them
-      // as part of the accrued balance even if nights haven't technically 'elapsed' yet.
-      const folioAccrued = folioRoomSums[ri.bookingId] || 0;
-      const accruedAmount = Math.max(dynamicAccrued, folioAccrued);
-
-      const accBase = accruedAmount / (1 + roomGstRate / 100);
-      const accTax = accruedAmount - accBase;
+      const accBase = netAccrued / (1 + roomGstRate / 100);
+      const accTax = netAccrued - accBase;
       accruedBase += accBase;
       accruedTax += accTax;
 
-      // Full Stay portion
-      let dynamicFull = Number(ri.fullTotal || ri.total) || 0;
+      // --- Full Stay calculation ---
+      // 1. Get gross full-stay amount
+      const grossDynamicFull = (ri.rate || 0) * (ri.nights || 0);
+      // 2. Max of full gross vs what's in folio (unlikely folio > full but for safely)
+      const grossFull = Math.max(grossDynamicFull, folioAccrued);
+
+      // 3. Apply discount to gross
+      let netFull = grossFull;
       if (ri.discount) {
         const dVal = Number(ri.discount.value) || 0;
         if (ri.discount.type === "percentage") {
-          dynamicFull = dynamicFull * (1 - dVal / 100);
+          netFull = grossFull * (1 - dVal / 100);
         } else {
-          dynamicFull = Math.max(0, dynamicFull - dVal);
+          netFull = Math.max(0, grossFull - dVal);
         }
       }
-      // Full stay is also at least what's in the folio
-      const fullAmount = Math.max(dynamicFull, folioAccrued);
 
-      const fBase = fullAmount / (1 + roomGstRate / 100);
-      const fTax = fullAmount - fBase;
+      const fBase = netFull / (1 + roomGstRate / 100);
+      const fTax = netFull - fBase;
       fullBase += fBase;
       fullTax += fTax;
     });
@@ -696,13 +733,80 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   const elapsedNights = currentRoomInfo?.elapsed || 0;
 
   const stayAllFolioItems = useMemo(() => {
-    const items: (FolioItem & { sourceBookingId: string })[] = [];
+    const finalItems: any[] = [];
+    const dateMap = new Map<string, any>();
+
     allStayBookings.forEach((b) => {
       (b.folio || []).forEach((f) => {
-        items.push({ ...f, sourceBookingId: b.id } as any);
+        const descRaw = f.description || "";
+        const descUpper = descRaw.toUpperCase();
+        const dateMatch = descRaw.match(/\d{4}-\d{2}-\d{2}/);
+        const isRent = descUpper.includes("DAILY ROOM RENT");
+        const isSupplement = descUpper.includes("PEAK/WEEKEND SUPPLEMENT");
+
+        // Global date formatting for all descriptions
+        const formattedDescription = descRaw.replace(
+          /(\d{4})-(\d{2})-(\d{2})/g,
+          (m) => formatDate(m),
+        );
+
+        if (dateMatch && (isRent || isSupplement)) {
+          const dateStr = dateMatch[0];
+          const formattedDate = formatDate(dateStr);
+          const existing = dateMap.get(dateStr);
+          if (existing) {
+            existing.amount += f.amount;
+            if (isRent) {
+              existing.description = formattedDescription;
+              existing.timestamp = f.timestamp;
+            }
+          } else {
+            const newItem = {
+              ...f,
+              sourceBookingId: b.id,
+              type: "charge",
+              description: formattedDescription,
+            };
+            // Ensure supplements for the same date are grouped or labeled correctly
+            if (
+              isSupplement &&
+              !newItem.description.toUpperCase().includes("DAILY ROOM RENT")
+            ) {
+              newItem.description = `DAILY ROOM RENT (${formattedDate})`;
+            }
+            dateMap.set(dateStr, newItem);
+          }
+        } else {
+          finalItems.push({
+            ...f,
+            sourceBookingId: b.id,
+            type: "charge",
+            description: formattedDescription,
+          });
+        }
+      });
+
+      (b.payments || []).forEach((p) => {
+        if (p.status === "Completed") {
+          finalItems.push({
+            ...p,
+            id: p.id,
+            description: p.description || `Payment via ${p.method}`,
+            amount: p.amount,
+            category: p.category || "Payment",
+            timestamp: p.timestamp,
+            sourceBookingId: b.id,
+            type: "payment",
+          } as any);
+        }
       });
     });
-    return items;
+
+    dateMap.forEach((item) => {
+      finalItems.push(item);
+    });
+
+    return finalItems;
   }, [allStayBookings]);
 
   const stayAllPayments = useMemo(() => {
@@ -1495,11 +1599,13 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               ...p,
               amount,
               method: paymentMethod,
+              category: paymentCategory,
               timestamp: new Date().toISOString(),
             }
           : p,
       );
-      // Add new payment
+    } else {
+      // Create new payment record
       const newPayment: Payment = {
         id: Math.random().toString(36).substr(2, 9),
         amount,
@@ -2012,13 +2118,14 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     let totalRoomBase = 0;
     let totalRoomTax = 0;
     const roomRows = stayRoomRevenueItems.map((ri) => {
-      let roomAmount = ri.fullTotal;
+      let roomAmount = ri.grossFullTotal || ri.fullTotal; // This is the GROSS (inclusive) undiscounted amount
       let segDiscountAmount = 0;
       if (ri.discount) {
+        const dVal = Number(ri.discount.value) || 0;
         if (ri.discount.type === "percentage") {
-          segDiscountAmount = roomAmount * (ri.discount.value / 100);
+          segDiscountAmount = roomAmount * (dVal / 100);
         } else {
-          segDiscountAmount = ri.discount.value;
+          segDiscountAmount = dVal;
         }
       }
       const discounted = roomAmount - segDiscountAmount;
@@ -2032,7 +2139,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         roomTypeName: ri.roomTypeName,
         nights: ri.nights,
         rate: ri.rate,
-        total: roomAmount,
+        total: roomAmount, // Store undiscounted gross for total line
         base: segBase,
         tax: segTax,
         discount: ri.discount,
@@ -2042,11 +2149,6 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       };
     });
 
-    // --- Folio rows (stay-wide) ---
-    // We only display non-room items in the general Folio section of the invoice
-    // OR we include all if we want total transparency.
-    // To match billSummary and avoid double counting, we filter out auto-room charges
-    // that are already summarized in roomRows.
     let totalFolioTax = 0;
     let totalFolioBase = 0;
 
@@ -2054,6 +2156,17 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       .filter((item) => {
         const descUpper = (item.description || "").toUpperCase();
         const catUpper = (item.category || "").toUpperCase();
+
+        // Skip payments
+        if (
+          (item as any).type === "payment" ||
+          catUpper === "PAYMENT" ||
+          catUpper === "PARTIAL" ||
+          descUpper.includes("PAYMENT")
+        ) {
+          return false;
+        }
+
         const isAutoRoomCharge =
           catUpper === "ROOM" ||
           catUpper === "ROOM CHARGE" ||
@@ -2064,7 +2177,6 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
           descUpper.includes("EXTRA CHILD CHARGE") ||
           descUpper.includes("EXTRA BED CHARGE");
 
-        // If it's a supplement or rent, we prefer showing it in the supplement/room section
         return !isAutoRoomCharge;
       })
       .map((item) => {
@@ -2080,7 +2192,6 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
           rate = roomGstRate;
 
         let base, tax;
-
         if (item.isInclusive) {
           base = item.amount / (1 + rate / 100);
           tax = item.amount - base;
@@ -2101,13 +2212,21 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         };
       });
 
-    // We also need to add the supplements back as separate rows if we want transparency
-    // but subtract them from the roomRows to balance.
-    // IMPROVEMENT: Merge "PEAK/WEEKEND SUPPLEMENT" into "DAILY ROOM RENT" for the same date
     const rawSupplements = stayAllFolioItems
       .filter((item) => {
         const descUpper = (item.description || "").toUpperCase();
         const catUpper = (item.category || "").toUpperCase();
+
+        // Skip payments
+        if (
+          (item as any).type === "payment" ||
+          catUpper === "PAYMENT" ||
+          catUpper === "PARTIAL" ||
+          descUpper.includes("PAYMENT")
+        ) {
+          return false;
+        }
+
         return (
           catUpper === "ROOM" ||
           catUpper === "ROOM CHARGE" ||
@@ -2122,8 +2241,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         const rate = roomGstRate;
         const base = item.amount / (1 + rate / 100);
         const tax = item.amount - base;
-        totalFolioTax += tax;
-        totalFolioBase += base;
+        // DO NOT add to totalFolioBase/Tax here as these are room charges already covered by roomRows
         return {
           ...item,
           base,
@@ -2133,7 +2251,6 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         };
       });
 
-    // Merge logic: Group by date found in description
     const mergedSupplements: typeof rawSupplements = [];
     const dateMap = new Map<string, (typeof rawSupplements)[0]>();
 
@@ -2152,14 +2269,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
           existing.base += item.base;
           existing.tax += item.tax;
           existing.displayAmount += item.displayAmount;
-          // Keep the "DAILY ROOM RENT" description if we merged a supplement into it
           if (isSupplement && !existing.description.includes("RENT")) {
-            existing.description = `DAILY ROOM RENT (${dateStr})`;
+            existing.description = `DAILY ROOM RENT (${formatDate(dateStr)})`;
           }
         } else {
-          // If it's a supplement starting fresh, call it Room Rent to the user
           if (isSupplement) {
-            item.description = `DAILY ROOM RENT (${dateStr})`;
+            item.description = `DAILY ROOM RENT (${formatDate(dateStr)})`;
           }
           dateMap.set(dateStr, { ...item });
         }
@@ -2173,344 +2288,212 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       ...Array.from(dateMap.values()),
     ];
 
-    // Adjust totalRoomBase/Tax by subtracting supplements that are now in supplementRows
-    const actualTotalRoomBase =
-      totalRoomBase - supplementRows.reduce((s, r) => s + r.base, 0);
-    const actualTotalRoomTax =
-      totalRoomTax - supplementRows.reduce((s, r) => s + r.tax, 0);
+    const totalDiscountVal = roomRows.reduce(
+      (s, r) => s + (r.discountAmount || 0),
+      0,
+    );
+    // Gross Total = Undiscounted Room rents + All Folio items (including supplements)
+    const grossTotal =
+      roomRows.reduce((s, r) => s + r.total, 0) +
+      (totalFolioBase + totalFolioTax);
 
-    const netSubtotal = actualTotalRoomBase + totalFolioBase;
-    const totalTaxValue = actualTotalRoomTax + totalFolioTax;
+    const netSubtotal = totalRoomBase + totalFolioBase;
+    const totalTaxValue = totalRoomTax + totalFolioTax;
     const finalNetInvoiceTotal = netSubtotal + totalTaxValue;
     const cgst = totalTaxValue / 2;
     const sgst = totalTaxValue / 2;
 
-    // --- Stay period (earliest checkin to latest checkout across all segments) ---
-    const allCheckIns = allStayBookings.map((b) => new Date(b.checkIn));
-    const allCheckOuts = allStayBookings.map((b) => new Date(b.checkOut));
     const earliestCheckIn = new Date(
-      Math.min(...allCheckIns.map((d) => d.getTime())),
+      Math.min(...allStayBookings.map((b) => new Date(b.checkIn).getTime())),
     );
     const latestCheckOut = new Date(
-      Math.max(...allCheckOuts.map((d) => d.getTime())),
+      Math.max(...allStayBookings.map((b) => new Date(b.checkOut).getTime())),
     );
-    const hasMultipleRooms = stayRoomRevenueItems.length > 1;
-
-    // GST Analysis Calculation
-    const taxSummary = {
-      accommodation: { taxable: 0, cgst: 0, sgst: 0, rate: roomGstRate },
-      services: { taxable: 0, cgst: 0, sgst: 0, rate: 18 }, // Placeholder dynamic rate
-    };
-
-    roomRows.forEach((seg) => {
-      const taxable = seg.total / (1 + roomGstRate / 100);
-      taxSummary.accommodation.taxable += taxable;
-      taxSummary.accommodation.cgst += taxable * (roomGstRate / 200);
-      taxSummary.accommodation.sgst += taxable * (roomGstRate / 200);
-    });
-
-    [...folioRows, ...supplementRows].forEach((item) => {
-      const rate = item.rate || 18;
-      const taxable = item.isInclusive
-        ? item.amount / (1 + rate / 100)
-        : item.amount;
-      taxSummary.services.taxable += taxable;
-      taxSummary.services.cgst += taxable * (rate / 200);
-      taxSummary.services.sgst += taxable * (rate / 200);
-    });
 
     const invoiceHtml = `
       <html>
         <head>
           <title>Tax Invoice - ${booking.guestName}</title>
           <script src="https://cdn.tailwindcss.com"></script>
-          <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
           <style>
             body { 
               font-family: 'Inter', sans-serif; 
               -webkit-print-color-adjust: exact; 
               background: #f8fafc;
+              color: #1a1a1a;
+              margin: 0;
+              padding: 0;
             }
-            .title-font { font-family: 'Playfair Display', serif; }
             @media print {
-              .no-print { display: none; }
-              body { background: white; padding: 0; margin: 0; }
-              .invoice-card { border: none !important; box-shadow: none !important; margin: 0 !important; width: 100% !important; max-width: none !important; }
+              .no-print { display: none !important; }
+              body { background: white !important; padding: 0 !important; margin: 0 !important; }
+              .invoice-container { 
+                box-shadow: none !important; 
+                border: none !important; 
+                width: 100% !important; 
+                max-width: none !important; 
+                margin: 0 !important;
+                padding: 1.5cm !important;
+                min-height: auto !important;
+              }
             }
-            .gold-accent { color: #b45309; }
-            .double-border { 
-              border: 1px solid #e2e8f0;
-              padding: 4px;
-              position: relative;
-            }
-            .double-border::after {
-              content: '';
-              position: absolute;
-              top: 2px; bottom: 2px; left: 2px; right: 2px;
-              border: 1px solid #cbd5e1;
-              pointer-events: none;
-            }
+            .text-indigo-accent { color: #4F46E5; }
+            .bg-indigo-accent { background-color: #4F46E5; }
+            .invoice-shadow { box-shadow: 0 20px 50px -12px rgb(0 0 0 / 0.15); }
           </style>
         </head>
-        <body class="p-4 md:p-10 flex items-center justify-center min-h-screen">
-          <div class="invoice-card max-w-5xl w-full bg-white border-t-[12px] border-slate-900 shadow-2xl overflow-hidden p-8 md:p-16 relative">
-            
-            <!-- STAMP EFFECT -->
-            <div class="absolute top-10 right-10 opacity-[0.03] pointer-events-none rotate-12 uppercase pointer-events-none">
-              <h1 class="text-9xl font-black italic">PAID IN FULL</h1>
-            </div>
-
-            <div class="flex flex-col md:flex-row justify-between items-start mb-16 border-b-2 border-slate-100 pb-12">
-              <div class="space-y-4">
-                <h1 class="title-font text-5xl text-slate-900 leading-tight">${propertySettings?.name || "HOTEL SATSANGI"}</h1>
-                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] leading-relaxed max-w-sm font-black">
-                  ${(propertySettings?.address || "").replace(/\n/g, "<br/>")}<br/>
-                  <span class="mt-2 block text-slate-400">
-                    ${propertySettings?.phone ? "📞 " + propertySettings.phone : ""} ${propertySettings?.email ? " • ✉️ " + propertySettings.email : ""}
-                  </span>
-                </div>
-                <div class="inline-flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-lg border border-slate-100 mt-4">
-                  <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">GSTIN</span>
-                  <span class="text-[11px] font-black text-slate-900 tabular-nums leading-none tracking-wider">${propertySettings?.gstNumber || "02AAACH2341M1Z1"}</span>
-                </div>
-              </div>
+        <body class="min-h-screen">
+          <div class="flex flex-col items-center p-4 md:p-12 w-full">
+            <div class="invoice-container bg-white w-full max-w-[210mm] min-h-[297mm] p-8 md:p-12 border border-gray-100 rounded-3xl relative invoice-shadow flex flex-col">
               
-              <div class="mt-8 md:mt-0 text-right">
-                <div class="mb-8">
-                  <div class="text-[10px] font-black text-amber-600 uppercase tracking-[0.4em] mb-2 font-bold italic">TAX INVOICE</div>
-                  <div class="text-3xl font-black text-slate-900 tabular-nums tracking-tighter">
-                    #${booking.invoiceNumber || "INV-" + new Date().getFullYear() + "-" + (booking.id.includes("-") ? booking.id.split("-")[1]?.substring(0, 4) : booking.id.substring(0, 4))}
-                  </div>
-                  <div class="text-[11px] font-bold text-slate-400 mt-2 uppercase tracking-widest tabular-nums font-black font-black">
-                    Issue Date: ${new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })}
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4 text-left border-t border-slate-100 pt-6">
-                  <div>
-                    <div class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 font-black">Check-In</div>
-                    <div class="text-[11px] font-black text-slate-800 tabular-nums">${earliestCheckIn.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
-                  </div>
-                  <div>
-                    <div class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 font-black">Check-Out</div>
-                    <div class="text-[11px] font-black text-slate-800 tabular-nums">${latestCheckOut.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-16 mb-16">
-              <div class="space-y-6">
-                <div class="flex items-center gap-3">
-                  <div class="w-8 h-[2px] bg-amber-500 font-black"></div>
-                  <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] font-black">Billed To</h3>
-                </div>
+              <div class="flex justify-between items-start mb-16">
                 <div>
-                  <h4 class="text-2xl font-black text-slate-900 mb-2 font-black">${booking.guestName}</h4>
-                  <div class="text-xs font-bold text-slate-500 leading-loose max-w-xs uppercase tracking-wider font-black">
-                    ${booking.guestDetails?.address || "Address Not Provided"}<br/>
-                    ${booking.guestDetails?.city ? booking.guestDetails.city + ", " : ""}${booking.guestDetails?.country || ""}<br/>
-                    <span class="text-slate-400">CONTACT: ${booking.guestDetails?.phoneNumber || "N/A"}</span>
+                  <h1 class="text-4xl font-extrabold tracking-tighter text-slate-900 mb-4">${(propertySettings?.name || "HOTEL SATSANGI").toUpperCase()}</h1>
+                  <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest leading-relaxed">
+                    ${(propertySettings?.address || "SATSANG NAGAR, DEOGHAR, JHARKHAND 814112").toUpperCase().replace(/\n/g, "<br/>")}<br/>
+                    PH: ${propertySettings?.phone || "+91 98765 43210"} • ${propertySettings?.email?.toUpperCase() || "CONTACT@HOTELSATSANGI.COM"}<br/>
+                    GSTIN: ${propertySettings?.gstNumber || "20ABCDE1234F1Z5"}
+                  </div>
+                </div>
+                <div class="text-right">
+                  <h2 class="text-2xl font-extrabold text-indigo-accent tracking-widest mb-4">TAX INVOICE</h2>
+                  <div class="space-y-4">
+                    <div>
+                      <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Invoice No</p>
+                      <p class="text-sm font-extrabold text-slate-900">#${booking.invoiceNumber || "INV-" + new Date().getFullYear() + "-" + (booking.id.includes("-") ? booking.id.split("-")[1]?.substring(0, 4) : booking.id.substring(0, 4))}</p>
+                    </div>
+                    <div>
+                      <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Date</p>
+                      <p class="text-sm font-extrabold text-slate-900">${formatDate(new Date().toISOString())}</p>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div class="space-y-6">
-                <div class="flex items-center gap-3 justify-end">
-                  <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] font-black">Stay Reference</h3>
-                  <div class="w-8 h-[2px] bg-amber-500 font-black"></div>
-                </div>
-                <div class="space-y-3">
-                  <div class="flex justify-between items-center py-2 border-b border-slate-100 font-black">
-                    <span class="text-[10px] font-black text-slate-400 uppercase font-black">Room Details</span>
-                    <span class="text-xs font-black text-slate-900">${hasMultipleRooms ? stayRoomRevenueItems.map((r) => "#" + r.roomNumber).join(", ") : "#" + (booking.roomNumber || "TBD") + " (" + (roomType?.name || "Standard") + ")"}</span>
+              <div class="grid grid-cols-2 gap-12 mb-16 pt-8 border-t border-gray-100">
+                <div class="space-y-4">
+                  <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Guest Details</p>
+                  <div>
+                    <h3 class="text-xl font-extrabold text-slate-900 mb-1">${booking.guestName.toUpperCase()}</h3>
+                    <p class="text-[11px] text-slate-500 font-medium">${booking.guestDetails?.address || "Address Not Provided"}</p>
+                    <p class="text-[11px] text-slate-500 font-medium mt-4">Ph: ${booking.guestDetails?.phoneNumber || "N/A"}</p>
                   </div>
-                  <div class="flex justify-between items-center py-2 border-b border-slate-100 font-black">
-                    <span class="text-[10px] font-black text-slate-400 uppercase font-black">Pax Details</span>
-                    <span class="text-xs font-black text-slate-900">${booking.totalGuests || 1} Adult(s) ${booking.extraChildren ? " + " + booking.extraChildren + " Child" : ""}</span>
+                </div>
+                <div class="space-y-4 text-right">
+                  <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Stay Information</p>
+                  <div class="space-y-2">
+                    <div class="flex justify-end gap-12">
+                      <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Room No</span>
+                      <span class="text-[11px] font-extrabold text-slate-900">#${booking.roomNumber || "101"}</span>
+                    </div>
+                    <div class="flex justify-end gap-12">
+                      <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Room Type</span>
+                      <span class="text-[11px] font-extrabold text-slate-900">${roomType?.name || "Double Bed Room"}</span>
+                    </div>
+                    <div class="flex justify-end gap-12">
+                      <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Check-In</span>
+                      <span class="text-[11px] font-extrabold text-slate-900">${formatDate(booking.checkIn)}</span>
+                    </div>
+                    <div class="flex justify-end gap-12">
+                      <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Check-Out</span>
+                      <span class="text-[11px] font-extrabold text-slate-900">${formatDate(booking.checkOut)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div class="mb-12">
-              <div class="w-full overflow-hidden rounded-2xl border border-slate-200">
-                <table class="w-full text-left font-black">
+              <div class="mb-12 flex-grow">
+                <table class="w-full">
                   <thead>
-                    <tr class="bg-slate-900 text-white font-black">
-                      <th class="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] font-black">Service Description</th>
-                      <th class="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-center font-black">SAC</th>
-                      <th class="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-center font-black">Nights/Qty</th>
-                      <th class="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-right font-black">Unit Rate</th>
-                      <th class="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-right font-black">Amount</th>
+                    <tr class="border-b-2 border-slate-900 text-slate-400">
+                      <th class="py-4 text-left text-[9px] font-bold uppercase tracking-widest">Description</th>
+                      <th class="py-4 text-center text-[9px] font-bold uppercase tracking-widest w-24">Qty</th>
+                      <th class="py-4 text-right text-[9px] font-bold uppercase tracking-widest w-32">Rate</th>
+                      <th class="py-4 text-right text-[9px] font-bold uppercase tracking-widest w-32">Amount</th>
                     </tr>
                   </thead>
-                  <tbody class="divide-y divide-slate-100 italic font-medium font-black">
-                    ${roomRows
-                      .filter((seg) => {
-                        const segSupplements = supplementRows.filter(
-                          (s) => s.sourceBookingId === seg.bookingId,
-                        );
-                        const supplementSum = segSupplements.reduce(
-                          (sum, s) => sum + s.amount,
-                          0,
-                        );
-                        const netAmount = seg.total - supplementSum;
-                        return seg.nights > 0 && Math.abs(netAmount) > 0.01;
-                      })
-                      .map((seg) => {
-                        const segSupplements = supplementRows.filter(
-                          (s) => s.sourceBookingId === seg.bookingId,
-                        );
-                        const supplementSum = segSupplements.reduce(
-                          (sum, s) => sum + s.amount,
-                          0,
-                        );
-                        const displayTotal = seg.total - supplementSum;
-                        const displayRate = displayTotal / (seg.nights || 1);
-
-                        return `
-                    <tr class="hover:bg-slate-50 transition-colors font-black">
-                      <td class="px-6 py-6 font-bold text-slate-700 font-black">
-                        <div class="text-[11px] font-black text-slate-900 uppercase font-black">Room Accommodation — Unit #${seg.roomNumber}</div>
-                        <div class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest italic font-black">${seg.roomTypeName} Segment</div>
-                      </td>
-                      <td class="px-6 py-6 text-[11px] font-black text-slate-400 text-center uppercase tracking-widest font-black">9963</td>
-                      <td class="px-6 py-6 text-[11px] font-black text-slate-900 text-center tabular-nums font-black">${seg.nights}</td>
-                      <td class="px-6 py-6 text-[11px] font-black text-slate-900 text-right tabular-nums font-black">₹${displayRate.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                      <td class="px-6 py-6 text-[11px] font-black text-slate-900 text-right tabular-nums font-black">₹${displayTotal.toLocaleString()}</td>
-                    </tr>
-                    ${
-                      seg.discountAmount > 0
-                        ? `
-                    <tr class="bg-rose-50/30 font-bold font-black">
-                      <td class="px-6 py-4 font-black">
-                        <div class="text-[10px] font-black text-rose-600 uppercase font-black">Segment Discount Applied</div>
-                      </td>
-                      <td class="px-6 py-4 text-center font-black">-</td>
-                      <td class="px-6 py-4 text-center font-black">-</td>
-                      <td class="px-6 py-4 text-right text-rose-600 tabular-nums font-black font-black">-₹${seg.discountAmount.toLocaleString()}</td>
-                      <td class="px-6 py-4 text-right text-rose-600 tabular-nums font-black font-black">-₹${seg.discountAmount.toLocaleString()}</td>
-                    </tr>
-                    `
-                        : ""
-                    }`;
-                      })
-                      .join("")}
-                    ${[...folioRows, ...supplementRows]
+                  <tbody class="divide-y divide-gray-100">
+                    ${[...supplementRows, ...folioRows]
                       .map(
                         (item) => `
-                    <tr class="hover:bg-slate-50 transition-colors font-black">
-                      <td class="px-6 py-6 font-bold text-slate-700 font-black">
-                        <div class="text-[11px] font-black text-slate-900 uppercase font-black">${item.description}</div>
-                        <div class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest italic font-bold">Category: ${item.category}</div>
-                      </td>
-                      <td class="px-6 py-6 text-[11px] font-black text-slate-400 text-center uppercase tracking-widest font-black">${item.category === "F&B" ? "9963" : "9997"}</td>
-                      <td class="px-6 py-6 text-[11px] font-black text-slate-900 text-center tabular-nums font-black">1</td>
-                      <td class="px-6 py-6 text-[11px] font-black text-slate-900 text-right tabular-nums font-black">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td class="px-6 py-6 text-[11px] font-black text-slate-900 text-right tabular-nums font-black">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    </tr>
+                      <tr>
+                        <td class="py-6">
+                          <p class="font-extrabold text-slate-900 uppercase">${item.description.toUpperCase()}</p>
+                          <p class="text-[10px] text-slate-400 font-bold mt-1 uppercase">${item.category} (Incl. ${item.rate}% GST)</p>
+                        </td>
+                        <td class="py-6 text-center text-sm font-extrabold text-slate-900 tabular-nums">1</td>
+                        <td class="py-6 text-right text-sm font-extrabold text-slate-900 tabular-nums">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="py-6 text-right text-sm font-extrabold text-slate-900 tabular-nums">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      </tr>
                     `,
                       )
                       .join("")}
                   </tbody>
                 </table>
               </div>
-            </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-12 items-end mb-12 font-black md:mb-16">
-              <div class="md:col-span-7 font-black">
-                <div class="bg-slate-50 rounded-2xl p-6 border border-slate-100 shadow-inner font-black">
-                  <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 font-bold italic font-black">Amount in Words</div>
-                  <div class="text-sm font-black text-slate-700 title-font italic leading-relaxed font-black">
-                    ${numToWords(finalNetInvoiceTotal)}
-                  </div>
+              <div class="flex flex-col items-end space-y-4 py-8 border-t border-gray-100">
+                <div class="flex justify-between w-full max-w-xs px-4">
+                  <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gross Total</span>
+                  <span class="text-sm font-extrabold text-slate-900 tabular-nums">₹${grossTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
-
-                <div class="mt-8 overflow-hidden rounded-xl border border-slate-100 overflow-x-auto">
-                    <table class="w-full text-left text-[8px] uppercase tracking-wider font-black">
-                        <thead class="bg-slate-50 border-b border-slate-100 font-black">
-                            <tr>
-                                <th class="p-3 font-black text-slate-400 font-black">GST Analysis (SAC)</th>
-                                <th class="p-3 text-right font-black text-slate-400 font-black">Taxable Value</th>
-                                <th class="p-3 text-right font-black text-slate-400 font-black">CGST Amount</th>
-                                <th class="p-3 text-right font-black text-slate-400 font-black">SGST Amount</th>
-                                <th class="p-3 text-right font-black text-slate-900 font-black">Total Tax</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-50 font-black">
-                            <tr>
-                                <td class="p-3 font-bold text-slate-900 font-black">Accom. (9963) @ ${roomGstRate}%</td>
-                                <td class="p-3 text-right tabular-nums font-black font-black">₹${taxSummary.accommodation.taxable.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                                <td class="p-3 text-right tabular-nums font-black font-black">₹${taxSummary.accommodation.cgst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                                <td class="p-3 text-right tabular-nums font-black font-black">₹${taxSummary.accommodation.sgst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                                <td class="p-3 text-right font-bold text-indigo-600 tabular-nums font-black">₹${(taxSummary.accommodation.cgst + taxSummary.accommodation.sgst).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                            </tr>
-                            ${
-                              taxSummary.services.taxable > 0
-                                ? `
-                            <tr>
-                                <td class="p-3 font-bold text-slate-900 font-black">Other (9997) @ 18%</td>
-                                <td class="p-3 text-right tabular-nums font-black">₹${taxSummary.services.taxable.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                                <td class="p-3 text-right tabular-nums font-black font-black">₹${taxSummary.services.cgst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                                <td class="p-3 text-right tabular-nums font-black font-black">₹${taxSummary.services.sgst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                                <td class="p-3 text-right font-bold text-indigo-600 tabular-nums font-black">₹${(taxSummary.services.cgst + taxSummary.services.sgst).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                            </tr>`
-                                : ""
-                            }
-                        </tbody>
-                    </table>
+                ${
+                  totalDiscountVal > 0
+                    ? `
+                <div class="flex justify-between w-full max-w-xs px-4">
+                  <span class="text-[10px] font-bold text-rose-500 uppercase tracking-widest">Applied Discount</span>
+                  <span class="text-sm font-extrabold text-rose-500 tabular-nums">-₹${totalDiscountVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                `
+                    : ""
+                }
+                <div class="h-px bg-gray-50 w-full max-w-xs my-2"></div>
+                <div class="flex justify-between w-full max-w-xs px-4">
+                  <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Subtotal (Net)</span>
+                  <span class="text-sm font-extrabold text-slate-900 tabular-nums">₹${netSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div class="flex justify-between w-full max-w-xs px-4">
+                  <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">CGST</span>
+                  <span class="text-sm font-extrabold text-slate-700 tabular-nums">₹${cgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div class="flex justify-between w-full max-w-xs px-4">
+                  <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">SGST</span>
+                  <span class="text-sm font-extrabold text-slate-700 tabular-nums">₹${sgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div class="h-px bg-gray-100 w-full max-w-xs my-2"></div>
+                <div class="flex justify-between w-full max-w-xs px-4 py-4 rounded-xl">
+                  <span class="text-[11px] font-extrabold text-slate-900 uppercase tracking-[0.2em]">Final Invoice Total</span>
+                  <span class="text-2xl font-extrabold text-indigo-accent tabular-nums">₹${finalNetInvoiceTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
 
-              <div class="md:col-span-5 space-y-4 font-black">
-                <div class="flex justify-between items-center px-4 py-2 border-b border-slate-100 font-black">
-                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest font-black">Net Subtotal</span>
-                  <span class="text-xs font-black text-slate-900 tabular-nums font-black">₹${netSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-                <div class="flex justify-between items-center px-4 py-2 border-b border-slate-100 font-bold font-black">
-                  <div class="flex flex-col font-black">
-                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest font-black">Total Tax (CGST+SGST)</span>
-                    <span class="text-[8px] font-bold text-slate-400 uppercase tracking-tight font-black font-black tracking-tight">Consolidated ${roomGstRate}% Weighted Avg.</span>
-                  </div>
-                  <span class="text-xs font-black text-slate-900 tabular-nums font-black">₹${totalTaxValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-                <div class="flex justify-between items-center px-6 py-6 bg-slate-900 rounded-[2rem] shadow-xl shadow-slate-200 mt-6 relative overflow-hidden group font-black">
-                  <div class="absolute inset-0 bg-gradient-to-r from-indigo-600/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity font-black"></div>
-                  <span class="text-xs font-black text-white uppercase tracking-[0.3em] relative z-10 font-black">Grand Total</span>
-                  <span class="text-2xl font-black text-white tabular-nums relative z-10 font-black">₹${finalNetInvoiceTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
+              <div class="mt-auto pt-12 border-t border-gray-100 flex justify-between items-end">
+                 <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                   Thank you for staying with us • Computer Generated
+                 </div>
+                 <div class="text-right">
+                   <div class="w-48 h-1 pr-8 border-b border-slate-900 mb-4 opacity-20"></div>
+                   <p class="text-[10px] font-extrabold text-slate-900 uppercase tracking-widest">Authorized Signatory</p>
+                 </div>
               </div>
             </div>
 
-            <!-- Signatory Section -->
-            <div class="mt-20 pt-12 border-t border-slate-100 flex flex-col md:flex-row justify-between items-end gap-12 font-black">
-              <div class="order-2 md:order-1 font-black">
-                 <div class="space-y-4 font-black">
-                  <div class="text-[8px] font-black text-slate-400 uppercase tracking-widest font-bold font-black">Terms & Conditions</div>
-                  <div class="text-[9px] text-slate-400 font-bold uppercase leading-relaxed font-bold font-black">
-                    1. Charges once billed are non-refundable.<br/>
-                    2. Payment is due at the time of check-out.<br/>
-                    3. This is a computer generated document.
-                  </div>
-                </div>
-              </div>
-              <div class="text-right order-1 md:order-2 font-black">
-                <div class="w-48 h-20 border-b border-slate-900 mb-4 ml-auto opacity-10 font-black"></div>
-                <p class="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em] font-bold font-black">Authorized Signatory</p>
-                <p class="text-[8px] font-bold text-slate-400 uppercase mt-1 tracking-widest font-black">FOR ${propertySettings?.name || "HOTEL SATSANGI"}</p>
-              </div>
-            </div>
-
-            <div class="mt-16 text-center no-print font-black">
-              <button onclick="window.print()" class="px-12 py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] shadow-2xl hover:scale-105 transition-all active:scale-95 shadow-slate-200 font-black">
-                Generate Physical Copy
+            <div class="mt-12 mb-24 text-center no-print">
+              <button onclick="window.print()" class="px-10 py-4 bg-slate-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-2xl hover:bg-black transition-all hover:scale-105 active:scale-95">
+                Print Invoice
               </button>
             </div>
           </div>
+          <script>
+            window.onload = () => {
+              // window.print();
+            };
+          </script>
         </body>
       </html>
     `;
+
     printWindow.document.write(invoiceHtml);
     printWindow.document.close();
   };
@@ -4360,64 +4343,10 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           </span>
                         </div>
                         <span className="text-xs font-bold text-slate-200 tabular-nums">
-                          {nights}n •{" "}
-                          {new Date(booking.checkIn).toLocaleDateString()}
+                          {nights}n • {formatDate(booking.checkIn)} -{" "}
+                          {formatDate(booking.checkOut)}
                         </span>
                       </div>
-                      <div className="flex justify-between items-start">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-white/5 rounded-lg border border-white/10">
-                            <Bed className="w-4 h-4 text-indigo-400" />
-                          </div>
-                          <div className="space-y-3">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                              Total Stay Revenue
-                            </span>
-                            <div className="space-y-4">
-                              {stayRoomRevenueItems.map((ri, idx) => (
-                                <div key={ri.bookingId} className="space-y-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-black text-indigo-400 bg-indigo-400/10 px-1.5 py-0.5 rounded shadow-sm">
-                                      #{ri.roomNumber}
-                                    </span>
-                                    <span className="text-[10px] font-black text-slate-200 uppercase tracking-wider">
-                                      {ri.roomTypeName}
-                                    </span>
-                                  </div>
-                                  <div className="text-[9px] font-bold text-slate-500 flex items-center gap-2 whitespace-nowrap">
-                                    ₹
-                                    {(ri.rate || 0).toLocaleString(undefined, {
-                                      maximumFractionDigits: 0,
-                                    })}{" "}
-                                    × {ri.nights} Night
-                                    {ri.nights !== 1 ? "s" : ""}
-                                    {ri.bookingId === booking.id && (
-                                      <span className="text-[7px] font-black text-indigo-400 bg-indigo-400/10 px-1 rounded uppercase tracking-[0.1em] border border-indigo-400/20">
-                                        Stay Period Segment
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center justify-between mt-1">
-                                    <span className="text-[8px] font-bold text-slate-500 uppercase">
-                                      {ri.elapsed} of {ri.nights} nights elapsed
-                                    </span>
-                                    <div className="text-right">
-                                      <span className="text-[9px] font-black text-slate-400 tabular-nums block line-through decoration-slate-600">
-                                        ₹{(ri.fullTotal || 0).toLocaleString()}
-                                      </span>
-                                      <span className="text-xs font-black text-slate-200 tabular-nums block">
-                                        ₹{(ri.total || 0).toLocaleString()}{" "}
-                                        Accrued
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      {/* Sub-text moved into revenue block above */}
 
                       {booking.discount && (
                         <div className="flex justify-between items-center bg-rose-500/10 p-3 rounded-2xl border border-rose-500/20">
@@ -4497,10 +4426,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <span className="text-[8px] font-black text-slate-500 uppercase">
-                                    {new Date(p.timestamp).toLocaleDateString(
-                                      undefined,
-                                      { month: "short", day: "numeric" },
-                                    )}
+                                    {formatDate(p.timestamp)}
                                   </span>
                                   {p.status === "Completed" && (
                                     <div className="flex items-center gap-1.5 opacity-0 group-hover/tx:opacity-100 transition-all">
@@ -4564,7 +4490,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                             className="flex items-center gap-1.5 px-2 py-0.5 bg-white/5 border border-white/10 rounded text-[8px] font-black uppercase text-slate-400"
                           >
                             <span
-                              className={`w-1 h-1 rounded-full ${cat === "F&B" ? "bg-orange-400" : "bg-indigo-400"} `}
+                              className={`w-1 h-1 rounded-full ${cat === "F&B" ? "bg-orange-400" : cat === "Payment" ? "bg-emerald-400" : "bg-indigo-400"} `}
                             ></span>
                             {cat}
                           </div>
@@ -4587,9 +4513,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                             >
                               <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
                                 <div
-                                  className={`w-8 h-8 md:w-9 md:h-9 shrink-0 rounded-xl flex items-center justify-center border shadow-inner ${item.category === "F&B" ? "bg-orange-500/10 border-orange-500/20 text-orange-400" : "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"} `}
+                                  className={`w-8 h-8 md:w-9 md:h-9 shrink-0 rounded-xl flex items-center justify-center border shadow-inner ${item.category === "F&B" ? "bg-orange-500/10 border-orange-500/20 text-orange-400" : item.type === "payment" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"} `}
                                 >
-                                  {item.category === "F&B" ? (
+                                  {item.type === "payment" ? (
+                                    <CreditCard className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                  ) : item.category === "F&B" ? (
                                     <Coffee className="w-3.5 h-3.5 md:w-4 md:h-4" />
                                   ) : item.category === "Room" ? (
                                     <Bed className="w-3.5 h-3.5 md:w-4 md:h-4" />
@@ -4629,32 +4557,56 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                     <span className="text-[7px] md:text-[8px] font-black text-indigo-400/60 uppercase leading-none">
                                       {item.category}
                                     </span>
+                                    {item.receiptNumber && (
+                                      <>
+                                        <span className="w-0.5 h-0.5 bg-white/10 rounded-full"></span>
+                                        <span className="text-[7px] font-black text-emerald-400/60 uppercase tracking-tighter leading-none">
+                                          #{item.receiptNumber}
+                                        </span>
+                                      </>
+                                    )}
                                   </div>
                                 </div>
                               </div>
                               <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
                                 <button
                                   onClick={() => {
-                                    setTargetFolioItem(item);
-                                    setChargeDescription(item.description);
-                                    setChargeAmount(item.amount.toString());
-                                    setChargeCategory(
-                                      (item.category as any) || "Other",
-                                    );
-                                    setIsChargeInclusive(
-                                      item.isInclusive || false,
-                                    );
-                                    setShowAddChargeModal(true);
+                                    if (item.type === "payment") {
+                                      const p = item as any as Payment;
+                                      setEditingPaymentId(p.id);
+                                      setPaymentAmount(p.amount.toString());
+                                      setPaymentMethod(p.method);
+                                      setPaymentCategory(p.category);
+                                      setShowPaymentModal(true);
+                                    } else {
+                                      setTargetFolioItem(item);
+                                      setChargeDescription(item.description);
+                                      setChargeAmount(item.amount.toString());
+                                      setChargeCategory(
+                                        (item.category as any) || "Other",
+                                      );
+                                      setIsChargeInclusive(
+                                        item.isInclusive || false,
+                                      );
+                                      setShowAddChargeModal(true);
+                                    }
                                   }}
                                   disabled={!canEdit}
                                   className={`p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-white/5 rounded-lg transition-all md:opacity-40 md:group-hover/item:opacity-100 ${!canEdit ? "opacity-10 cursor-not-allowed" : ""}`}
-                                  title="Edit Charge"
+                                  title={
+                                    item.type === "payment"
+                                      ? "Edit Payment"
+                                      : "Edit Charge"
+                                  }
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
                                 </button>
                                 <div className="text-right min-w-[60px] md:min-w-[80px]">
-                                  <p className="text-[11px] md:text-base font-black text-white tabular-nums tracking-tighter">
-                                    ₹{item.amount.toLocaleString()}
+                                  <p
+                                    className={`text-[11px] md:text-base font-black tabular-nums tracking-tighter ${item.type === "payment" ? "text-emerald-400" : "text-white"} `}
+                                  >
+                                    {item.type === "payment" ? "-" : ""}₹
+                                    {item.amount.toLocaleString()}
                                   </p>
                                   {item.isInclusive && (
                                     <p className="text-[7px] font-bold text-slate-500 uppercase tracking-widest">
@@ -4829,7 +4781,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                               Expiry
                             </p>
                             <p className="text-[10px] font-bold text-slate-600">
-                              {details?.passportExpiry || "N/A"}
+                              {formatDate(details?.passportExpiry) || "N/A"}
                             </p>
                           </div>
                           <div>
@@ -4837,7 +4789,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                               Issue Date
                             </p>
                             <p className="text-[10px] font-bold text-slate-600">
-                              {details?.passportIssueDate || "N/A"}
+                              {formatDate(details?.passportIssueDate) || "N/A"}
                             </p>
                           </div>
                           <div className="col-span-2">
@@ -4868,7 +4820,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                               Expiry
                             </p>
                             <p className="text-[10px] font-bold text-slate-600">
-                              {details?.visaExpiry || "N/A"}
+                              {formatDate(details?.visaExpiry) || "N/A"}
                             </p>
                           </div>
                           <div>
@@ -4876,7 +4828,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                               Issue Date
                             </p>
                             <p className="text-[10px] font-bold text-slate-600">
-                              {details?.visaIssueDate || "N/A"}
+                              {formatDate(details?.visaIssueDate) || "N/A"}
                             </p>
                           </div>
                           <div className="col-span-2">
@@ -4909,7 +4861,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                               Date In India
                             </p>
                             <p className="text-[10px] font-bold text-slate-600">
-                              {details?.arrivalDateIndia || "N/A"}
+                              {formatDate(details?.arrivalDateIndia) || "N/A"}
                             </p>
                           </div>
                           <div>
@@ -4989,7 +4941,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         </span>
                         {details?.formCSubmissionDate && (
                           <span className="text-[9px] font-bold text-emerald-600 tabular-nums">
-                            {details.formCSubmissionDate}
+                            {formatDate(details.formCSubmissionDate)}
                           </span>
                         )}
                       </div>

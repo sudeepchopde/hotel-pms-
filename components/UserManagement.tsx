@@ -39,6 +39,8 @@ const UserManagement: React.FC = () => {
       const res = await fetch("/api/users");
       if (res.ok) {
         setUsers(await res.json());
+      } else {
+        console.error("Failed to load users: HTTP", res.status);
       }
     } catch (err) {
       console.error("Failed to load users", err);
@@ -47,9 +49,33 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  // --- Password validation ---
+  const validatePassword = (pwd: string): string | null => {
+    if (pwd.length < 8) return "Password must be at least 8 characters long";
+    if (!/[A-Z]/.test(pwd))
+      return "Password must include at least one uppercase letter";
+    if (!/[a-z]/.test(pwd))
+      return "Password must include at least one lowercase letter";
+    if (!/[0-9]/.test(pwd)) return "Password must include at least one number";
+    return null;
+  };
+
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+
+    // Validate password: required for new users, validated if provided for edits
+    if (!editingUser && !password) {
+      setFormError("Password is required for new users");
+      return;
+    }
+    if (password) {
+      const pwdError = validatePassword(password);
+      if (pwdError) {
+        setFormError(pwdError);
+        return;
+      }
+    }
 
     const payload: any = {
       username,
@@ -73,10 +99,13 @@ const UserManagement: React.FC = () => {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(
-          data.detail || `Failed to ${editingUser ? "update" : "create"} user`,
-        );
+        const text = await res.text();
+        let errMsg = `Failed to ${editingUser ? "update" : "create"} user`;
+        try {
+          const data = JSON.parse(text);
+          errMsg = data.detail || errMsg;
+        } catch {}
+        throw new Error(errMsg);
       }
 
       const returnedUser = await res.json();
@@ -166,11 +195,16 @@ const UserManagement: React.FC = () => {
       if (res.ok) {
         setUsers(users.filter((u) => u.id !== userId));
       } else {
-        const data = await res.json();
-        alert(data.detail || "Failed to delete user");
+        const text = await res.text();
+        let errMsg = "Failed to delete user";
+        try {
+          const data = JSON.parse(text);
+          errMsg = data.detail || errMsg;
+        } catch {}
+        alert(errMsg);
       }
-    } catch (e) {
-      console.error("Delete failed", e);
+    } catch (e: any) {
+      alert(e.message || "Network error while deleting user");
     }
   };
 

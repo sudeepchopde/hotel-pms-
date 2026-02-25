@@ -202,10 +202,12 @@ export const addFolioItem = async (
 export const lookupGuest = async (
   name?: string,
   phone?: string,
+  includeImages: boolean = false,
 ): Promise<any> => {
   const params = new URLSearchParams();
   if (name) params.append("name", name);
   if (phone) params.append("phone", phone);
+  if (includeImages) params.append("include_images", "true");
   const response = await fetch(
     `${API_BASE_URL}/guest/lookup?${params.toString()}`,
   );

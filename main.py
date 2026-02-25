@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Query, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, Query, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -197,6 +197,40 @@ def get_db():
 
 app = FastAPI(title="Hotel Sathi API")
 
+# ========== MIDDLEWARE FOR EGRESS OPTIMIZATION ==========
+# GZip compression - compresses all responses > 500 bytes (saves 60-80% egress)
+from starlette.middleware.gzip import GZipMiddleware
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ========== LOW LEVEL SECURITY: HEADERS MIDDLEWARE ==========
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    # Prevent clickjacking
+    response.headers["X-Frame-Options"] = "DENY"
+    # Prevent MIME sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    # Prevent basic XSS
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
+
+# ========== MEDIUM LEVEL SECURITY: RATE LIMITING STORE ==========
+# Simple in-memory store for rate limiting login attempts
+import time as time_sys
+LOGIN_ATTEMPTS = defaultdict(list)
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_ATTEMPT_WINDOW_SECONDS = 60
+
+
 # Mount Billing folder for PDF access
 try:
     os.makedirs("Billing", exist_ok=True)
@@ -257,7 +291,20 @@ def ping():
 
 
 @app.post("/api/login", response_model=UserResponse)
-def login(user: UserLogin, db=Depends(get_db)):
+def login(request: Request, user: UserLogin, db=Depends(get_db)):
+    # --- Rate Limiting (Brute Force Protection) ---
+    client_ip = request.client.host if request.client else "unknown"
+    now = time_sys.time()
+    
+    # Clean up old attempts for this IP
+    if client_ip in LOGIN_ATTEMPTS:
+        LOGIN_ATTEMPTS[client_ip] = [t for t in LOGIN_ATTEMPTS[client_ip] if now - t < LOGIN_ATTEMPT_WINDOW_SECONDS]
+        if len(LOGIN_ATTEMPTS[client_ip]) >= MAX_LOGIN_ATTEMPTS:
+            raise HTTPException(status_code=429, detail="Too many login attempts. Please try again later.")
+    
+    def register_failed_attempt():
+        LOGIN_ATTEMPTS[client_ip].append(now)
+
     if not (USE_DATABASE() and db):
         # Fallback for demo/no-db mode
         if user.username == "admin" and user.password == "admin123":
@@ -276,6 +323,7 @@ def login(user: UserLogin, db=Depends(get_db)):
                     id=1, username="admin", full_name="System Admin", 
                     role="admin", allowed_sections=[]
                  )
+             register_failed_attempt()
              raise HTTPException(status_code=401, detail="Incorrect username or password")
              
         if not verify_password(user.password, db_user.password_hash):
@@ -283,8 +331,13 @@ def login(user: UserLogin, db=Depends(get_db)):
              if db_user.username == "admin" and user.password == "admin123":
                  pass
              else:
+                 register_failed_attempt()
                  raise HTTPException(status_code=401, detail="Incorrect username or password")
         
+        # Clear rate limit state on successful login
+        if client_ip in LOGIN_ATTEMPTS:
+            del LOGIN_ATTEMPTS[client_ip]
+
         # Parse allowed_sections
         allowed_sections = db_user.allowed_sections
         if isinstance(allowed_sections, str):
@@ -314,6 +367,17 @@ def create_user(user: UserCreate, db=Depends(get_db)):
         raise HTTPException(status_code=503, detail="Database not available")
         
     try:
+        # Server-side password validation
+        pwd = user.password
+        if len(pwd) < 8:
+            raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+        if not any(c.isupper() for c in pwd):
+            raise HTTPException(status_code=400, detail="Password must include at least one uppercase letter")
+        if not any(c.islower() for c in pwd):
+            raise HTTPException(status_code=400, detail="Password must include at least one lowercase letter")
+        if not any(c.isdigit() for c in pwd):
+            raise HTTPException(status_code=400, detail="Password must include at least one number")
+
         # Check if username exists
         existing = db.query(UserDB).filter(UserDB.username == user.username).first()
         if existing:
@@ -393,6 +457,16 @@ def update_user(user_id: int, user: UserUpdate, db=Depends(get_db)):
             db_user.username = user.username
             
         if user.password is not None:
+            # Server-side password validation on update
+            pwd = user.password
+            if len(pwd) < 8:
+                raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+            if not any(c.isupper() for c in pwd):
+                raise HTTPException(status_code=400, detail="Password must include at least one uppercase letter")
+            if not any(c.islower() for c in pwd):
+                raise HTTPException(status_code=400, detail="Password must include at least one lowercase letter")
+            if not any(c.isdigit() for c in pwd):
+                raise HTTPException(status_code=400, detail="Password must include at least one number")
             db_user.password_hash = get_password_hash(user.password)
             
         if user.full_name is not None:
@@ -434,16 +508,20 @@ def delete_user(user_id: int, db=Depends(get_db)):
         raise HTTPException(status_code=503, detail="Database not available")
         
     try:
-        if user_id == 1:
-            raise HTTPException(status_code=400, detail="Cannot delete admin")
-            
         db_user = db.query(UserDB).filter(UserDB.id == user_id).first()
         if not db_user:
             raise HTTPException(status_code=404, detail="User not found")
-             
+
+        # Protect admin username
         if db_user.username == 'admin':
-             raise HTTPException(status_code=400, detail="Cannot delete admin user")
-             
+            raise HTTPException(status_code=400, detail="Cannot delete the default admin user")
+
+        # Protect last admin — count how many admins remain
+        if db_user.role == 'admin':
+            admin_count = db.query(UserDB).filter(UserDB.role == 'admin').count()
+            if admin_count <= 1:
+                raise HTTPException(status_code=400, detail="Cannot delete the last admin user. Promote another user to admin first.")
+
         db.delete(db_user)
         db.commit()
         return {"status": "success"}
@@ -1175,7 +1253,7 @@ def db_room_type_to_pydantic(db_room):
         extraChildRate=get_attr(db_room, 'extra_child_rate', 0)
     )
 
-def db_booking_to_pydantic(db_booking):
+def db_booking_to_pydantic(db_booking, strip_images=False):
     _load_db_imports()
     # Handle potentially malformed JSON fields
     def safe_json_list(value):
@@ -1262,7 +1340,21 @@ def db_booking_to_pydantic(db_booking):
     acc_guests_raw = safe_json_list(db_booking.accessory_guests)
     sanitized_acc_guests = [sanitize_guest_details(g) for g in acc_guests_raw if isinstance(g, dict)]
 
-    return Booking(
+    # Strip heavy base64 image fields BEFORE constructing Booking
+    # Each image can be 100KB-2MB — stripping saves massive egress
+    if strip_images:
+        IMAGE_FIELDS = ['idImage', 'idImageBack', 'visaPage', 'additionalDocs', 'formPages', 'signature']
+        if guest_details_dict and isinstance(guest_details_dict, dict):
+            for f in IMAGE_FIELDS:
+                if f in guest_details_dict:
+                    guest_details_dict[f] = None if f not in ('additionalDocs', 'formPages') else []
+        for ag in sanitized_acc_guests:
+            if isinstance(ag, dict):
+                for f in IMAGE_FIELDS:
+                    if f in ag:
+                        ag[f] = None if f not in ('additionalDocs', 'formPages') else []
+
+    booking = Booking(
         id=db_booking.id,
         roomTypeId=db_booking.room_type_id or "",
         roomNumber=db_booking.room_number,
@@ -1295,6 +1387,8 @@ def db_booking_to_pydantic(db_booking):
         payments=processed_payments,
         discount=getattr(db_booking, 'discount', None)
     )
+
+    return booking
 
 def db_connection_to_pydantic(db_conn):
     _load_db_imports()
@@ -1751,7 +1845,7 @@ def update_property_settings(settings: PropertySettings, db=Depends(get_db)):
     return settings
 
 @app.get("/api/guest/lookup")
-def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, db=Depends(get_db)):
+def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, include_images: bool = False, db=Depends(get_db)):
     if USE_DATABASE() and db:
         query = db.query(GuestProfileDB)
         if name:
@@ -1795,7 +1889,7 @@ def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, db=Dep
         if profiles:
             results = []
             for profile in profiles:
-                results.append({
+                entry = {
                     "profileId": profile.id,
                     "id": profile.id,
                     "name": profile.name,
@@ -1822,11 +1916,6 @@ def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, db=Dep
                     "arrivalPort": profile.arrival_port,
                     "nextDestination": profile.next_destination,
                     "purposeOfVisit": profile.purpose_of_visit,
-                    "idImage": profile.id_image,
-                    "idImageBack": profile.id_image_back,
-                    "visaPage": profile.visa_page,
-                    "additionalDocs": profile.additional_docs or [],
-                    "formPages": profile.form_pages or [],
                     "serialNumber": profile.serial_number,
                     "fatherOrHusbandName": profile.father_or_husband_name,
                     "city": profile.city,
@@ -1835,9 +1924,32 @@ def lookup_guest(name: Optional[str] = None, phone: Optional[str] = None, db=Dep
                     "country": profile.country,
                     "arrivalTime": profile.arrival_time,
                     "departureTime": profile.departure_time,
-                    "signature": profile.signature,
-                    "lastCheckIn": profile.last_check_in
-                })
+                    "lastCheckIn": profile.last_check_in,
+                }
+                # Only include heavy base64 image/doc data when explicitly requested
+                # Each image can be 100KB-2MB of base64 — huge egress cost
+                if include_images:
+                    entry["idImage"] = profile.id_image
+                    entry["idImageBack"] = profile.id_image_back
+                    entry["visaPage"] = profile.visa_page
+                    entry["additionalDocs"] = profile.additional_docs or []
+                    entry["formPages"] = profile.form_pages or []
+                    entry["signature"] = profile.signature
+                else:
+                    entry["idImage"] = None
+                    entry["idImageBack"] = None
+                    entry["visaPage"] = None
+                    entry["additionalDocs"] = []
+                    entry["formPages"] = []
+                    entry["signature"] = None
+                    # Boolean flags so the UI can show "image exists" icons
+                    entry["hasIdImage"] = bool(profile.id_image)
+                    entry["hasIdImageBack"] = bool(profile.id_image_back)
+                    entry["hasVisaPage"] = bool(profile.visa_page)
+                    entry["hasSignature"] = bool(profile.signature)
+                    entry["hasAdditionalDocs"] = bool(profile.additional_docs)
+                    entry["hasFormPages"] = bool(profile.form_pages)
+                results.append(entry)
             return results
     return []
     
@@ -1865,7 +1977,7 @@ def get_bookings(db=Depends(get_db)):
         result = []
         for b in bookings:
             try:
-                result.append(db_booking_to_pydantic(b))
+                result.append(db_booking_to_pydantic(b, strip_images=True))
             except Exception as e:
                 import traceback
                 error_msg = f"CRITICAL: Failed to convert booking {getattr(b, 'id', 'unknown')} to Pydantic: {str(e)}\n{traceback.format_exc()}"
