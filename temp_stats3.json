@@ -1,0 +1,158 @@
+{
+  "summary": {
+    "totalRevenueYTD": 3050.0,
+    "totalBookingsYTD": 4,
+    "avgDailyRate": 435.71,
+    "revenueGrowth": 12.5,
+    "bookingsGrowth": 8.2,
+    "adrGrowth": -1.2
+  },
+  "revenueShare": {
+    "1y": [
+      {
+        "name": "Booking.com",
+        "value": 0.0,
+        "color": "bg-blue-500",
+        "hex": "#3b82f6"
+      },
+      {
+        "name": "MakeMyTrip",
+        "value": 0.0,
+        "color": "bg-red-500",
+        "hex": "#ef4444"
+      },
+      {
+        "name": "Expedia",
+        "value": 0.0,
+        "color": "bg-yellow-500",
+        "hex": "#eab308"
+      },
+      {
+        "name": "Direct",
+        "value": 100.0,
+        "color": "bg-emerald-500",
+        "hex": "#10b981"
+      }
+    ],
+    "6m": [
+      {
+        "name": "Booking.com",
+        "value": 0.0,
+        "color": "bg-blue-500",
+        "hex": "#3b82f6"
+      },
+      {
+        "name": "MakeMyTrip",
+        "value": 0.0,
+        "color": "bg-red-500",
+        "hex": "#ef4444"
+      },
+      {
+        "name": "Expedia",
+        "value": 0.0,
+        "color": "bg-yellow-500",
+        "hex": "#eab308"
+      },
+      {
+        "name": "Direct",
+        "value": 100.0,
+        "color": "bg-emerald-500",
+        "hex": "#10b981"
+      }
+    ],
+    "1m": [
+      {
+        "name": "Booking.com",
+        "value": 0.0,
+        "color": "bg-blue-500",
+        "hex": "#3b82f6"
+      },
+      {
+        "name": "MakeMyTrip",
+        "value": 0.0,
+        "color": "bg-red-500",
+        "hex": "#ef4444"
+      },
+      {
+        "name": "Expedia",
+        "value": 0.0,
+        "color": "bg-yellow-500",
+        "hex": "#eab308"
+      },
+      {
+        "name": "Direct",
+        "value": 100.0,
+        "color": "bg-emerald-500",
+        "hex": "#10b981"
+      }
+    ]
+  },
+  "trends": {
+    "daily": [
+      {
+        "label": "2026-02-21",
+        "channels": {
+          "dir": 0.0
+        },
+        "total": 0.0
+      },
+      {
+        "label": "2026-02-25",
+        "channels": {
+          "dir": 3050.0
+        },
+        "total": 3050.0
+      }
+    ],
+    "weekly": [
+      {
+        "label": "W8 2026",
+        "channels": {
+          "dir": 0.0
+        },
+        "total": 0.0
+      },
+      {
+        "label": "W9 2026",
+        "channels": {
+          "dir": 3050.0
+        },
+        "total": 3050.0
+      }
+    ],
+    "monthly": [
+      {
+        "label": "Feb 2026",
+        "channels": {
+          "dir": 3050.0
+        },
+        "total": 3050.0
+      }
+    ]
+  },
+  "popularity": {
+    "roomTypes": [
+      {
+        "name": "Delux Room",
+        "value": 1
+      },
+      {
+        "name": "Double Bed Room",
+        "value": 2
+      },
+      {
+        "name": "FAMILY ROOM",
+        "value": 1
+      }
+    ],
+    "bookingTrend": [
+      {
+        "label": "Feb 2026",
+        "channels": {
+          "dir": 4
+        },
+        "total": 4
+      }
+    ]
+  }
+}

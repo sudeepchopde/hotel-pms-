@@ -48,17 +48,30 @@ const AnalysisView: React.FC = () => {
   const [sharePeriod, setSharePeriod] = useState<"1m" | "6m" | "1y">("1y");
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Fetch performance data
   useEffect(() => {
     const fetchStats = async () => {
       try {
         setLoading(true);
+        setFetchError(null);
         const response = await fetch(`${API_BASE_URL}/statistics`);
-        const data = await response.json();
-        setStats(data);
-      } catch (error) {
+        if (!response.ok) {
+          throw new Error(`HTTP Error Status: ${response.status}`);
+        }
+        const text = await response.text();
+        try {
+          const data = JSON.parse(text);
+          setStats(data);
+        } catch (e: any) {
+          throw new Error(
+            `JSON Parse Error: ${e.message}. Response: ${text.substring(0, 100)}`,
+          );
+        }
+      } catch (error: any) {
         console.error("Failed to fetch statistics:", error);
+        setFetchError(error.message || String(error));
       } finally {
         setLoading(false);
       }
@@ -139,8 +152,9 @@ const AnalysisView: React.FC = () => {
   if (!stats) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <div className="p-4 bg-red-50 text-red-600 rounded-2xl border border-red-100">
-          Failed to load analytics. Please check backend connection.
+        <div className="p-4 bg-red-50 text-red-600 rounded-2xl border border-red-100 max-w-xl text-center">
+          Failed to load analytics: {fetchError || "Unknown error"}. Please
+          check backend connection.
         </div>
       </div>
     );
