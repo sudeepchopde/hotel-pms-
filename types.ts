@@ -187,6 +187,7 @@ export interface Payment {
   category: "Room" | "Folio" | "Extra" | "Partial";
   description?: string;
   status: "Completed" | "Refunded" | "Cancelled";
+  receiptNumber?: string;
 }
 
 export interface FolioItem {

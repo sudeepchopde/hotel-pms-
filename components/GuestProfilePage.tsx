@@ -1499,7 +1499,6 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
             }
           : p,
       );
-    } else {
       // Add new payment
       const newPayment: Payment = {
         id: Math.random().toString(36).substr(2, 9),
@@ -1511,6 +1510,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
           ? `Payment for ${targetFolioItem.description}`
           : "Partial/General Payment",
         status: "Completed",
+        receiptNumber: `RCP-${Math.floor(Date.now() / 1000)
+          .toString()
+          .slice(-6)}`,
       };
 
       updatedPayments.push(newPayment);
@@ -1634,6 +1636,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 category: "Partial",
                 description: "Online Payment (Razorpay)",
                 status: "Completed",
+                receiptNumber: `RCP-${rzpResponse.razorpay_payment_id.slice(-6).toUpperCase()}`,
               };
               const updatedPayments = [...(booking.payments || []), newPayment];
               let updatedFolio = booking.folio || [];
@@ -1732,83 +1735,203 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     }
   };
 
+  // Local utility for Indian Currency Words
+  const numToWords = (n: number) => {
+    const a = [
+      "",
+      "One ",
+      "Two ",
+      "Three ",
+      "Four ",
+      "Five ",
+      "Six ",
+      "Seven ",
+      "Eight ",
+      "Nine ",
+      "Ten ",
+      "Eleven ",
+      "Twelve ",
+      "Thirteen ",
+      "Fourteen ",
+      "Fifteen ",
+      "Sixteen ",
+      "Seventeen ",
+      "Eighteen ",
+      "Nineteen ",
+    ];
+    const b = [
+      "",
+      "",
+      "Twenty",
+      "Thirty",
+      "Forty",
+      "Fifty",
+      "Sixty",
+      "Seventy",
+      "Eighty",
+      "Ninety",
+    ];
+    const num = Math.floor(n);
+    const inWords = (num: number): string => {
+      if (num === 0) return "";
+      if (num < 20) return a[num];
+      if (num < 100) return b[Math.floor(num / 10)] + " " + a[num % 10];
+      if (num < 1000)
+        return a[Math.floor(num / 100)] + "Hundred " + inWords(num % 100);
+      if (num < 100000)
+        return (
+          inWords(Math.floor(num / 1000)) + "Thousand " + inWords(num % 1000)
+        );
+      if (num < 10000000)
+        return (
+          inWords(Math.floor(num / 100000)) + "Lakh " + inWords(num % 100000)
+        );
+      return (
+        inWords(Math.floor(num / 10000000)) + "Crore " + inWords(num % 10000000)
+      );
+    };
+    return (inWords(num) || "Zero") + " Rupees Only";
+  };
+
   const printReceipt = (item: {
     description: string;
     amount: number;
     timestamp: string | number;
     paymentMethod?: string;
+    receiptNumber?: string;
   }) => {
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
 
     const receiptHtml = `
-      <html>
-        <head>
-          <title>Payment Receipt - ${item.description}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-          <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
-          <style>
-            body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-print-color-adjust: exact; }
-            @media print { .no-print { display: none; } }
-            .premium-gradient { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); }
-          </style>
-        </head>
-        <body class="bg-white p-6 md:p-12 flex items-center justify-center min-h-screen">
-          <div class="w-full max-w-sm border-2 border-slate-900 p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden bg-white">
-            <div class="absolute -top-12 -right-12 w-32 h-32 premium-gradient opacity-10 rounded-full blur-3xl"></div>
-            
-            <div class="text-center mb-10">
-              <div class="inline-block px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[8px] font-black uppercase tracking-widest mb-4 border border-indigo-100">Official Receipt</div>
-              <h1 class="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-tight">${propertySettings?.name || "Hotel Satsangi"}</h1>
-              <p class="text-[9px] font-bold text-slate-400 uppercase leading-relaxed mt-2">
+    <html>
+      <head>
+        <title>Payment Receipt - ${item.description}</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+        <style>
+          body { 
+            font-family: 'Inter', sans-serif; 
+            -webkit-print-color-adjust: exact; 
+            margin: 0;
+            padding: 0;
+            background: #f8fafc;
+          }
+          .title-font { font-family: 'Playfair Display', serif; }
+          @media print { 
+            .no-print { display: none; } 
+            body { background: white; padding: 0; }
+            .receipt-card { border: none !important; box-shadow: none !important; margin: 0 !important; width: 100% !important; max-width: none !important; }
+          }
+          .gold-border { border-color: #b45309; }
+          .double-border { 
+            border: 1px solid #e2e8f0;
+            padding: 4px;
+            position: relative;
+          }
+          .double-border::after {
+            content: '';
+            position: absolute;
+            top: 2px; bottom: 2px; left: 2px; right: 2px;
+            border: 1px solid #cbd5e1;
+            pointer-events: none;
+          }
+        </style>
+      </head>
+      <body class="flex items-center justify-center min-h-screen p-4">
+        <div class="receipt-card w-full max-w-2xl bg-white border-t-[12px] border-slate-900 shadow-2xl relative overflow-hidden p-10">
+          
+          <!-- Header Section -->
+          <div class="flex justify-between items-start mb-12 border-b-2 border-slate-100 pb-8">
+            <div class="space-y-2">
+              <h1 class="title-font text-4xl text-slate-900">${propertySettings?.name || "Hotel Satsangi"}</h1>
+              <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-relaxed max-w-sm">
                 ${propertySettings?.address || "Property Address Not Registered"}<br/>
-                ${propertySettings?.phone ? "Ph: " + propertySettings.phone : ""} ${propertySettings?.email ? "• " + propertySettings.email : ""}
-              </p>
-            </div>
-            
-            <div class="space-y-5 mb-10">
-              <div class="flex justify-between items-baseline border-b border-slate-100 pb-3">
-                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Description</p>
-                <p class="text-sm font-bold text-slate-800 uppercase">${item.description}</p>
-              </div>
-              <div class="flex justify-between items-baseline border-b border-slate-100 pb-3">
-                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Date</p>
-                <p class="text-sm font-black text-slate-800 tabular-nums">${new Date(item.timestamp).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}</p>
-              </div>
-              <div class="flex justify-between items-baseline border-b border-slate-100 pb-3">
-                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Mode</p>
-                <p class="text-sm font-black text-indigo-600 uppercase italic">${item.paymentMethod || "Settled"}</p>
+                ${propertySettings?.phone ? "Contact: " + propertySettings.phone : ""} ${propertySettings?.email ? " • " + propertySettings.email : ""}
+                <br/>GSTIN: ${propertySettings?.gstNumber || "APPLIED FOR"}
               </div>
             </div>
-
-            <div class="bg-slate-950 rounded-3xl p-8 text-center mb-10 shadow-inner">
-                <p class="text-[9px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-2">Total Amount Paid</p>
-                <div class="flex items-center justify-center gap-1">
-                  <span class="text-lg font-black text-white opacity-50">₹</span>
-                  <p class="text-3xl font-black text-white tabular-nums">${item.amount.toLocaleString()}</p>
-                </div>
-            </div>
-
-            <div class="text-center space-y-6">
-              <div class="flex items-center justify-center gap-2">
-                <div class="px-3 py-1 bg-emerald-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-200">
-                  Trans. Verified
-                </div>
-              </div>
-              <p class="text-[8px] font-bold text-slate-400 uppercase leading-relaxed max-w-[200px] mx-auto">
-                Thank you for choosing ${propertySettings?.name || "Hotel Satsangi"}.<br/>Generated via secure PMS Audit Protocol.
-              </p>
-            </div>
-
-            <div class="mt-10 text-center no-print">
-              <button onclick="window.print()" class="w-full py-4 premium-gradient text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-200 hover:scale-[1.02] active:scale-95 transition-all">
-                Print Document
-              </button>
+            <div class="text-right">
+              <div class="text-xs font-black text-amber-600 uppercase tracking-widest mb-1">Receipt Voucher</div>
+              <div class="text-2xl font-black text-slate-900 tabular-nums">#${
+                item.receiptNumber ||
+                Math.floor(Date.now() / 1000)
+                  .toString()
+                  .slice(-6)
+              }</div>
+              <div class="text-[10px] font-bold text-slate-400 mt-1">${new Date(item.timestamp).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })}</div>
             </div>
           </div>
-        </body>
-      </html>
-    `;
+
+          <!-- Content Section -->
+          <div class="relative mb-12">
+             <div class="grid grid-cols-2 gap-12 bg-slate-50 p-8 rounded-2xl border border-slate-100">
+                <div class="space-y-6">
+                  <div>
+                    <p class="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Service Category</p>
+                    <p class="text-sm font-bold text-slate-800">Hospitality / Accommodation</p>
+                    <p class="text-[10px] text-slate-400 italic">SAC Code: 9963</p>
+                  </div>
+                  <div>
+                    <p class="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Transaction Ref</p>
+                    <p class="text-sm font-bold text-slate-800 uppercase">${item.description}</p>
+                  </div>
+                </div>
+                <div class="space-y-6">
+                  <div>
+                    <p class="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Payment Method</p>
+                    <div class="flex items-center gap-2">
+                      <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+                      <p class="text-sm font-black text-slate-900 uppercase">${item.paymentMethod || "CASH"}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p class="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Status</p>
+                    <p class="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded inline-block uppercase">Settled</p>
+                  </div>
+                </div>
+             </div>
+          </div>
+
+          <!-- Amount Block -->
+          <div class="flex items-end justify-between gap-10 mb-12">
+            <div class="flex-1 border-b-2 border-slate-100 pb-4">
+              <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Amount in Words</p>
+              <p class="text-sm font-bold text-slate-900 italic capitalize">${numToWords(item.amount)}</p>
+            </div>
+            <div class="bg-slate-900 text-white p-8 rounded-3xl min-w-[240px] shadow-xl shadow-slate-200 text-center relative">
+              <div class="absolute top-0 right-0 w-16 h-16 bg-white/5 rounded-full -mr-8 -mt-8"></div>
+              <p class="text-[10px] font-black text-amber-400 uppercase tracking-[0.3em] mb-3">Amount Received</p>
+              <div class="flex items-center justify-center gap-2">
+                <span class="text-xl font-bold text-amber-400 opacity-60">₹</span>
+                <p class="text-4xl font-black tabular-nums">${item.amount.toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer/Signatory -->
+          <div class="flex justify-between items-end mt-16 pt-8 border-t border-slate-100">
+            <div class="text-[9px] font-bold text-slate-400 uppercase leading-relaxed max-w-[280px]">
+              <p class="text-slate-900 mb-1">Notice:</p>
+              Generated by Digital PMS Audit Logs. This is an electronic receipt and does not require a physical stamp unless requested. E.&O.E.
+            </div>
+            <div class="text-center">
+              <div class="w-48 border-b-2 border-slate-900 mb-2 mx-auto"></div>
+              <p class="text-[10px] font-black text-slate-900 uppercase tracking-widest">Authorized Signatory</p>
+              <p class="text-[8px] font-bold text-slate-400 uppercase mt-1">For ${propertySettings?.name || "Hotel Satsangi"}</p>
+            </div>
+          </div>
+
+          <div class="mt-12 text-center no-print pt-8 border-t border-slate-50">
+            <button onclick="window.print()" class="px-10 py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl transition-all active:scale-95">
+              Print Original Copy
+            </button>
+          </div>
+
+        </div>
+      </body>
+    </html>
+  `;
     printWindow.document.write(receiptHtml);
     printWindow.document.close();
   };
@@ -2073,205 +2196,315 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     );
     const hasMultipleRooms = stayRoomRevenueItems.length > 1;
 
+    // GST Analysis Calculation
+    const taxSummary = {
+      accommodation: { taxable: 0, cgst: 0, sgst: 0, rate: roomGstRate },
+      services: { taxable: 0, cgst: 0, sgst: 0, rate: 18 }, // Placeholder dynamic rate
+    };
+
+    roomRows.forEach((seg) => {
+      const taxable = seg.total / (1 + roomGstRate / 100);
+      taxSummary.accommodation.taxable += taxable;
+      taxSummary.accommodation.cgst += taxable * (roomGstRate / 200);
+      taxSummary.accommodation.sgst += taxable * (roomGstRate / 200);
+    });
+
+    [...folioRows, ...supplementRows].forEach((item) => {
+      const rate = item.rate || 18;
+      const taxable = item.isInclusive
+        ? item.amount / (1 + rate / 100)
+        : item.amount;
+      taxSummary.services.taxable += taxable;
+      taxSummary.services.cgst += taxable * (rate / 200);
+      taxSummary.services.sgst += taxable * (rate / 200);
+    });
+
     const invoiceHtml = `
       <html>
         <head>
           <title>Tax Invoice - ${booking.guestName}</title>
           <script src="https://cdn.tailwindcss.com"></script>
-          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+          <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
           <style>
-            body { font-family: 'Inter', sans-serif; }
+            body { 
+              font-family: 'Inter', sans-serif; 
+              -webkit-print-color-adjust: exact; 
+              background: #f8fafc;
+            }
+            .title-font { font-family: 'Playfair Display', serif; }
             @media print {
               .no-print { display: none; }
-              body { padding: 0; margin: 0; }
+              body { background: white; padding: 0; margin: 0; }
+              .invoice-card { border: none !important; box-shadow: none !important; margin: 0 !important; width: 100% !important; max-width: none !important; }
+            }
+            .gold-accent { color: #b45309; }
+            .double-border { 
+              border: 1px solid #e2e8f0;
+              padding: 4px;
+              position: relative;
+            }
+            .double-border::after {
+              content: '';
+              position: absolute;
+              top: 2px; bottom: 2px; left: 2px; right: 2px;
+              border: 1px solid #cbd5e1;
+              pointer-events: none;
             }
           </style>
         </head>
-        <body class="bg-white p-10">
-          <div class="max-w-4xl mx-auto border border-slate-200 p-12 rounded-3xl shadow-sm">
-            <div class="flex justify-between items-start mb-16">
-              <div>
-                <h1 class="text-4xl font-black text-slate-900 tracking-tighter mb-2">${(propertySettings?.name || "HOTEL SATSANGI").toUpperCase()}</h1>
-                <p class="text-xs font-bold text-slate-500 uppercase tracking-widest leading-relaxed">
+        <body class="p-4 md:p-10 flex items-center justify-center min-h-screen">
+          <div class="invoice-card max-w-5xl w-full bg-white border-t-[12px] border-slate-900 shadow-2xl overflow-hidden p-8 md:p-16 relative">
+            
+            <!-- STAMP EFFECT -->
+            <div class="absolute top-10 right-10 opacity-[0.03] pointer-events-none rotate-12 uppercase pointer-events-none">
+              <h1 class="text-9xl font-black italic">PAID IN FULL</h1>
+            </div>
+
+            <div class="flex flex-col md:flex-row justify-between items-start mb-16 border-b-2 border-slate-100 pb-12">
+              <div class="space-y-4">
+                <h1 class="title-font text-5xl text-slate-900 leading-tight">${propertySettings?.name || "HOTEL SATSANGI"}</h1>
+                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] leading-relaxed max-w-sm font-black">
                   ${(propertySettings?.address || "").replace(/\n/g, "<br/>")}<br/>
-                  ${propertySettings?.phone ? "Ph: " + propertySettings.phone : ""} ${propertySettings?.email ? "• " + propertySettings.email : ""}<br/>
-                  GSTIN: ${propertySettings?.gstNumber || "02AAACH2341M1Z1"}
-                </p>
-              </div>
-              <div class="text-right">
-                <h2 class="text-xl font-black text-indigo-600 uppercase tracking-[0.2em] mb-4">Tax Invoice</h2>
-                <div class="space-y-1">
-                  <p class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Invoice No</p>
-                  <p class="text-sm font-black text-slate-900 uppercase">#${booking.invoiceNumber || "INV-" + new Date().getFullYear() + "-" + (booking.id.includes("-") ? booking.id.split("-")[1]?.substring(0, 4) : booking.id.substring(0, 4))}</p>
+                  <span class="mt-2 block text-slate-400">
+                    ${propertySettings?.phone ? "📞 " + propertySettings.phone : ""} ${propertySettings?.email ? " • ✉️ " + propertySettings.email : ""}
+                  </span>
                 </div>
-                <div class="mt-4 space-y-1">
-                  <p class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Date</p>
-                  <p class="text-sm font-black text-slate-900">${new Date().toLocaleDateString()}</p>
+                <div class="inline-flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-lg border border-slate-100 mt-4">
+                  <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">GSTIN</span>
+                  <span class="text-[11px] font-black text-slate-900 tabular-nums leading-none tracking-wider">${propertySettings?.gstNumber || "02AAACH2341M1Z1"}</span>
                 </div>
               </div>
-            </div>
+              
+              <div class="mt-8 md:mt-0 text-right">
+                <div class="mb-8">
+                  <div class="text-[10px] font-black text-amber-600 uppercase tracking-[0.4em] mb-2 font-bold italic">TAX INVOICE</div>
+                  <div class="text-3xl font-black text-slate-900 tabular-nums tracking-tighter">
+                    #${booking.invoiceNumber || "INV-" + new Date().getFullYear() + "-" + (booking.id.includes("-") ? booking.id.split("-")[1]?.substring(0, 4) : booking.id.substring(0, 4))}
+                  </div>
+                  <div class="text-[11px] font-bold text-slate-400 mt-2 uppercase tracking-widest tabular-nums font-black font-black">
+                    Issue Date: ${new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })}
+                  </div>
+                </div>
 
-            <div class="grid grid-cols-2 gap-12 mb-16 border-y border-slate-100 py-10">
-              <div>
-                <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Guest Details</p>
-                <h3 class="text-lg font-black text-slate-900 mb-1">${booking.guestName}</h3>
-                <p class="text-xs font-bold text-slate-500 leading-relaxed">
-                  ${booking.guestDetails?.address || "Address Not Provided"}<br/>
-                  ${booking.guestDetails?.city ? booking.guestDetails.city + ", " : ""}${booking.guestDetails?.country || ""}<br/>
-                  Ph: ${booking.guestDetails?.phoneNumber || "N/A"}
-                </p>
-              </div>
-              <div class="text-right">
-                <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Stay Information</p>
-                <div class="space-y-4">
-                  ${
-                    hasMultipleRooms
-                      ? `
-                  <div class="flex justify-between text-xs font-bold">
-                    <span class="text-slate-400 uppercase">Rooms</span>
-                    <span class="text-slate-900 font-black">${stayRoomRevenueItems.map((r) => "#" + r.roomNumber).join(" → ")}</span>
-                  </div>`
-                      : `
-                  <div class="flex justify-between text-xs font-bold">
-                    <span class="text-slate-400 uppercase">Room No</span>
-                    <span class="text-slate-900 font-black">#${booking.roomNumber || "TBD"}</span>
+                <div class="grid grid-cols-2 gap-4 text-left border-t border-slate-100 pt-6">
+                  <div>
+                    <div class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 font-black">Check-In</div>
+                    <div class="text-[11px] font-black text-slate-800 tabular-nums">${earliestCheckIn.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
                   </div>
-                  <div class="flex justify-between text-xs font-bold">
-                    <span class="text-slate-400 uppercase">Room Type</span>
-                    <span class="text-slate-900 font-black">${roomType?.name || "Standard"}</span>
-                  </div>`
-                  }
-                  <div class="flex justify-between text-xs font-bold">
-                    <span class="text-slate-400 uppercase">Check-In</span>
-                    <span class="text-slate-900 font-black">${earliestCheckIn.toLocaleDateString()}</span>
-                  </div>
-                  <div class="flex justify-between text-xs font-bold">
-                    <span class="text-slate-400 uppercase">Check-Out</span>
-                    <span class="text-slate-900 font-black">${latestCheckOut.toLocaleDateString()}</span>
+                  <div>
+                    <div class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 font-black">Check-Out</div>
+                    <div class="text-[11px] font-black text-slate-800 tabular-nums">${latestCheckOut.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <table class="w-full mb-16 px-4">
-              <thead>
-                <tr class="border-b-2 border-slate-900">
-                  <th class="text-left py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Description</th>
-                  <th class="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Qty</th>
-                  <th class="text-right py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Rate</th>
-                  <th class="text-right py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Amount</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100">
-                ${roomRows
-                  .filter((seg) => {
-                    const segSupplements = supplementRows.filter(
-                      (s) => s.sourceBookingId === seg.bookingId,
-                    );
-                    const supplementSum = segSupplements.reduce(
-                      (sum, s) => sum + s.amount,
-                      0,
-                    );
-                    const netAmount = seg.total - supplementSum;
-                    return seg.nights > 0 && Math.abs(netAmount) > 0.01;
-                  })
-                  .map((seg) => {
-                    const segSupplements = supplementRows.filter(
-                      (s) => s.sourceBookingId === seg.bookingId,
-                    );
-                    const supplementSum = segSupplements.reduce(
-                      (sum, s) => sum + s.amount,
-                      0,
-                    );
-                    const displayTotal = seg.total - supplementSum;
-                    const displayRate = displayTotal / (seg.nights || 1);
-
-                    return `
-                <tr>
-                  <td class="py-6">
-                    <p class="text-sm font-black text-slate-900 uppercase">Room Rent — #${seg.roomNumber} ${seg.roomTypeName}</p>
-                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">${!seg.isCurrent && hasMultipleRooms ? '<span class="text-amber-500 font-black">[PREVIOUS] </span>' : ""}Accommodation (Inclusive of ${roomGstRate}% GST)</p>
-                  </td>
-                  <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">${seg.nights}</td>
-                  <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${displayRate.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                  <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${displayTotal.toLocaleString()}</td>
-                </tr>
-                ${
-                  seg.discountAmount > 0
-                    ? `
-                <tr>
-                  <td class="py-6">
-                    <p class="text-sm font-black text-rose-600 uppercase">Discount on #${seg.roomNumber}</p>
-                    <p class="text-[10px] font-bold text-slate-400 mt-0.5">${seg.discount?.type === "percentage" ? `${seg.discount?.value}% Applied` : "Fixed Deduction"}</p>
-                  </td>
-                  <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">-</td>
-                  <td class="py-6 text-right text-sm font-black text-rose-600 tabular-nums">-₹${seg.discountAmount.toLocaleString()}</td>
-                  <td class="py-6 text-right text-sm font-black text-rose-600 tabular-nums">-₹${seg.discountAmount.toLocaleString()}</td>
-                </tr>
-                `
-                    : ""
-                }`;
-                  })
-                  .join("")}
-                ${[...folioRows, ...supplementRows]
-                  .map(
-                    (item) => `
-                  <tr>
-                    <td class="py-6">
-                      <p class="text-sm font-black text-slate-900 uppercase">${item.description}</p>
-                      <p class="text-[10px] font-bold text-slate-400 mt-0.5">${item.category} (${item.isInclusive ? "Incl." : "+"} ${item.rate}% GST)</p>
-                    </td>
-                    <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">1</td>
-                    <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  </tr>
-                `,
-                  )
-                  .join("")}
-              </tbody>
-            </table>
-
-            <div class="flex justify-end">
-              <div class="w-80 space-y-4">
-                <div class="flex justify-between text-xs font-bold uppercase tracking-widest text-slate-400">
-                  <span>Subtotal (Net)</span>
-                  <span class="text-slate-900 font-black tabular-nums">₹${netSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-16 mb-16">
+              <div class="space-y-6">
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-[2px] bg-amber-500 font-black"></div>
+                  <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] font-black">Billed To</h3>
                 </div>
-                <div class="flex justify-between text-xs font-bold uppercase tracking-widest text-slate-400">
-                  <span>CGST</span>
-                  <span class="text-slate-900 font-black tabular-nums">₹${cgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-                <div class="flex justify-between text-xs font-bold uppercase tracking-widest text-slate-400">
-                  <span>SGST</span>
-                  <span class="text-slate-900 font-black tabular-nums">₹${sgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-                <div class="flex justify-between items-center py-4 border-y border-slate-200 mt-4">
-                  <span class="text-xs font-black uppercase tracking-[0.2em] text-slate-900">Final Invoice Total</span>
-                  <span class="text-xl font-black text-indigo-600 tabular-nums">₹${finalNetInvoiceTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-24 pt-12 border-t border-slate-100">
-              <div class="grid grid-cols-2 gap-12">
                 <div>
-                  <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4 font-black">Terms & Conditions</p>
-                  <p class="text-[9px] font-bold text-slate-400 leading-relaxed uppercase">
+                  <h4 class="text-2xl font-black text-slate-900 mb-2 font-black">${booking.guestName}</h4>
+                  <div class="text-xs font-bold text-slate-500 leading-loose max-w-xs uppercase tracking-wider font-black">
+                    ${booking.guestDetails?.address || "Address Not Provided"}<br/>
+                    ${booking.guestDetails?.city ? booking.guestDetails.city + ", " : ""}${booking.guestDetails?.country || ""}<br/>
+                    <span class="text-slate-400">CONTACT: ${booking.guestDetails?.phoneNumber || "N/A"}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="space-y-6">
+                <div class="flex items-center gap-3 justify-end">
+                  <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] font-black">Stay Reference</h3>
+                  <div class="w-8 h-[2px] bg-amber-500 font-black"></div>
+                </div>
+                <div class="space-y-3">
+                  <div class="flex justify-between items-center py-2 border-b border-slate-100 font-black">
+                    <span class="text-[10px] font-black text-slate-400 uppercase font-black">Room Details</span>
+                    <span class="text-xs font-black text-slate-900">${hasMultipleRooms ? stayRoomRevenueItems.map((r) => "#" + r.roomNumber).join(", ") : "#" + (booking.roomNumber || "TBD") + " (" + (roomType?.name || "Standard") + ")"}</span>
+                  </div>
+                  <div class="flex justify-between items-center py-2 border-b border-slate-100 font-black">
+                    <span class="text-[10px] font-black text-slate-400 uppercase font-black">Pax Details</span>
+                    <span class="text-xs font-black text-slate-900">${booking.totalGuests || 1} Adult(s) ${booking.extraChildren ? " + " + booking.extraChildren + " Child" : ""}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mb-12">
+              <div class="w-full overflow-hidden rounded-2xl border border-slate-200">
+                <table class="w-full text-left font-black">
+                  <thead>
+                    <tr class="bg-slate-900 text-white font-black">
+                      <th class="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] font-black">Service Description</th>
+                      <th class="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-center font-black">SAC</th>
+                      <th class="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-center font-black">Nights/Qty</th>
+                      <th class="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-right font-black">Unit Rate</th>
+                      <th class="px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-right font-black">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 italic font-medium font-black">
+                    ${roomRows
+                      .filter((seg) => {
+                        const segSupplements = supplementRows.filter(
+                          (s) => s.sourceBookingId === seg.bookingId,
+                        );
+                        const supplementSum = segSupplements.reduce(
+                          (sum, s) => sum + s.amount,
+                          0,
+                        );
+                        const netAmount = seg.total - supplementSum;
+                        return seg.nights > 0 && Math.abs(netAmount) > 0.01;
+                      })
+                      .map((seg) => {
+                        const segSupplements = supplementRows.filter(
+                          (s) => s.sourceBookingId === seg.bookingId,
+                        );
+                        const supplementSum = segSupplements.reduce(
+                          (sum, s) => sum + s.amount,
+                          0,
+                        );
+                        const displayTotal = seg.total - supplementSum;
+                        const displayRate = displayTotal / (seg.nights || 1);
+
+                        return `
+                    <tr class="hover:bg-slate-50 transition-colors font-black">
+                      <td class="px-6 py-6 font-bold text-slate-700 font-black">
+                        <div class="text-[11px] font-black text-slate-900 uppercase font-black">Room Accommodation — Unit #${seg.roomNumber}</div>
+                        <div class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest italic font-black">${seg.roomTypeName} Segment</div>
+                      </td>
+                      <td class="px-6 py-6 text-[11px] font-black text-slate-400 text-center uppercase tracking-widest font-black">9963</td>
+                      <td class="px-6 py-6 text-[11px] font-black text-slate-900 text-center tabular-nums font-black">${seg.nights}</td>
+                      <td class="px-6 py-6 text-[11px] font-black text-slate-900 text-right tabular-nums font-black">₹${displayRate.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                      <td class="px-6 py-6 text-[11px] font-black text-slate-900 text-right tabular-nums font-black">₹${displayTotal.toLocaleString()}</td>
+                    </tr>
+                    ${
+                      seg.discountAmount > 0
+                        ? `
+                    <tr class="bg-rose-50/30 font-bold font-black">
+                      <td class="px-6 py-4 font-black">
+                        <div class="text-[10px] font-black text-rose-600 uppercase font-black">Segment Discount Applied</div>
+                      </td>
+                      <td class="px-6 py-4 text-center font-black">-</td>
+                      <td class="px-6 py-4 text-center font-black">-</td>
+                      <td class="px-6 py-4 text-right text-rose-600 tabular-nums font-black font-black">-₹${seg.discountAmount.toLocaleString()}</td>
+                      <td class="px-6 py-4 text-right text-rose-600 tabular-nums font-black font-black">-₹${seg.discountAmount.toLocaleString()}</td>
+                    </tr>
+                    `
+                        : ""
+                    }`;
+                      })
+                      .join("")}
+                    ${[...folioRows, ...supplementRows]
+                      .map(
+                        (item) => `
+                    <tr class="hover:bg-slate-50 transition-colors font-black">
+                      <td class="px-6 py-6 font-bold text-slate-700 font-black">
+                        <div class="text-[11px] font-black text-slate-900 uppercase font-black">${item.description}</div>
+                        <div class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest italic font-bold">Category: ${item.category}</div>
+                      </td>
+                      <td class="px-6 py-6 text-[11px] font-black text-slate-400 text-center uppercase tracking-widest font-black">${item.category === "F&B" ? "9963" : "9997"}</td>
+                      <td class="px-6 py-6 text-[11px] font-black text-slate-900 text-center tabular-nums font-black">1</td>
+                      <td class="px-6 py-6 text-[11px] font-black text-slate-900 text-right tabular-nums font-black">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td class="px-6 py-6 text-[11px] font-black text-slate-900 text-right tabular-nums font-black">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    </tr>
+                    `,
+                      )
+                      .join("")}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-12 items-end mb-12 font-black md:mb-16">
+              <div class="md:col-span-7 font-black">
+                <div class="bg-slate-50 rounded-2xl p-6 border border-slate-100 shadow-inner font-black">
+                  <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 font-bold italic font-black">Amount in Words</div>
+                  <div class="text-sm font-black text-slate-700 title-font italic leading-relaxed font-black">
+                    ${numToWords(finalNetInvoiceTotal)}
+                  </div>
+                </div>
+
+                <div class="mt-8 overflow-hidden rounded-xl border border-slate-100 overflow-x-auto">
+                    <table class="w-full text-left text-[8px] uppercase tracking-wider font-black">
+                        <thead class="bg-slate-50 border-b border-slate-100 font-black">
+                            <tr>
+                                <th class="p-3 font-black text-slate-400 font-black">GST Analysis (SAC)</th>
+                                <th class="p-3 text-right font-black text-slate-400 font-black">Taxable Value</th>
+                                <th class="p-3 text-right font-black text-slate-400 font-black">CGST Amount</th>
+                                <th class="p-3 text-right font-black text-slate-400 font-black">SGST Amount</th>
+                                <th class="p-3 text-right font-black text-slate-900 font-black">Total Tax</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50 font-black">
+                            <tr>
+                                <td class="p-3 font-bold text-slate-900 font-black">Accom. (9963) @ ${roomGstRate}%</td>
+                                <td class="p-3 text-right tabular-nums font-black font-black">₹${taxSummary.accommodation.taxable.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                                <td class="p-3 text-right tabular-nums font-black font-black">₹${taxSummary.accommodation.cgst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                                <td class="p-3 text-right tabular-nums font-black font-black">₹${taxSummary.accommodation.sgst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                                <td class="p-3 text-right font-bold text-indigo-600 tabular-nums font-black">₹${(taxSummary.accommodation.cgst + taxSummary.accommodation.sgst).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                            </tr>
+                            ${
+                              taxSummary.services.taxable > 0
+                                ? `
+                            <tr>
+                                <td class="p-3 font-bold text-slate-900 font-black">Other (9997) @ 18%</td>
+                                <td class="p-3 text-right tabular-nums font-black">₹${taxSummary.services.taxable.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                                <td class="p-3 text-right tabular-nums font-black font-black">₹${taxSummary.services.cgst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                                <td class="p-3 text-right tabular-nums font-black font-black">₹${taxSummary.services.sgst.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                                <td class="p-3 text-right font-bold text-indigo-600 tabular-nums font-black">₹${(taxSummary.services.cgst + taxSummary.services.sgst).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                            </tr>`
+                                : ""
+                            }
+                        </tbody>
+                    </table>
+                </div>
+              </div>
+
+              <div class="md:col-span-5 space-y-4 font-black">
+                <div class="flex justify-between items-center px-4 py-2 border-b border-slate-100 font-black">
+                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest font-black">Net Subtotal</span>
+                  <span class="text-xs font-black text-slate-900 tabular-nums font-black">₹${netSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div class="flex justify-between items-center px-4 py-2 border-b border-slate-100 font-bold font-black">
+                  <div class="flex flex-col font-black">
+                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest font-black">Total Tax (CGST+SGST)</span>
+                    <span class="text-[8px] font-bold text-slate-400 uppercase tracking-tight font-black font-black tracking-tight">Consolidated ${roomGstRate}% Weighted Avg.</span>
+                  </div>
+                  <span class="text-xs font-black text-slate-900 tabular-nums font-black">₹${totalTaxValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div class="flex justify-between items-center px-6 py-6 bg-slate-900 rounded-[2rem] shadow-xl shadow-slate-200 mt-6 relative overflow-hidden group font-black">
+                  <div class="absolute inset-0 bg-gradient-to-r from-indigo-600/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity font-black"></div>
+                  <span class="text-xs font-black text-white uppercase tracking-[0.3em] relative z-10 font-black">Grand Total</span>
+                  <span class="text-2xl font-black text-white tabular-nums relative z-10 font-black">₹${finalNetInvoiceTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Signatory Section -->
+            <div class="mt-20 pt-12 border-t border-slate-100 flex flex-col md:flex-row justify-between items-end gap-12 font-black">
+              <div class="order-2 md:order-1 font-black">
+                 <div class="space-y-4 font-black">
+                  <div class="text-[8px] font-black text-slate-400 uppercase tracking-widest font-bold font-black">Terms & Conditions</div>
+                  <div class="text-[9px] text-slate-400 font-bold uppercase leading-relaxed font-bold font-black">
                     1. Charges once billed are non-refundable.<br/>
                     2. Payment is due at the time of check-out.<br/>
-                    3. Guest is responsible for any damage to hotel property.
-                  </p>
-                </div>
-                <div class="text-right flex flex-col items-end">
-                  <div class="w-32 h-16 border-b border-slate-900 mb-2"></div>
-                  <p class="text-[9px] font-black text-slate-900 uppercase tracking-widest">Authorized Signature</p>
+                    3. This is a computer generated document.
+                  </div>
                 </div>
               </div>
+              <div class="text-right order-1 md:order-2 font-black">
+                <div class="w-48 h-20 border-b border-slate-900 mb-4 ml-auto opacity-10 font-black"></div>
+                <p class="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em] font-bold font-black">Authorized Signatory</p>
+                <p class="text-[8px] font-bold text-slate-400 uppercase mt-1 tracking-widest font-black">FOR ${propertySettings?.name || "HOTEL SATSANGI"}</p>
+              </div>
             </div>
-            
-            <div class="mt-12 text-center no-print">
-              <button onclick="window.print()" class="px-8 py-3 bg-indigo-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg hover:bg-indigo-700 transition-all">
-                Print Invoice
+
+            <div class="mt-16 text-center no-print font-black">
+              <button onclick="window.print()" class="px-12 py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] shadow-2xl hover:scale-105 transition-all active:scale-95 shadow-slate-200 font-black">
+                Generate Physical Copy
               </button>
             </div>
           </div>
@@ -4090,6 +4323,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                     amount: totalPayments,
                                     timestamp: new Date().toISOString(),
                                     paymentMethod: "Multiple",
+                                    receiptNumber: `RCP-CUM-${booking.id.slice(-6).toUpperCase()}`,
                                   })
                                 }
                                 className="p-1 hover:bg-white/10 rounded transition-colors"
@@ -4254,6 +4488,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                     className={`text-[10px] font-bold ${p.status === "Completed" ? "text-slate-200" : "text-slate-500 line-through"} `}
                                   >
                                     ₹{p.amount.toLocaleString()} via {p.method}
+                                    {p.receiptNumber && (
+                                      <span className="ml-2 text-[8px] font-black text-indigo-400/60 bg-indigo-400/10 px-1 rounded uppercase tracking-tighter">
+                                        #{p.receiptNumber.split("-").pop()}
+                                      </span>
+                                    )}
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -4288,6 +4527,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                             amount: p.amount,
                                             timestamp: p.timestamp,
                                             paymentMethod: p.method,
+                                            receiptNumber: p.receiptNumber,
                                           })
                                         }
                                         className="p-1 hover:bg-white/10 rounded"
@@ -4478,7 +4718,18 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                           className="w-3 h-3 opacity-50 hover:opacity-100 transition-opacity ml-1"
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            printReceipt(item);
+                                            const linkedPayment =
+                                              booking.payments?.find(
+                                                (p) => p.id === item.paymentId,
+                                              );
+                                            printReceipt({
+                                              description: item.description,
+                                              amount: item.amount,
+                                              timestamp: item.timestamp,
+                                              paymentMethod: item.paymentMethod,
+                                              receiptNumber:
+                                                linkedPayment?.receiptNumber,
+                                            });
                                           }}
                                         />
                                       </div>

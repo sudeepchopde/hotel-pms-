@@ -113,7 +113,11 @@ const ReportsView: React.FC = () => {
           const query = searchQuery.toLowerCase();
           return (
             booking.guestName.toLowerCase().includes(query) ||
-            booking.id.toLowerCase().includes(query)
+            booking.id.toLowerCase().includes(query) ||
+            booking.invoiceNumber?.toLowerCase().includes(query) ||
+            booking.payments?.some((p) =>
+              p.receiptNumber?.toLowerCase().includes(query),
+            )
           );
         }
 
@@ -346,7 +350,7 @@ const ReportsView: React.FC = () => {
               <Search className="w-4 h-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search Guest Name or Booking ID..."
+                placeholder="Search Name, Booking, Invoice, Receipt..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="bg-transparent text-xs font-bold text-slate-700 outline-none w-full placeholder:text-slate-400"

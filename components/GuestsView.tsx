@@ -153,7 +153,9 @@ const GuestsView: React.FC<GuestsViewProps> = ({
         g.guestDetails?.email?.toLowerCase().includes(query) ||
         g.guestDetails?.phoneNumber?.includes(query) ||
         g.id.includes(query) ||
-        g.roomNumber?.toLowerCase().includes(query);
+        g.roomNumber?.toLowerCase().includes(query) ||
+        g.invoiceNumber?.toLowerCase().includes(query) ||
+        g.payments?.some((p) => p.receiptNumber?.toLowerCase().includes(query));
 
       if (!matchesSearch) return false;
 
@@ -327,7 +329,7 @@ const GuestsView: React.FC<GuestsViewProps> = ({
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search name, email, or room #"
+              placeholder="Search name, phone, room, invoice, or receipt..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-11 pr-4 py-3 bg-white border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-800 focus:border-indigo-500 transition-all outline-none shadow-sm"
