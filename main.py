@@ -1100,7 +1100,7 @@ def get_fallback_rules():
     if 'rules' not in _fallback_cache:
         _load_db_imports()
         _fallback_cache['rules'] = RateRulesConfig(
-            weeklyRules={'isActive': True, 'activeDays': [5, 6], 'modifierType': 'percentage', 'modifierValue': 1.20},
+            weeklyRules={'isActive': True, 'activeDays': [0, 5, 6], 'modifierType': 'percentage', 'modifierValue': 1.20},
             specialEvents=[
                 {'id': 'ev-1', 'name': 'Diwali Festival', 'startDate': '2025-10-30', 'endDate': '2025-11-05', 'modifierType': 'percentage', 'modifierValue': 1.5},
                 {'id': 'ev-2', 'name': 'New Year Eve', 'startDate': '2025-12-30', 'endDate': '2026-01-01', 'modifierType': 'fixed', 'modifierValue': 5000}
@@ -1119,7 +1119,7 @@ def get_fallback_property():
             gstNumber='20ABCDE1234F1Z5',
             gstRate=12.0,
             foodGstRate=5.0,
-            otherGstRate=18.0,
+            otherGstRate=12.0,
             publicBaseUrl='http://localhost:3000',
             geminiApiKey='',
             loyaltyTiers=[
@@ -1317,6 +1317,72 @@ def db_rules_to_pydantic(db_rules):
         weeklyRules=db_rules.weekly_rules or {},
         specialEvents=db_rules.special_events or []
     )
+
+def calculate_yield_price(base_price: float, date_obj, rules) -> float:
+    """
+    Calculates the yielded price based on RateRules (weekly or special events).
+    'rules' can be a RateRulesDB object or a RateRulesConfig object.
+    """
+    _load_db_imports()
+    if not rules:
+        return base_price
+        
+    date_str = date_obj.strftime('%Y-%m-%d')
+    
+    # Extract rules data
+    if hasattr(rules, 'weekly_rules'): # It's a DB model
+        weekly = rules.weekly_rules or {}
+        special_events = rules.special_events or []
+    elif hasattr(rules, 'weeklyRules'): # It's a Pydantic model
+        weekly = rules.weeklyRules
+        if hasattr(weekly, 'dict'): weekly = weekly.dict()
+        special_events = getattr(rules, 'specialEvents', [])
+        # Convert special_events to list of dicts if needed
+        if special_events and len(special_events) > 0 and not isinstance(special_events[0], dict):
+            special_events = [e.dict() for e in special_events]
+    elif isinstance(rules, dict): # Handle dict if passed
+        weekly = rules.get('weeklyRules') or rules.get('weekly_rules') or {}
+        special_events = rules.get('specialEvents') or rules.get('special_events') or []
+    else:
+        return base_price
+
+    # Support both camelCase (frontend) and snake_case (potential DB/older syncs)
+    def get_val(d, camel, snake, default=None):
+        if not d or not isinstance(d, dict): return default
+        return d.get(camel) if camel in d else d.get(snake, default)
+
+    # 1. Check Special Events (Higher Priority)
+    for event in special_events:
+        start_date = get_val(event, 'startDate', 'start_date')
+        end_date = get_val(event, 'endDate', 'end_date')
+        
+        if start_date and end_date and start_date <= date_str <= end_date:
+            mod_type = get_val(event, 'modifierType', 'modifier_type')
+            mod_val = get_val(event, 'modifierValue', 'modifier_value', 1.0)
+            
+            if mod_type == 'percentage':
+                return round(base_price * mod_val, 0)
+            elif mod_type == 'fixed':
+                return round(base_price + mod_val, 0)
+                
+    # 2. Check Weekly Rules
+    is_active = get_val(weekly, 'isActive', 'is_active', False)
+    if is_active:
+        # Map Python weekday to match JS/TS convention (0=Sun, 1=Mon, ..., 6=Sat)
+        day_of_week = (date_obj.weekday() + 1) % 7
+        active_days_raw = get_val(weekly, 'activeDays', 'active_days', [])
+        # Ensure active_days contains integers for comparison
+        active_days = [int(d) for d in active_days_raw]
+        
+        if day_of_week in active_days:
+            mod_type = get_val(weekly, 'modifierType', 'modifier_type')
+            mod_val = get_val(weekly, 'modifierValue', 'modifier_value', 1.0)
+            if mod_type == 'percentage':
+                return round(base_price * mod_val, 0)
+            elif mod_type == 'fixed':
+                return round(base_price + mod_val, 0)
+                
+    return round(base_price, 0)
 
 def db_property_to_pydantic(db_prop):
     _load_db_imports()
@@ -2109,81 +2175,116 @@ def generate_upfront_folio_for_booking(booking: Booking, db) -> list:
     """Generates the whole stay's room logic from checkIn to checkOut as folio items."""
     import uuid
     from datetime import datetime, timedelta
-    from backend.db_models import RoomTypeDB, PropertySettingsDB
+    _load_db_imports()
+    from backend.db_models import RoomTypeDB, PropertySettingsDB, RateRulesDB, OTAConnectionDB
     
     existing_folio = [f.dict() for f in booking.folio] if booking.folio else []
     
     clean_folio = []
     for f in existing_folio:
         desc = f.get('description', '')
-        if "Daily Room Rent" in desc or "Extra Adult Charge" in desc or "Extra Child Charge" in desc or "Extra Bed Charge" in desc:
+        if any(tag in desc for tag in ["Daily Room Rent", "Extra Adult Charge", "Extra Child Charge", "Extra Bed Charge", "Peak/Weekend Supplement"]):
             continue
         clean_folio.append(f)
         
     try:
-        prop_res = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == 'default').first()
-        prop_gst = prop_res.gst_rate if prop_res and prop_res.gst_rate is not None else 12.0
-        
+        # Check if rules exist in DB
+        rules_db = db.query(RateRulesDB).filter(RateRulesDB.id == 'default').first()
+        if not rules_db:
+            rules_db = get_fallback_rules()
+            
         rt_db = db.query(RoomTypeDB).filter(RoomTypeDB.id == booking.roomTypeId).first()
         if not rt_db:
+            print(f"FAILED TO FIND ROOM TYPE {booking.roomTypeId} IN DB")
             return existing_folio
+            
+        print(f"GENERATING FOLIO for {booking.guestName} | Room {rt_db.name} | Dates {booking.checkIn} to {booking.checkOut}")
+        print(f"Using rules: {rules_db.id if hasattr(rules_db, 'id') else 'FALLBACK'}")
             
         d_start = datetime.strptime(booking.checkIn, '%Y-%m-%d').date()
         d_end = datetime.strptime(booking.checkOut, '%Y-%m-%d').date()
-        total_nights = (d_end - d_start).days
-        if total_nights < 1: total_nights = 1
         
-        nightly_total_incl = (booking.amount or 0) / total_nights
-        if nightly_total_incl <= 0: nightly_total_incl = rt_db.base_price or 0
+        e_adult_rate = (rt_db.extra_adult_rate or 0)
+        e_child_rate = (rt_db.extra_child_rate or 0)
+        e_bed_rate = (rt_db.extra_bed_charge or 0)
         
-        e_adult_c_incl = (booking.extraAdults or 0) * (rt_db.extra_adult_rate or 0)
-        e_child_c_incl = (booking.extraChildren or 0) * (rt_db.extra_child_rate or 0)
-        e_bed_c_incl = (booking.extraBeds or 0) * (rt_db.extra_bed_charge or 0)
-        
-        extras_sum_incl = e_adult_c_incl + e_child_c_incl + e_bed_c_incl
-        room_only_incl = nightly_total_incl - extras_sum_incl
-        if room_only_incl < 0:
-            room_only_incl = nightly_total_incl
-            e_adult_c_incl = e_child_c_incl = e_bed_c_incl = 0
-            
+        # OTA Markup Logic
+        markup_percentage = 0.0
+        markup_fixed = 0.0
+        if booking.source and booking.source != 'Direct':
+            conn = db.query(OTAConnectionDB).filter(OTAConnectionDB.name == booking.source).first()
+            if conn and conn.markup_value:
+                if conn.markup_type == 'percentage':
+                    markup_percentage = conn.markup_value
+                elif conn.markup_type == 'fixed':
+                    markup_fixed = conn.markup_value
+
         curr_d = d_start
         while curr_d < d_end:
             date_key = curr_d.strftime('%Y-%m-%d')
             
+            # Base logic
+            base_rent = rt_db.base_price
+            
+            # Apply Yield
+            yielded_price = calculate_yield_price(base_rent, curr_d, rules_db)
+            yield_adjustment = yielded_price - base_rent
+            
+            # Apply Markup (Marketplace specific)
+            final_rent = yielded_price
+            if markup_percentage > 0:
+                final_rent += (final_rent * markup_percentage) / 100
+            final_rent += markup_fixed
+
+            # Add main room rent
             clean_folio.append({
                 "id": f"folio-room-{str(uuid.uuid4())[:8]}",
                 "description": f"Daily Room Rent ({date_key})",
-                "amount": round(room_only_incl, 2),
+                "amount": round(final_rent - (yield_adjustment if yield_adjustment > 0 else 0), 2),
                 "category": "Room",
                 "isPaid": False,
                 "isInclusive": True,
                 "timestamp": f"{date_key}T12:00:00Z"
             })
-            if e_adult_c_incl > 0:
+            
+            # Reflection: If yield rule increased the price, show it as a separate "Supplement"
+            # as requested to make extra charges visible.
+            if yield_adjustment > 0:
+                clean_folio.append({
+                    "id": f"folio-yield-{str(uuid.uuid4())[:8]}",
+                    "description": f"Peak/Weekend Supplement ({date_key})",
+                    "amount": round(yield_adjustment, 2),
+                    "category": "Room",
+                    "isPaid": False,
+                    "isInclusive": True,
+                    "timestamp": f"{date_key}T12:00:00Z"
+                })
+
+            if (booking.extraAdults or 0) > 0:
                 clean_folio.append({
                     "id": f"folio-ext-a-{str(uuid.uuid4())[:8]}",
                     "description": f"Extra Adult Charge ({date_key})",
-                    "amount": round(e_adult_c_incl, 2),
+                    "amount": round(float(booking.extraAdults) * e_adult_rate, 2),
                     "category": "Room",
                     "isPaid": False,
                     "isInclusive": True,
                     "timestamp": f"{date_key}T12:00:00Z"
                 })
-            if e_child_c_incl > 0:
+            if (booking.extraChildren or 0) > 0:
                 clean_folio.append({
                     "id": f"folio-ext-c-{str(uuid.uuid4())[:8]}",
                     "description": f"Extra Child Charge ({date_key})",
-                    "amount": round(e_child_c_incl, 2),
+                    "amount": round(float(booking.extraChildren) * e_child_rate, 2),
                     "category": "Room",
                     "isPaid": False,
                     "isInclusive": True,
                     "timestamp": f"{date_key}T12:00:00Z"
                 })
-            if e_bed_c_incl > 0:
+            if (booking.extraBeds or 0) > 0:
                 clean_folio.append({
                     "id": f"folio-ext-b-{str(uuid.uuid4())[:8]}",
                     "description": f"Extra Bed Charge ({date_key})",
-                    "amount": round(e_bed_c_incl, 2),
+                    "amount": round(float(booking.extraBeds) * e_bed_rate, 2),
                     "category": "Room",
                     "isPaid": False,
                     "isInclusive": True,
@@ -2194,6 +2295,8 @@ def generate_upfront_folio_for_booking(booking: Booking, db) -> list:
         return clean_folio
     except Exception as e:
         logger.error(f"Error generating upfront folio: {e}")
+        import traceback
+        traceback.print_exc()
         return existing_folio
 
 @app.post("/api/bookings")
@@ -2209,6 +2312,17 @@ def create_booking(booking: Booking, db=Depends(get_db)):
                     # Update the Pydantic model's guestDetails before converting to DB model
                     booking.guestDetails.profileId = profile_id
 
+            folio_items = generate_upfront_folio_for_booking(booking, db)
+            
+            # For Direct bookings, if amount is missing or we want to enforce live inventory,
+            # we can recalculate total from folio. 
+            # Note: Existing logic used booking.amount. 
+            # To fix the "800 flat" issue, we should prioritize the folio sum if it's Direct.
+            calc_amount = sum(f.get('amount', 0) for f in folio_items)
+            final_amount = booking.amount
+            if booking.source == 'Direct' or not final_amount:
+                final_amount = calc_amount
+
             db_booking = BookingDB(
                 id=booking.id,
                 room_type_id=booking.roomTypeId,
@@ -2219,13 +2333,13 @@ def create_booking(booking: Booking, db=Depends(get_db)):
                 timestamp=booking.timestamp or int(datetime.now().timestamp() * 1000),
                 check_in=booking.checkIn,
                 check_out=booking.checkOut,
-                amount=booking.amount,
+                amount=final_amount,
                 reservation_id=booking.reservationId,
                 channel_sync=booking.channelSync or {},
                 guest_details=booking.guestDetails.dict() if booking.guestDetails else None,
                 number_of_rooms=booking.numberOfRooms or 1,
                 pax=booking.pax or 1,
-                folio=generate_upfront_folio_for_booking(booking, db),
+                folio=folio_items,
                 discount=booking.discount,
                 extra_adults=booking.extraAdults or 0,
                 extra_children=booking.extraChildren or 0,
@@ -2439,7 +2553,6 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
             db_booking.status = booking.status
             db_booking.check_in = booking.checkIn
             db_booking.check_out = booking.checkOut
-            db_booking.amount = booking.amount
             db_booking.reservation_id = booking.reservationId
             db_booking.channel_sync = booking.channelSync or {}
             db_booking.number_of_rooms = booking.numberOfRooms
@@ -2452,7 +2565,14 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
             db_booking.is_vip = booking.isVIP or False
             db_booking.is_settled = booking.isSettled or False
             db_booking.invoice_number = booking.invoiceNumber
+            
+            # Generate folio and update amount
             db_booking.folio = generate_upfront_folio_for_booking(booking, db)
+            if booking.source == 'Direct' or not booking.amount:
+                db_booking.amount = sum(f.get('amount', 0) for f in db_booking.folio)
+            else:
+                db_booking.amount = booking.amount
+
             db_booking.payments = [p.dict() for p in booking.payments] if booking.payments else []
             db_booking.discount = booking.discount
             

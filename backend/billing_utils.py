@@ -138,12 +138,14 @@ def generate_invoice_pdf(booking_data, property_settings, invoice_num, filepath)
     # Folio items
     total_folio_tax = 0
     for item in booking_data.get('folio', []):
-        cat = item.get('category', 'Other')
-        f_rate = 18
-        if cat == 'F&B': f_rate = property_settings.get('foodGstRate', 5)
-        elif cat == 'Laundry': f_rate = property_settings.get('otherGstRate', 18)
-        elif cat == 'Room': f_rate = gst_rate
-        else: f_rate = property_settings.get('otherGstRate', 18)
+        cat_upper = (item.get('category', 'Other')).upper()
+        desc_upper = (item.get('description', '')).upper()
+        f_rate = property_settings.get('otherGstRate', gst_rate) # Default to 12.0 consistency
+        if cat_upper == 'F&B': f_rate = property_settings.get('foodGstRate', 5)
+        elif cat_upper == 'LAUNDRY': f_rate = property_settings.get('otherGstRate', 18)
+        elif any(x in cat_upper for x in ['ROOM', 'ACCOMMODATION']) or 'ROOM RENT' in desc_upper: 
+            f_rate = gst_rate
+        else: f_rate = property_settings.get('otherGstRate', 12.0)
         
         amount = item.get('amount', 0)
         if item.get('isInclusive'):

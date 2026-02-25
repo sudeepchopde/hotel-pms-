@@ -66,6 +66,7 @@ import {
   PropertySettings,
   RoomStatus,
   UserResponse,
+  RateRulesConfig,
 } from "../types";
 import GuestProfilePage from "./GuestProfilePage";
 import NewBookingModal from "./NewBookingModal";
@@ -88,6 +89,7 @@ interface FrontDeskViewProps {
   propertySettings: PropertySettings | null;
   roomStatuses?: RoomStatus[];
   user: UserResponse | null;
+  rules?: RateRulesConfig | null;
 }
 
 const CELL_WIDTH = 140;
@@ -301,6 +303,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
   propertySettings,
   roomStatuses = [],
   user,
+  rules,
 }) => {
   const canCreate = hasPermission(user, PERMISSIONS.FRONT_DESK.CREATE_BOOKING);
   const canEdit = hasPermission(user, PERMISSIONS.FRONT_DESK.EDIT_BOOKING);
@@ -1290,21 +1293,59 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
         ),
       );
 
-      // Use custom rate if provided (Direct bookings), otherwise use room type base price
-      let rate = room.customRate ?? roomType?.basePrice ?? 0;
-      if (data.source && data.source !== "Direct") {
-        // For OTA bookings, apply markup to base price (custom rate not applicable)
-        rate = roomType?.basePrice || 0;
-        const conn = connections.find((c) => c.name === data.source);
-        if (conn && conn.markupValue) {
-          if (conn.markupType === "percentage") {
-            rate = rate + (rate * conn.markupValue) / 100;
-          } else if (conn.markupType === "fixed") {
-            rate = rate + conn.markupValue;
+      // Use dynamic rate from yield rules if it's a Direct booking and no custom rate is provided
+      let totalAmount = 0;
+      const startDate = new Date(room.checkIn);
+      const endDate = new Date(room.checkOut);
+
+      for (
+        let d = new Date(startDate);
+        d < endDate;
+        d.setDate(d.getDate() + 1)
+      ) {
+        const dateStr = d.toISOString().split("T")[0];
+        let dailyRate = room.customRate ?? roomType?.basePrice ?? 0;
+
+        // Apply yield rules ONLY if it's a Direct booking and NO custom rate is provided
+        if (
+          data.source === "Direct" &&
+          room.customRate === undefined &&
+          rules
+        ) {
+          // 1. Check Special Events
+          let appliedEvent = rules.specialEvents?.find(
+            (e) => dateStr >= e.startDate && dateStr <= e.endDate,
+          );
+          if (appliedEvent) {
+            if (appliedEvent.modifierType === "percentage") {
+              dailyRate = dailyRate * appliedEvent.modifierValue;
+            } else {
+              dailyRate = dailyRate + appliedEvent.modifierValue;
+            }
+          } else if (rules.weeklyRules?.isActive) {
+            // 2. Check Weekly Rules
+            const dayOfWeek = d.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+            if (rules.weeklyRules.activeDays.includes(dayOfWeek)) {
+              if (rules.weeklyRules.modifierType === "percentage") {
+                dailyRate = dailyRate * rules.weeklyRules.modifierValue;
+              } else {
+                dailyRate = dailyRate + rules.weeklyRules.modifierValue;
+              }
+            }
+          }
+        } else if (data.source && data.source !== "Direct") {
+          // For OTA bookings, apply markup to base price
+          const conn = connections.find((c) => c.name === data.source);
+          if (conn && conn.markupValue) {
+            if (conn.markupType === "percentage") {
+              dailyRate = dailyRate + (dailyRate * conn.markupValue) / 100;
+            } else if (conn.markupType === "fixed") {
+              dailyRate = dailyRate + conn.markupValue;
+            }
           }
         }
+        totalAmount += dailyRate;
       }
-      let totalAmount = rate * duration;
 
       // Add extra charges
       const extraAdults = room.extraAdults || 0;

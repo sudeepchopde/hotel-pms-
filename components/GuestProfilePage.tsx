@@ -470,8 +470,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
       // Elapsed nights for this specific booking in the stay
       let bElapsed = bNights;
-      if (b.status === "Confirmed") bElapsed = 0;
-      else if (b.status === "CheckedIn") {
+      if (b.status === "Confirmed") {
+        bElapsed = 0;
+      } else {
         const start = new Date(b.checkIn);
         const today = new Date();
         const d1 = new Date(
@@ -487,6 +488,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         const diffDays = Math.round(
           (d2.getTime() - d1.getTime()) / (1000 * 3600 * 24),
         );
+        // For In-House/CheckedIn/CheckedOut, we should have at least 1 night elapsed if we are at/past check-in date
         bElapsed = Math.max(1, Math.min(bNights, diffDays + 1));
       }
 
@@ -502,7 +504,8 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         }
       }
 
-      const bTotal = bRate * bElapsed;
+      const bTotal = (bRate || 0) * (bElapsed || 0);
+      const bFullTotal = (bRate || 0) * (bNights || 1);
 
       return {
         bookingId: b.id,
@@ -512,6 +515,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         elapsed: bElapsed,
         rate: bRate,
         total: bTotal,
+        fullTotal: bFullTotal,
         discount: b.discount,
       };
     });
@@ -519,54 +523,134 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
   // Combined Bill Summary with Taxes
   const billSummary = useMemo(() => {
-    let totalBase = 0;
-    let totalTax = 0;
+    let accruedBase = 0;
+    let accruedTax = 0;
+    let fullBase = 0;
+    let fullTax = 0;
     const roomGstRate = propertySettings?.gstRate || 12.0;
 
-    // 1. Sum up all room revenues from the stay
+    // 1. Calculate folio-based room charges per booking to handle upfront/manual billing
+    const folioRoomSums = allStayBookings.reduce(
+      (acc, b) => {
+        const roomSum = (b.folio || []).reduce((sum, item) => {
+          const descUpper = (item.description || "").toUpperCase();
+          const catUpper = (item.category || "").toUpperCase();
+          const isRoomCharge =
+            catUpper === "ROOM" ||
+            catUpper === "ROOM CHARGE" ||
+            descUpper.includes("DAILY ROOM RENT") ||
+            descUpper.includes("ROOM CHARGE") ||
+            descUpper.includes("PEAK/WEEKEND SUPPLEMENT") ||
+            descUpper.includes("EXTRA ADULT CHARGE") ||
+            descUpper.includes("EXTRA CHILD CHARGE") ||
+            descUpper.includes("EXTRA BED CHARGE");
+
+          return isRoomCharge ? sum + (Number(item.amount) || 0) : sum;
+        }, 0);
+        acc[b.id] = roomSum;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    // 2. Sum up all room revenues from the stay (pro-rated via stayRoomRevenueItems)
     stayRoomRevenueItems.forEach((ri) => {
-      let roomAmount = ri.total;
+      if (!ri) return;
+
+      // Handle Accrued portion: Max of dynamic pro-rata or actual items in folio
+      let dynamicAccrued = Number(ri.total) || 0;
       if (ri.discount) {
+        const dVal = Number(ri.discount.value) || 0;
         if (ri.discount.type === "percentage") {
-          roomAmount = roomAmount * (1 - ri.discount.value / 100);
+          dynamicAccrued = dynamicAccrued * (1 - dVal / 100);
         } else {
-          roomAmount = Math.max(0, roomAmount - ri.discount.value);
+          dynamicAccrued = Math.max(0, dynamicAccrued - dVal);
         }
       }
-      const roomBase = roomAmount / (1 + roomGstRate / 100);
-      const roomTax = roomAmount - roomBase;
-      totalBase += roomBase;
-      totalTax += roomTax;
+
+      // If the folio already has charges (e.g. upfront billing), ensure we count them
+      // as part of the accrued balance even if nights haven't technically 'elapsed' yet.
+      const folioAccrued = folioRoomSums[ri.bookingId] || 0;
+      const accruedAmount = Math.max(dynamicAccrued, folioAccrued);
+
+      const accBase = accruedAmount / (1 + roomGstRate / 100);
+      const accTax = accruedAmount - accBase;
+      accruedBase += accBase;
+      accruedTax += accTax;
+
+      // Full Stay portion
+      let dynamicFull = Number(ri.fullTotal || ri.total) || 0;
+      if (ri.discount) {
+        const dVal = Number(ri.discount.value) || 0;
+        if (ri.discount.type === "percentage") {
+          dynamicFull = dynamicFull * (1 - dVal / 100);
+        } else {
+          dynamicFull = Math.max(0, dynamicFull - dVal);
+        }
+      }
+      // Full stay is also at least what's in the folio
+      const fullAmount = Math.max(dynamicFull, folioAccrued);
+
+      const fBase = fullAmount / (1 + roomGstRate / 100);
+      const fTax = fullAmount - fBase;
+      fullBase += fBase;
+      fullTax += fTax;
     });
 
-    // 2. Sum up all folio items from all bookings in the stay
+    // 3. Sum up all non-room folio items from all bookings in the stay
     allStayBookings.forEach((b) => {
+      if (!b) return;
       (b.folio || []).forEach((item) => {
+        if (!item) return;
         const descUpper = (item.description || "").toUpperCase();
-        const isInclusive =
-          item.isInclusive === true ||
-          descUpper.includes("EXTRA ADULT") ||
-          descUpper.includes("EXTRA CHILD") ||
-          descUpper.includes("EXTRA BED");
+        const catUpper = (item.category || "").toUpperCase();
 
-        let rate = propertySettings?.otherGstRate || 18;
+        // Skip items already included in the room revenue logic above
+        const isAutoRoomCharge =
+          catUpper === "ROOM" ||
+          catUpper === "ROOM CHARGE" ||
+          descUpper.includes("DAILY ROOM RENT") ||
+          descUpper.includes("ROOM CHARGE") ||
+          descUpper.includes("PEAK/WEEKEND SUPPLEMENT") ||
+          descUpper.includes("EXTRA ADULT CHARGE") ||
+          descUpper.includes("EXTRA CHILD CHARGE") ||
+          descUpper.includes("EXTRA BED CHARGE");
+
+        if (isAutoRoomCharge) return;
+
+        const isInclusive = item.isInclusive === true;
+        let rate = propertySettings?.otherGstRate || 12.0;
         if (item.category === "F&B") rate = propertySettings?.foodGstRate || 5;
         else if (item.category === "Laundry")
           rate = propertySettings?.otherGstRate || 18;
+        else if (catUpper === "ROOM" || catUpper === "ACCOMMODATION")
+          rate = roomGstRate;
 
+        let base, tax;
+        const amount = Number(item.amount) || 0;
         if (isInclusive) {
-          const itemBase = item.amount / (1 + rate / 100);
-          const itemTax = item.amount - itemBase;
-          totalBase += itemBase;
-          totalTax += itemTax;
+          base = amount / (1 + rate / 100);
+          tax = amount - base;
         } else {
-          totalBase += item.amount;
-          totalTax += item.amount * (rate / 100);
+          base = amount;
+          tax = amount * (rate / 100);
         }
+
+        accruedBase += base;
+        accruedTax += tax;
+        fullBase += base;
+        fullTax += tax;
       });
     });
 
-    return { totalBase, totalTax, grandTotal: totalBase + totalTax };
+    return {
+      accruedTotal: (accruedBase || 0) + (accruedTax || 0),
+      fullStayTotal: (fullBase || 0) + (fullTax || 0),
+      accruedBase: accruedBase || 0,
+      accruedTax: accruedTax || 0,
+      fullBase: fullBase || 0,
+      fullTax: fullTax || 0,
+    };
   }, [stayRoomRevenueItems, allStayBookings, propertySettings]);
 
   const handleApplyDiscount = () => {
@@ -631,9 +715,10 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     return payments;
   }, [allStayBookings]);
 
-  const totalBill = billSummary.grandTotal;
+  const totalBill = billSummary.fullStayTotal;
+  const accruedBill = billSummary.fullStayTotal; // Changed to fullStayTotal to reflect whole stay length
   const netOutstanding = totalBill - totalPayments;
-  const grandTotal = roomBaseTotal + unpaidFolioTotal; // Keep for backward compatibility in UI where needed
+  const grandTotal = totalBill;
 
   const [history, setHistory] = useState<Booking[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
@@ -1351,24 +1436,46 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   const handleAddCharge = () => {
     if (!chargeDescription || !chargeAmount) return;
 
-    const newItem: FolioItem = {
-      id: Math.random().toString(36).substring(2, 9),
-      category: chargeCategory,
-      description: chargeDescription,
-      amount: parseFloat(chargeAmount),
-      isInclusive: isChargeInclusive,
-      timestamp: new Date().toISOString(),
-      isPaid: false,
-    };
+    let updatedFolio = [...(booking.folio || [])];
+    if (targetFolioItem) {
+      // Edit mode: update existing item
+      updatedFolio = updatedFolio.map((f) =>
+        f.id === targetFolioItem.id
+          ? {
+              ...f,
+              description: chargeDescription,
+              amount: parseFloat(chargeAmount),
+              category: chargeCategory as any,
+              isInclusive: isChargeInclusive,
+            }
+          : f,
+      );
+    } else {
+      // Add mode: create new item
+      const newItem: FolioItem = {
+        id: Math.random().toString(36).substring(2, 9),
+        category: chargeCategory as any,
+        description: chargeDescription,
+        amount: parseFloat(chargeAmount),
+        isInclusive: isChargeInclusive,
+        timestamp: new Date().toISOString(),
+        isPaid: false,
+      };
+      updatedFolio.push(newItem);
+    }
 
-    const newFolio = [...(booking.folio || []), newItem];
-    onUpdateFolio?.(booking.id, newFolio);
+    if (onUpdateBooking) {
+      onUpdateBooking({ ...booking, folio: updatedFolio });
+    } else {
+      onUpdateFolio?.(booking.id, updatedFolio);
+    }
 
     // Reset and close
     setChargeDescription("");
     setChargeAmount("");
     setChargeCategory("Other");
     setIsChargeInclusive(true);
+    setTargetFolioItem(null);
     setShowAddChargeModal(false);
   };
 
@@ -1776,13 +1883,13 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
     const roomGstRate = propertySettings?.gstRate || 12.0;
     const foodGstRate = propertySettings?.foodGstRate || 5.0;
-    const otherGstRate = propertySettings?.otherGstRate || 18.0;
+    const otherGstRate = propertySettings?.otherGstRate || 12.0;
 
     // --- Room-wise breakdown ---
     let totalRoomBase = 0;
     let totalRoomTax = 0;
     const roomRows = stayRoomRevenueItems.map((ri) => {
-      let roomAmount = ri.total;
+      let roomAmount = ri.fullTotal;
       let segDiscountAmount = 0;
       if (ri.discount) {
         if (ri.discount.type === "percentage") {
@@ -1800,7 +1907,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       return {
         roomNumber: ri.roomNumber,
         roomTypeName: ri.roomTypeName,
-        nights: ri.elapsed,
+        nights: ri.nights,
         rate: ri.rate,
         total: roomAmount,
         base: segBase,
@@ -1808,42 +1915,152 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
         discount: ri.discount,
         discountAmount: segDiscountAmount,
         isCurrent: ri.bookingId === booking.id,
+        bookingId: ri.bookingId,
       };
     });
 
     // --- Folio rows (stay-wide) ---
+    // We only display non-room items in the general Folio section of the invoice
+    // OR we include all if we want total transparency.
+    // To match billSummary and avoid double counting, we filter out auto-room charges
+    // that are already summarized in roomRows.
     let totalFolioTax = 0;
     let totalFolioBase = 0;
 
-    const folioRows = stayAllFolioItems.map((item) => {
-      const rate = item.category === "F&B" ? foodGstRate : otherGstRate;
-      let base, tax;
+    const folioRows = stayAllFolioItems
+      .filter((item) => {
+        const descUpper = (item.description || "").toUpperCase();
+        const catUpper = (item.category || "").toUpperCase();
+        const isAutoRoomCharge =
+          catUpper === "ROOM" ||
+          catUpper === "ROOM CHARGE" ||
+          descUpper.includes("DAILY ROOM RENT") ||
+          descUpper.includes("ROOM CHARGE") ||
+          descUpper.includes("PEAK/WEEKEND SUPPLEMENT") ||
+          descUpper.includes("EXTRA ADULT CHARGE") ||
+          descUpper.includes("EXTRA CHILD CHARGE") ||
+          descUpper.includes("EXTRA BED CHARGE");
 
-      if (item.isInclusive) {
-        base = item.amount / (1 + rate / 100);
-        tax = item.amount - base;
+        // If it's a supplement or rent, we prefer showing it in the supplement/room section
+        return !isAutoRoomCharge;
+      })
+      .map((item) => {
+        const catUpper = (item.category || "").toUpperCase();
+        let rate = otherGstRate;
+        if (catUpper === "F&B") rate = foodGstRate;
+        else if (catUpper === "LAUNDRY") rate = otherGstRate;
+        else if (
+          catUpper === "ROOM" ||
+          catUpper === "ROOM CHARGE" ||
+          catUpper === "ACCOMMODATION"
+        )
+          rate = roomGstRate;
+
+        let base, tax;
+
+        if (item.isInclusive) {
+          base = item.amount / (1 + rate / 100);
+          tax = item.amount - base;
+        } else {
+          base = item.amount;
+          tax = item.amount * (rate / 100);
+        }
+
+        totalFolioTax += tax;
+        totalFolioBase += base;
+
+        return {
+          ...item,
+          base,
+          tax,
+          rate,
+          displayAmount: base + tax,
+        };
+      });
+
+    // We also need to add the supplements back as separate rows if we want transparency
+    // but subtract them from the roomRows to balance.
+    // IMPROVEMENT: Merge "PEAK/WEEKEND SUPPLEMENT" into "DAILY ROOM RENT" for the same date
+    const rawSupplements = stayAllFolioItems
+      .filter((item) => {
+        const descUpper = (item.description || "").toUpperCase();
+        const catUpper = (item.category || "").toUpperCase();
+        return (
+          catUpper === "ROOM" ||
+          catUpper === "ROOM CHARGE" ||
+          descUpper.includes("DAILY ROOM RENT") ||
+          descUpper.includes("PEAK/WEEKEND SUPPLEMENT") ||
+          descUpper.includes("EXTRA ADULT CHARGE") ||
+          descUpper.includes("EXTRA CHILD CHARGE") ||
+          descUpper.includes("EXTRA BED CHARGE")
+        );
+      })
+      .map((item) => {
+        const rate = roomGstRate;
+        const base = item.amount / (1 + rate / 100);
+        const tax = item.amount - base;
+        totalFolioTax += tax;
+        totalFolioBase += base;
+        return {
+          ...item,
+          base,
+          tax,
+          rate,
+          displayAmount: base + tax,
+        };
+      });
+
+    // Merge logic: Group by date found in description
+    const mergedSupplements: typeof rawSupplements = [];
+    const dateMap = new Map<string, (typeof rawSupplements)[0]>();
+
+    rawSupplements.forEach((item) => {
+      const dateMatch = item.description.match(/\d{4}-\d{2}-\d{2}/);
+      const isRent = item.description.toUpperCase().includes("DAILY ROOM RENT");
+      const isSupplement = item.description
+        .toUpperCase()
+        .includes("PEAK/WEEKEND SUPPLEMENT");
+
+      if (dateMatch && (isRent || isSupplement)) {
+        const dateStr = dateMatch[0];
+        const existing = dateMap.get(dateStr);
+        if (existing) {
+          existing.amount += item.amount;
+          existing.base += item.base;
+          existing.tax += item.tax;
+          existing.displayAmount += item.displayAmount;
+          // Keep the "DAILY ROOM RENT" description if we merged a supplement into it
+          if (isSupplement && !existing.description.includes("RENT")) {
+            existing.description = `DAILY ROOM RENT (${dateStr})`;
+          }
+        } else {
+          // If it's a supplement starting fresh, call it Room Rent to the user
+          if (isSupplement) {
+            item.description = `DAILY ROOM RENT (${dateStr})`;
+          }
+          dateMap.set(dateStr, { ...item });
+        }
       } else {
-        base = item.amount;
-        tax = item.amount * (rate / 100);
+        mergedSupplements.push(item);
       }
-
-      totalFolioTax += tax;
-      totalFolioBase += base;
-
-      return {
-        ...item,
-        base,
-        tax,
-        rate,
-        displayAmount: base + tax,
-      };
     });
 
-    const netSubtotal = totalRoomBase + totalFolioBase;
-    const totalTax = totalRoomTax + totalFolioTax;
-    const finalNetInvoiceTotal = netSubtotal + totalTax;
-    const cgst = totalTax / 2;
-    const sgst = totalTax / 2;
+    const supplementRows = [
+      ...mergedSupplements,
+      ...Array.from(dateMap.values()),
+    ];
+
+    // Adjust totalRoomBase/Tax by subtracting supplements that are now in supplementRows
+    const actualTotalRoomBase =
+      totalRoomBase - supplementRows.reduce((s, r) => s + r.base, 0);
+    const actualTotalRoomTax =
+      totalRoomTax - supplementRows.reduce((s, r) => s + r.tax, 0);
+
+    const netSubtotal = actualTotalRoomBase + totalFolioBase;
+    const totalTaxValue = actualTotalRoomTax + totalFolioTax;
+    const finalNetInvoiceTotal = netSubtotal + totalTaxValue;
+    const cgst = totalTaxValue / 2;
+    const sgst = totalTaxValue / 2;
 
     // --- Stay period (earliest checkin to latest checkout across all segments) ---
     const allCheckIns = allStayBookings.map((b) => new Date(b.checkIn));
@@ -1947,16 +2164,37 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               </thead>
               <tbody class="divide-y divide-slate-100">
                 ${roomRows
-                  .map(
-                    (seg) => `
+                  .filter((seg) => {
+                    const segSupplements = supplementRows.filter(
+                      (s) => s.sourceBookingId === seg.bookingId,
+                    );
+                    const supplementSum = segSupplements.reduce(
+                      (sum, s) => sum + s.amount,
+                      0,
+                    );
+                    const netAmount = seg.total - supplementSum;
+                    return seg.nights > 0 && Math.abs(netAmount) > 0.01;
+                  })
+                  .map((seg) => {
+                    const segSupplements = supplementRows.filter(
+                      (s) => s.sourceBookingId === seg.bookingId,
+                    );
+                    const supplementSum = segSupplements.reduce(
+                      (sum, s) => sum + s.amount,
+                      0,
+                    );
+                    const displayTotal = seg.total - supplementSum;
+                    const displayRate = displayTotal / (seg.nights || 1);
+
+                    return `
                 <tr>
                   <td class="py-6">
                     <p class="text-sm font-black text-slate-900 uppercase">Room Rent — #${seg.roomNumber} ${seg.roomTypeName}</p>
                     <p class="text-[10px] font-bold text-slate-400 mt-0.5">${!seg.isCurrent && hasMultipleRooms ? '<span class="text-amber-500 font-black">[PREVIOUS] </span>' : ""}Accommodation (Inclusive of ${roomGstRate}% GST)</p>
                   </td>
                   <td class="py-6 text-center text-sm font-black text-slate-700 tabular-nums">${seg.nights}</td>
-                  <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${seg.rate.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                  <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${seg.total.toLocaleString()}</td>
+                  <td class="py-6 text-right text-sm font-black text-slate-700 tabular-nums">₹${displayRate.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                  <td class="py-6 text-right text-sm font-black text-slate-900 tabular-nums">₹${displayTotal.toLocaleString()}</td>
                 </tr>
                 ${
                   seg.discountAmount > 0
@@ -1972,10 +2210,10 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 </tr>
                 `
                     : ""
-                }`,
-                  )
+                }`;
+                  })
                   .join("")}
-                ${folioRows
+                ${[...folioRows, ...supplementRows]
                   .map(
                     (item) => `
                   <tr>
@@ -3862,7 +4100,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                             )}
                           </div>
                           <p className="text-sm font-black text-emerald-400 tabular-nums mt-1">
-                            ₹{totalPayments.toLocaleString()}
+                            ₹{(totalPayments || 0).toLocaleString()}
                           </p>
                         </div>
                         <div className="w-px h-8 bg-white/5"></div>
@@ -3871,7 +4109,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                             Total Bill
                           </p>
                           <p className="text-sm font-black text-slate-200 tabular-nums mt-1">
-                            ₹{totalBill.toLocaleString()}
+                            ₹{(totalBill || 0).toLocaleString()}
                           </p>
                         </div>
                       </div>
@@ -3914,21 +4152,30 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                   </div>
                                   <div className="text-[9px] font-bold text-slate-500 flex items-center gap-2 whitespace-nowrap">
                                     ₹
-                                    {ri.rate.toLocaleString(undefined, {
+                                    {(ri.rate || 0).toLocaleString(undefined, {
                                       maximumFractionDigits: 0,
                                     })}{" "}
-                                    × {ri.elapsed} / {ri.nights} Night
+                                    × {ri.nights} Night
                                     {ri.nights !== 1 ? "s" : ""}
                                     {ri.bookingId === booking.id && (
                                       <span className="text-[7px] font-black text-indigo-400 bg-indigo-400/10 px-1 rounded uppercase tracking-[0.1em] border border-indigo-400/20">
-                                        Active
+                                        Stay Period Segment
                                       </span>
                                     )}
                                   </div>
-                                  <div className="text-right mt-0.5">
-                                    <span className="text-xs font-black text-slate-200 tabular-nums block">
-                                      ₹{ri.total.toLocaleString()}
+                                  <div className="flex items-center justify-between mt-1">
+                                    <span className="text-[8px] font-bold text-slate-500 uppercase">
+                                      {ri.elapsed} of {ri.nights} nights elapsed
                                     </span>
+                                    <div className="text-right">
+                                      <span className="text-[9px] font-black text-slate-400 tabular-nums block line-through decoration-slate-600">
+                                        ₹{(ri.fullTotal || 0).toLocaleString()}
+                                      </span>
+                                      <span className="text-xs font-black text-slate-200 tabular-nums block">
+                                        ₹{(ri.total || 0).toLocaleString()}{" "}
+                                        Accrued
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               ))}
@@ -3951,8 +4198,9 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           <span className="text-xs font-bold text-rose-400 tabular-nums">
                             -₹
                             {(booking.discount.type === "percentage"
-                              ? roomBaseTotal * (booking.discount.value / 100)
-                              : booking.discount.value
+                              ? (roomBaseTotal || 0) *
+                                ((booking.discount.value || 0) / 100)
+                              : booking.discount.value || 0
                             ).toLocaleString()}
                           </span>
                         </div>
@@ -3968,9 +4216,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                         </div>
                         <span className="text-xs font-bold text-emerald-400 tabular-nums">
                           ₹
-                          {billSummary.totalTax.toLocaleString(undefined, {
-                            maximumFractionDigits: 2,
-                          })}
+                          {(billSummary.accruedTax || 0).toLocaleString(
+                            undefined,
+                            {
+                              maximumFractionDigits: 2,
+                            },
+                          )}
                         </span>
                       </div>
                     </div>
@@ -4081,7 +4332,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       </div>
                     </div>
 
-                    <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-3 custom-scrollbar-dark pb-4">
+                    <div className="space-y-2.5 max-h-[520px] overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar-dark pb-4">
                       {stayAllFolioItems && stayAllFolioItems.length > 0 ? (
                         [...stayAllFolioItems]
                           .sort(
@@ -4092,26 +4343,26 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           .map((item) => (
                             <div
                               key={`${item.id}-${item.sourceBookingId}`}
-                              className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/[0.08] transition-all group/item shadow-sm"
+                              className="flex items-center justify-between p-2.5 md:p-3 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/[0.08] transition-all group/item shadow-sm gap-2 md:gap-3"
                             >
-                              <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
                                 <div
-                                  className={`w-10 h-10 rounded-xl flex items-center justify-center border shadow-inner ${item.category === "F&B" ? "bg-orange-500/10 border-orange-500/20 text-orange-400" : "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"} `}
+                                  className={`w-8 h-8 md:w-9 md:h-9 shrink-0 rounded-xl flex items-center justify-center border shadow-inner ${item.category === "F&B" ? "bg-orange-500/10 border-orange-500/20 text-orange-400" : "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"} `}
                                 >
                                   {item.category === "F&B" ? (
-                                    <Coffee className="w-5 h-5" />
+                                    <Coffee className="w-3.5 h-3.5 md:w-4 md:h-4" />
                                   ) : item.category === "Room" ? (
-                                    <Bed className="w-5 h-5" />
+                                    <Bed className="w-3.5 h-3.5 md:w-4 md:h-4" />
                                   ) : (
-                                    <Zap className="w-5 h-5" />
+                                    <Zap className="w-3.5 h-3.5 md:w-4 md:h-4" />
                                   )}
                                 </div>
-                                <div className="max-w-[200px] md:max-w-md">
-                                  <p className="text-sm font-bold text-slate-100 uppercase tracking-tight truncate">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[10px] md:text-sm font-bold text-slate-100 uppercase tracking-tight leading-tight line-clamp-2">
                                     {item.description}
                                   </p>
-                                  <div className="flex items-center gap-2 mt-0.5 whitespace-nowrap overflow-hidden">
-                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest tabular-nums">
+                                  <div className="flex items-center gap-1.5 mt-0.5 whitespace-nowrap overflow-hidden opacity-80">
+                                    <p className="text-[7px] md:text-[8px] font-black text-slate-500 uppercase tracking-widest tabular-nums leading-none">
                                       {new Date(item.timestamp).toLocaleString(
                                         undefined,
                                         {
@@ -4122,28 +4373,47 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                         },
                                       )}
                                     </p>
-                                    <span className="w-1 h-1 bg-white/10 rounded-full"></span>
+                                    <span className="w-0.5 h-0.5 bg-white/10 rounded-full"></span>
                                     {allStayBookings.length > 1 && (
                                       <>
-                                        <span className="text-[7px] font-black text-white/40 uppercase tracking-widest border border-white/10 px-1 rounded">
-                                          Room #
+                                        <span className="text-[7px] font-black text-white/30 uppercase tracking-widest border border-white/10 px-0.5 rounded leading-none">
+                                          #
                                           {allStayBookings.find(
                                             (b) =>
                                               b.id === item.sourceBookingId,
                                           )?.roomNumber || "?"}
                                         </span>
-                                        <span className="w-1 h-1 bg-white/10 rounded-full"></span>
+                                        <span className="w-0.5 h-0.5 bg-white/10 rounded-full"></span>
                                       </>
                                     )}
-                                    <span className="text-[9px] font-black text-indigo-400/80 uppercase">
+                                    <span className="text-[7px] md:text-[8px] font-black text-indigo-400/60 uppercase leading-none">
                                       {item.category}
                                     </span>
                                   </div>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-6">
-                                <div className="text-right">
-                                  <p className="text-base font-black text-white tabular-nums tracking-tighter">
+                              <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
+                                <button
+                                  onClick={() => {
+                                    setTargetFolioItem(item);
+                                    setChargeDescription(item.description);
+                                    setChargeAmount(item.amount.toString());
+                                    setChargeCategory(
+                                      (item.category as any) || "Other",
+                                    );
+                                    setIsChargeInclusive(
+                                      item.isInclusive || false,
+                                    );
+                                    setShowAddChargeModal(true);
+                                  }}
+                                  disabled={!canEdit}
+                                  className={`p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-white/5 rounded-lg transition-all md:opacity-40 md:group-hover/item:opacity-100 ${!canEdit ? "opacity-10 cursor-not-allowed" : ""}`}
+                                  title="Edit Charge"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <div className="text-right min-w-[60px] md:min-w-[80px]">
+                                  <p className="text-[11px] md:text-base font-black text-white tabular-nums tracking-tighter">
                                     ₹{item.amount.toLocaleString()}
                                   </p>
                                   {item.isInclusive && (
@@ -4213,7 +4483,13 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                         />
                                       </div>
                                     ) : (
-                                      "Mark as Paid"
+                                      <div className="flex items-center gap-2">
+                                        {netOutstanding <= 0 &&
+                                          totalPayments > 0 && (
+                                            <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shadow-sm shadow-emerald-400/50" />
+                                          )}
+                                        <span>Mark as Paid</span>
+                                      </div>
                                     )}
                                   </button>
                                 </div>
@@ -4234,7 +4510,6 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                       descUpper.includes("EXTRA CHILD CHARGE");
 
                                     if (isExtraBed) {
-                                      // Using the dedicated handler ensures both count and folio are updated atomically
                                       onUpdateExtraBeds?.(booking.id, 0);
                                     } else if (isExtraAdult || isExtraChild) {
                                       const newFolio = (
@@ -4255,9 +4530,10 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                     }
                                   }}
                                   disabled={!canDelete}
-                                  className={`p-2 text-white/10 hover:text-rose-400 hover:bg-white/5 rounded-xl transition-all opacity-0 group-hover/item:opacity-100 ${!canDelete ? "hidden" : ""}`}
+                                  className={`p-1.5 text-slate-400 hover:text-rose-400 hover:bg-white/5 rounded-lg transition-all md:opacity-40 md:group-hover/item:opacity-100 ${!canDelete ? "hidden" : ""}`}
+                                  title="Delete Charge"
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </div>
@@ -4965,17 +5241,22 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-xl font-black text-slate-900 tracking-tight uppercase flex items-center gap-2">
                   <Zap className="w-5 h-5 text-indigo-600" />
-                  Add Service Bill
+                  {targetFolioItem ? "Edit Folio Entry" : "Add Service Bill"}
                 </h3>
                 <button
-                  onClick={() => setShowAddChargeModal(false)}
+                  onClick={() => {
+                    setShowAddChargeModal(false);
+                    setTargetFolioItem(null);
+                  }}
                   className="p-2 hover:bg-slate-200 rounded-full transition-colors"
                 >
                   <X className="w-5 h-5 text-slate-400" />
                 </button>
               </div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                Add an unpaid charge to guest folio
+                {targetFolioItem
+                  ? "Update description or amount for this entry"
+                  : "Add an unpaid charge to guest folio"}
               </p>
             </div>
 
@@ -5067,7 +5348,12 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
             <div className="p-8 border-t border-slate-50 bg-slate-50 flex gap-4">
               <button
-                onClick={() => setShowAddChargeModal(false)}
+                onClick={() => {
+                  setShowAddChargeModal(false);
+                  setTargetFolioItem(null);
+                  setChargeDescription("");
+                  setChargeAmount("");
+                }}
                 className="flex-1 py-4 text-xs font-black text-slate-400 uppercase tracking-widest"
               >
                 Cancel
@@ -5077,7 +5363,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 disabled={!chargeDescription || !chargeAmount}
                 className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Add to Folio
+                {targetFolioItem ? "Save Changes" : "Add to Folio"}
               </button>
             </div>
           </div>
