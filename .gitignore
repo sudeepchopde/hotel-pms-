@@ -31,3 +31,8 @@ __pycache__/
 # Debug logs
 debug_log.txt
 error.log
+
+# Database dumps
+*.dump
+*.sql
+!schema.sql
