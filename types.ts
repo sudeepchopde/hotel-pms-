@@ -225,6 +225,10 @@ export interface Booking {
   extraChildren?: number;
   accessoryGuests?: GuestDetails[];
   extraBeds?: number;
+  /** Per-night rates for this stay; omit to use room-type defaults */
+  extraAdultRatePerNight?: number;
+  extraChildRatePerNight?: number;
+  extraBedChargePerNight?: number;
   specialRequests?: string;
   isVIP?: boolean;
   isSettled?: boolean;

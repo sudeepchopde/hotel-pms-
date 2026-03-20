@@ -31,6 +31,27 @@ import {
 } from "../types";
 import { lookupGuest } from "../api";
 
+function defaultExtraRatesForRoomType(
+  roomTypes: RoomType[],
+  roomTypeId: string,
+) {
+  const rt = roomTypes.find((r) => r.id === roomTypeId);
+  return {
+    extraAdultRatePerNight: rt?.extraAdultRate ?? 0,
+    extraChildRatePerNight: rt?.extraChildRate ?? 0,
+    extraBedChargePerNight: rt?.extraBedCharge ?? 0,
+  };
+}
+
+function stayNightsBetween(checkIn: string, checkOut: string): number {
+  const [y1, m1, d1] = checkIn.split("-").map(Number);
+  const [y2, m2, d2] = checkOut.split("-").map(Number);
+  const a = new Date(y1, m1 - 1, d1);
+  const b = new Date(y2, m2 - 1, d2);
+  const n = Math.round((b.getTime() - a.getTime()) / (1000 * 3600 * 24));
+  return Math.max(1, n);
+}
+
 interface NewBookingModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -50,6 +71,9 @@ interface NewBookingModalProps {
       extraAdults?: number;
       extraChildren?: number;
       extraBeds?: number;
+      extraAdultRatePerNight?: number;
+      extraChildRatePerNight?: number;
+      extraBedChargePerNight?: number;
     }>;
     source?: "Direct" | "MMT" | "Booking.com" | "Expedia";
   }) => void;
@@ -81,12 +105,16 @@ export default function NewBookingModal({
       extraAdults: number;
       extraChildren: number;
       extraBeds: number;
+      extraAdultRatePerNight: number;
+      extraChildRatePerNight: number;
+      extraBedChargePerNight: number;
     }>
   >([]);
   const [foundGuest, setFoundGuest] = useState<any>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [guestDetails, setGuestDetails] =
     useState<Partial<GuestDetails> | null>(null);
+  const [syncDatesAcrossRooms, setSyncDatesAcrossRooms] = useState(false);
   const [source, setSource] = useState<
     "Direct" | "MMT" | "Booking.com" | "Expedia"
   >("Direct");
@@ -110,22 +138,29 @@ export default function NewBookingModal({
       const d = new Date(initialCheckIn);
       d.setDate(d.getDate() + 1);
       const initialCheckOut = d.toISOString().split("T")[0];
+      const initialRtId = prefill?.roomTypeId || roomTypes[0]?.id || "";
+      const initialRates = defaultExtraRatesForRoomType(
+        roomTypes,
+        initialRtId,
+      );
 
       // Set initial room detail from prefill
       const initialRoomDetails = [
         {
           tempId: Date.now(),
-          roomTypeId: prefill?.roomTypeId || roomTypes[0]?.id || "",
+          roomTypeId: initialRtId,
           checkIn: initialCheckIn,
           checkOut: initialCheckOut,
           roomNumber: prefill?.roomId,
           extraAdults: 0,
           extraChildren: 0,
           extraBeds: 0,
+          ...initialRates,
         },
       ];
       setRoomDetails(initialRoomDetails);
       setRoomCount(1);
+      setSyncDatesAcrossRooms(false);
     }
   }, [isOpen, prefill, roomTypes, today]);
 
@@ -208,25 +243,50 @@ export default function NewBookingModal({
     const initialDetails = Array.from({ length: roomCount }, (_, i) => {
       // Preserve the first room if it was already initialized (potentially via prefill)
       if (i === 0 && roomDetails.length > 0) {
-        return { ...roomDetails[0], tempId: i };
+        const r0 = roomDetails[0];
+        const d = defaultExtraRatesForRoomType(roomTypes, r0.roomTypeId);
+        return {
+          ...r0,
+          tempId: i,
+          extraAdultRatePerNight:
+            r0.extraAdultRatePerNight ?? d.extraAdultRatePerNight,
+          extraChildRatePerNight:
+            r0.extraChildRatePerNight ?? d.extraChildRatePerNight,
+          extraBedChargePerNight:
+            r0.extraBedChargePerNight ?? d.extraBedChargePerNight,
+        };
       }
 
       const checkInDate = prefill?.checkIn || today;
       const nextDay = new Date(checkInDate);
       nextDay.setDate(nextDay.getDate() + 1);
+      const rtId = prefill?.roomTypeId || roomTypes[0]?.id || "";
 
       return {
         tempId: i,
-        roomTypeId: prefill?.roomTypeId || roomTypes[0]?.id || "",
+        roomTypeId: rtId,
         checkIn: checkInDate,
         checkOut: nextDay.toISOString().split("T")[0],
         extraAdults: 0,
         extraChildren: 0,
         extraBeds: 0,
+        ...defaultExtraRatesForRoomType(roomTypes, rtId),
       };
     });
     setRoomDetails(initialDetails);
     setStep(2);
+  };
+
+  const nextDayYmd = (checkInYmd: string): string | null => {
+    const parts = checkInYmd.split("-").map(Number);
+    if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return null;
+    const [y, m, d] = parts;
+    const next = new Date(y, m - 1, d);
+    next.setDate(next.getDate() + 1);
+    const yy = next.getFullYear();
+    const mm = String(next.getMonth() + 1).padStart(2, "0");
+    const dd = String(next.getDate()).padStart(2, "0");
+    return `${yy}-${mm}-${dd}`;
   };
 
   const handleUpdateRoom = (index: number, field: string, value: any) => {
@@ -236,23 +296,51 @@ export default function NewBookingModal({
         return;
       }
     }
-    setRoomDetails((prev) =>
-      prev.map((item, i) => {
+    setRoomDetails((prev) => {
+      const sync = syncDatesAcrossRooms && prev.length > 1;
+
+      if (sync && field === "checkIn" && typeof value === "string" && value) {
+        const nextOut = nextDayYmd(value);
+        if (nextOut) {
+          return prev.map((item) => ({
+            ...item,
+            checkIn: value,
+            checkOut: nextOut,
+          }));
+        }
+      }
+
+      if (sync && field === "checkOut") {
+        return prev.map((item) => ({ ...item, checkOut: value }));
+      }
+
+      return prev.map((item, i) => {
         if (i !== index) return item;
 
-        // When room type changes, clear the room number and custom rate
         if (field === "roomTypeId" && value !== item.roomTypeId) {
           return {
             ...item,
             [field]: value,
             roomNumber: undefined,
             customRate: undefined,
+            ...defaultExtraRatesForRoomType(roomTypes, value),
           };
         }
 
+        if (field === "checkIn" && typeof value === "string" && value) {
+          const nextOut = nextDayYmd(value);
+          if (nextOut) {
+            return {
+              ...item,
+              checkIn: value,
+              checkOut: nextOut,
+            };
+          }
+        }
+
         return { ...item, [field]: value };
-      }),
-    );
+      });
+    });
   };
 
   const getAvailableRoomNumbers = useCallback(
@@ -414,6 +502,9 @@ export default function NewBookingModal({
           extraAdults,
           extraChildren,
           extraBeds,
+          extraAdultRatePerNight,
+          extraChildRatePerNight,
+          extraBedChargePerNight,
         }) => ({
           roomTypeId,
           checkIn,
@@ -423,6 +514,9 @@ export default function NewBookingModal({
           extraAdults,
           extraChildren,
           extraBeds,
+          extraAdultRatePerNight,
+          extraChildRatePerNight,
+          extraBedChargePerNight,
         }),
       ),
       source,
@@ -602,6 +696,40 @@ export default function NewBookingModal({
             </div>
           ) : (
             <div className="space-y-6">
+              {roomDetails.length > 1 && (
+                <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4 transition-colors hover:bg-indigo-50">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    checked={syncDatesAcrossRooms}
+                    onChange={(e) => {
+                      const on = e.target.checked;
+                      setSyncDatesAcrossRooms(on);
+                      if (on) {
+                        setRoomDetails((prev) => {
+                          if (prev.length === 0) return prev;
+                          const { checkIn, checkOut } = prev[0];
+                          return prev.map((r) => ({
+                            ...r,
+                            checkIn,
+                            checkOut,
+                          }));
+                        });
+                      }
+                    }}
+                  />
+                  <div>
+                    <span className="text-sm font-black text-slate-800">
+                      Same check-in &amp; check-out for all rooms
+                    </span>
+                    <p className="mt-1 text-[11px] font-bold leading-snug text-slate-500">
+                      When enabled, changing dates on any room updates every
+                      room. Turning it on copies room 1&apos;s dates to the
+                      rest.
+                    </p>
+                  </div>
+                </label>
+              )}
               {roomDetails.map((room, idx) => (
                 <div
                   key={room.tempId}
@@ -785,6 +913,126 @@ export default function NewBookingModal({
                       </div>
                     </div>
                   </div>
+
+                  {(room.extraAdults > 0 ||
+                    room.extraChildren > 0 ||
+                    room.extraBeds > 0) && (
+                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {room.extraAdults > 0 && (
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                              Extra adult rate
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">
+                                ₹
+                              </span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={room.extraAdultRatePerNight}
+                                onChange={(e) =>
+                                  handleUpdateRoom(
+                                    idx,
+                                    "extraAdultRatePerNight",
+                                    Number(e.target.value) || 0,
+                                  )
+                                }
+                                className="w-full pl-7 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800 outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <p className="text-[10px] font-bold text-slate-500">
+                              Subtotal: ₹
+                              {(
+                                room.extraAdults *
+                                room.extraAdultRatePerNight *
+                                stayNightsBetween(
+                                  room.checkIn,
+                                  room.checkOut,
+                                )
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                        )}
+                        {room.extraChildren > 0 && (
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                              Extra child rate
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">
+                                ₹
+                              </span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={room.extraChildRatePerNight}
+                                onChange={(e) =>
+                                  handleUpdateRoom(
+                                    idx,
+                                    "extraChildRatePerNight",
+                                    Number(e.target.value) || 0,
+                                  )
+                                }
+                                className="w-full pl-7 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800 outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <p className="text-[10px] font-bold text-slate-500">
+                              Subtotal: ₹
+                              {(
+                                room.extraChildren *
+                                room.extraChildRatePerNight *
+                                stayNightsBetween(
+                                  room.checkIn,
+                                  room.checkOut,
+                                )
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                        )}
+                        {room.extraBeds > 0 && (
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                              Extra bed rate
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">
+                                ₹
+                              </span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={room.extraBedChargePerNight}
+                                onChange={(e) =>
+                                  handleUpdateRoom(
+                                    idx,
+                                    "extraBedChargePerNight",
+                                    Number(e.target.value) || 0,
+                                  )
+                                }
+                                className="w-full pl-7 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800 outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <p className="text-[10px] font-bold text-slate-500">
+                              Subtotal: ₹
+                              {(
+                                room.extraBeds *
+                                room.extraBedChargePerNight *
+                                stayNightsBetween(
+                                  room.checkIn,
+                                  room.checkOut,
+                                )
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {source === "Direct" && (

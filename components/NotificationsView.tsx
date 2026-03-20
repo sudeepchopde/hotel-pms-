@@ -87,6 +87,11 @@ const NotificationsView: React.FC = () => {
     try {
       const data = await fetchNotifications();
       setNotifications(data);
+      // Sync sidebar unread count with what we just loaded (fixes stale red dot)
+      const unread = (data || []).filter((n) => !n.isRead).length;
+      if (unread === 0 && (window as any).__refreshUnreadCount) {
+        (window as any).__refreshUnreadCount();
+      }
     } catch (error) {
       console.error("Failed to load notifications:", error);
     } finally {

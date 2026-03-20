@@ -1,31 +1,63 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
   FileSpreadsheet,
-  Download,
   Filter,
   Search,
   Calendar,
   ChevronDown,
   CheckSquare,
   Square,
-  Printer,
   FileText,
   ShieldAlert,
   AlertTriangle,
   BedDouble,
   Clock,
-  Loader2,
 } from "lucide-react";
-import { Booking, RoomType } from "../types";
-import { API_BASE_URL } from "../api";
+import {
+  Booking,
+  RoomType,
+  SyncEvent,
+  PropertySettings,
+  UserResponse,
+} from "../types";
+import { API_BASE_URL, updateBooking } from "../api";
 import { formatDate } from "../utils";
+import GuestProfilePage from "./GuestProfilePage";
 
 const CHANNELS = ["All", "Booking.com", "MMT", "Expedia", "Direct"];
 
-const ReportsView: React.FC = () => {
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [roomTypes, setRoomTypes] = useState<RoomType[]>([]);
-  const [loading, setLoading] = useState(true);
+interface ReportsViewProps {
+  syncEvents: SyncEvent[];
+  setSyncEvents: React.Dispatch<React.SetStateAction<SyncEvent[]>>;
+  roomTypes: RoomType[];
+  propertySettings: PropertySettings | null;
+  user: UserResponse | null;
+  onUpdateExtraBeds?: (bookingId: string, count: number) => void;
+}
+
+const ReportsView: React.FC<ReportsViewProps> = ({
+  syncEvents,
+  setSyncEvents,
+  roomTypes,
+  propertySettings,
+  user,
+  onUpdateExtraBeds,
+}) => {
+  const bookings = useMemo(
+    () =>
+      (syncEvents.filter((e) => e.type === "booking") as Booking[]).sort(
+        (a, b) =>
+          new Date(
+            (b as Booking & { createdAt?: string }).createdAt || b.checkIn,
+          ).getTime() -
+          new Date(
+            (a as Booking & { createdAt?: string }).createdAt || a.checkIn,
+          ).getTime(),
+      ),
+    [syncEvents],
+  );
+
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [selectedChannels, setSelectedChannels] = useState<string[]>(["All"]);
@@ -42,9 +74,106 @@ const ReportsView: React.FC = () => {
     futureDate.setDate(futureDate.getDate() + 90);
     const futureStr = futureDate.toISOString().split("T")[0];
 
-    return bookings.filter((b) => b.checkIn >= today && b.checkIn <= futureStr)
-      .length;
+    return bookings.filter(
+      (b) => b.checkIn >= today && b.checkIn <= futureStr,
+    ).length;
   }, [bookings, today]);
+
+  useEffect(() => {
+    if (selectedBooking) {
+      const updated = syncEvents.find(
+        (e) => e.id === selectedBooking.id && e.type === "booking",
+      ) as Booking | undefined;
+      if (
+        updated &&
+        (updated.timestamp !== selectedBooking.timestamp ||
+          (updated.folio?.length || 0) !==
+            (selectedBooking.folio?.length || 0) ||
+          (updated.payments?.length || 0) !==
+            (selectedBooking.payments?.length || 0))
+      ) {
+        setSelectedBooking(updated);
+      }
+    }
+  }, [syncEvents, selectedBooking?.id]);
+
+  const relatedBookings = useMemo(() => {
+    if (!selectedBooking) return [];
+    const resId = (selectedBooking as { reservationId?: string })
+      .reservationId;
+    if (!resId) return [selectedBooking];
+    return bookings.filter(
+      (b) => (b as { reservationId?: string }).reservationId === resId,
+    );
+  }, [selectedBooking, bookings]);
+
+  const updateGuestStatus = async (bookingId: string, newStatus: string) => {
+    const booking = syncEvents.find(
+      (e) => e.id === bookingId && e.type === "booking",
+    ) as Booking | undefined;
+    if (!booking) return;
+
+    const updated = {
+      ...booking,
+      status: newStatus as Booking["status"],
+      timestamp: Date.now(),
+    };
+
+    setSyncEvents((prev) =>
+      prev.map((e) =>
+        e.id === bookingId && e.type === "booking"
+          ? ({ ...updated, type: "booking" } as SyncEvent)
+          : e,
+      ),
+    );
+    if (selectedBooking?.id === bookingId) setSelectedBooking(updated);
+
+    try {
+      await updateBooking(updated);
+    } catch (err) {
+      console.error("Failed to persist status update in ReportsView", err);
+    }
+  };
+
+  const toggleVIP = async (bookingId: string) => {
+    const booking = syncEvents.find(
+      (e) => e.id === bookingId && e.type === "booking",
+    ) as Booking | undefined;
+    if (!booking) return;
+
+    const updated = {
+      ...booking,
+      isVIP: !booking.isVIP,
+      timestamp: Date.now(),
+    };
+
+    setSyncEvents((prev) =>
+      prev.map((e) =>
+        e.id === bookingId && e.type === "booking"
+          ? ({ ...updated, type: "booking" } as SyncEvent)
+          : e,
+      ),
+    );
+    if (selectedBooking?.id === bookingId) setSelectedBooking(updated);
+
+    try {
+      await updateBooking(updated);
+    } catch (err) {
+      console.error("Failed to persist VIP toggle in ReportsView", err);
+    }
+  };
+
+  const handleCheckInRequest = (booking: Booking) => {
+    updateGuestStatus(booking.id, "CheckedIn");
+    setSelectedBooking(null);
+  };
+
+  const handleUpdateExtraBedsFromProfile = (
+    bookingId: string,
+    count: number,
+  ) => {
+    onUpdateExtraBeds?.(bookingId, count);
+  };
 
   const handleQuickFilter = (type: "past30" | "upcoming90") => {
     const start = new Date();
@@ -63,29 +192,7 @@ const ReportsView: React.FC = () => {
     }
   };
 
-  // Fetch Data
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const [bookingsRes, roomTypesRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/bookings`),
-          fetch(`${API_BASE_URL}/room-types`),
-        ]);
-        const bData = await bookingsRes.json();
-        const rData = await roomTypesRes.json();
-        setBookings(bData);
-        setRoomTypes(rData);
-      } catch (error) {
-        console.error("Failed to load report data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, []);
-
-  // Room Name Mapping from fetched room types
+  // Room Name Mapping from room types
   const roomNameMap = useMemo(() => {
     const map: Record<string, string> = {};
     roomTypes.forEach((rt) => {
@@ -204,19 +311,23 @@ const ReportsView: React.FC = () => {
 
   // Removed internal formatDate function and using the imported utility instead.
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
-        <p className="text-slate-400 font-bold animate-pulse">
-          Loading real-time records...
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 pb-24">
+      {selectedBooking && (
+        <GuestProfilePage
+          booking={selectedBooking}
+          roomTypes={roomTypes}
+          relatedBookings={relatedBookings}
+          syncEvents={syncEvents}
+          onClose={() => setSelectedBooking(null)}
+          onUpdateStatus={updateGuestStatus}
+          onToggleVIP={toggleVIP}
+          onCheckIn={handleCheckInRequest}
+          onUpdateExtraBeds={handleUpdateExtraBedsFromProfile}
+          propertySettings={propertySettings}
+          user={user}
+        />
+      )}
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-3xl font-black text-slate-900 tracking-tight">
@@ -414,7 +525,16 @@ const ReportsView: React.FC = () => {
                   return (
                     <tr
                       key={booking.id}
-                      className="hover:bg-slate-50/50 transition-colors group"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedBooking(booking)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSelectedBooking(booking);
+                        }
+                      }}
+                      className="hover:bg-slate-50/50 transition-colors group cursor-pointer"
                     >
                       <td className="p-5 text-xs font-bold text-slate-500 font-mono">
                         {booking.id}

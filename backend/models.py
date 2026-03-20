@@ -159,6 +159,10 @@ class Booking(BaseModel):
     extraChildren: Optional[int] = 0
     accessoryGuests: Optional[List[GuestDetails]] = None
     extraBeds: Optional[int] = 0
+    # Optional per-night rates for extras (reservation-specific); if unset, room type defaults are used
+    extraAdultRatePerNight: Optional[float] = None
+    extraChildRatePerNight: Optional[float] = None
+    extraBedChargePerNight: Optional[float] = None
     specialRequests: Optional[str] = None
     isVIP: Optional[bool] = None
     isSettled: Optional[bool] = None

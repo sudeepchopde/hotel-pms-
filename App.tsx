@@ -153,6 +153,12 @@ const DEFAULT_NAV_ITEMS = [
     color: "text-teal-300",
   },
   {
+    id: "dashboard",
+    icon: LayoutDashboard,
+    label: "Live Inventory",
+    color: "text-slate-400",
+  },
+  {
     id: "kitchen",
     icon: ChefHat,
     label: "Kitchen Display",
@@ -169,12 +175,6 @@ const DEFAULT_NAV_ITEMS = [
     icon: BarChart2,
     label: "Analysis",
     color: "text-blue-300",
-  },
-  {
-    id: "dashboard",
-    icon: LayoutDashboard,
-    label: "Live Inventory",
-    color: "text-slate-400",
   },
   {
     id: "compliance",
@@ -440,14 +440,14 @@ const App: React.FC = () => {
           disabled={item.id === "flow"}
         >
           <item.icon
-            className={`w-5 h-5 shrink-0 ${activeTab === item.id || (item.id === "settings_hub" && ["users", "setup", "rules", "settings"].includes(activeTab)) ? item.color : item.id === "flow" ? "text-slate-500" : ""} ${item.id === "notifications" && unreadNotificationCount > 0 ? "animate-swing text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]" : ""}`}
+            className={`w-5 h-5 shrink-0 ${activeTab === item.id || (item.id === "settings_hub" && ["users", "setup", "rules", "settings"].includes(activeTab)) ? item.color : item.id === "flow" ? "text-slate-500" : ""} ${item.id === "notifications" && unreadNotificationCount > 0 && activeTab !== "notifications" ? "animate-swing text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]" : ""}`}
           />
           {!isSidebarCollapsed && (
             <span className="font-semibold text-sm whitespace-nowrap truncate flex-1 text-left">
               {item.label}
             </span>
           )}
-          {item.id === "notifications" && unreadNotificationCount > 0 && (
+          {item.id === "notifications" && unreadNotificationCount > 0 && activeTab !== "notifications" && (
             <span
               className={`absolute ${isSidebarCollapsed ? "top-2 right-2" : "top-3 right-3"} flex h-3 w-3`}
             >
@@ -776,7 +776,7 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Poll for notification count
+  // Poll for notification count and refresh when opening Notifications tab
   useEffect(() => {
     const loadNotificationCount = async () => {
       try {
@@ -798,6 +798,13 @@ const App: React.FC = () => {
       delete (window as any).__refreshUnreadCount;
     };
   }, []);
+
+  // When user opens Notifications tab, refresh unread count so badge is accurate
+  useEffect(() => {
+    if (activeTab === "notifications" && (window as any).__refreshUnreadCount) {
+      (window as any).__refreshUnreadCount();
+    }
+  }, [activeTab]);
 
   // Play sound on new notification toast
   useEffect(() => {
@@ -1505,7 +1512,16 @@ const App: React.FC = () => {
           />
         )}
         {activeTab === "analysis" && <AnalysisView />}
-        {activeTab === "reports" && <ReportsView />}
+        {activeTab === "reports" && (
+          <ReportsView
+            syncEvents={syncEvents}
+            setSyncEvents={setSyncEvents}
+            roomTypes={roomTypes}
+            propertySettings={propertySettings}
+            user={user}
+            onUpdateExtraBeds={handleUpdateExtraBeds}
+          />
+        )}
         {activeTab === "frontdesk" && (
           <FrontDeskView
             roomTypes={roomTypes}

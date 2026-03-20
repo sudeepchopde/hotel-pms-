@@ -1,17 +1,18 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
+    plugins: [react(), basicSsl()],
     server: {
-      port: 3000,
+      port: 3001,
       host: '0.0.0.0',
       strictPort: true,
-      hmr: {
-        host: '192.168.1.11',
-      },
+      // HTTPS required for camera/mic (getUserMedia) on LAN IPs; omit hmr.host so
+      // HMR uses the same host the browser used (e.g. MacBook → https://192.168.1.11:3001).
       proxy: {
         // Only match /api/ paths, not /api.ts
         '^/api/': {
@@ -31,7 +32,6 @@ export default defineConfig(({ mode }) => {
         }
       }
     },
-    plugins: [react()],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)

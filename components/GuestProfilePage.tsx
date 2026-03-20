@@ -854,7 +854,13 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       }
     } catch (err) {
       console.error("Camera access failed", err);
-      setToastMessage("Could not access camera. Please upload manually.");
+      const needsHttps =
+        typeof window !== "undefined" && !window.isSecureContext;
+      setToastMessage(
+        needsHttps
+          ? "Camera needs HTTPS (or localhost). Open the app as https://YOUR-PC-IP:3001 and accept the certificate warning, or upload a photo instead."
+          : "Could not access camera. Check browser permissions or upload manually.",
+      );
       setIsCameraActive(false);
       isCameraActiveRef.current = false;
       streamRef.current = null;
@@ -2334,7 +2340,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 width: 100% !important; 
                 max-width: none !important; 
                 margin: 0 !important;
-                padding: 1.5cm !important;
+                padding: 1cm !important;
                 min-height: auto !important;
               }
             }
@@ -2344,21 +2350,21 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
           </style>
         </head>
         <body class="min-h-screen">
-          <div class="flex flex-col items-center p-4 md:p-12 w-full">
-            <div class="invoice-container bg-white w-full max-w-[210mm] min-h-[297mm] p-8 md:p-12 border border-gray-100 rounded-3xl relative invoice-shadow flex flex-col">
+          <div class="flex flex-col items-center p-4 md:p-8 w-full">
+            <div class="invoice-container bg-white w-full max-w-[210mm] p-6 md:p-8 border border-gray-100 rounded-3xl relative invoice-shadow flex flex-col">
               
-              <div class="flex justify-between items-start mb-16">
+              <div class="flex justify-between items-start mb-6">
                 <div>
-                  <h1 class="text-4xl font-extrabold tracking-tighter text-slate-900 mb-4">${(propertySettings?.name || "HOTEL SATSANGI").toUpperCase()}</h1>
-                  <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest leading-relaxed">
+                  <h1 class="text-3xl font-extrabold tracking-tighter text-slate-900 mb-2">${(propertySettings?.name || "HOTEL SATSANGI").toUpperCase()}</h1>
+                  <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest leading-snug">
                     ${(propertySettings?.address || "SATSANG NAGAR, DEOGHAR, JHARKHAND 814112").toUpperCase().replace(/\n/g, "<br/>")}<br/>
                     PH: ${propertySettings?.phone || "+91 98765 43210"} • ${propertySettings?.email?.toUpperCase() || "CONTACT@HOTELSATSANGI.COM"}<br/>
                     GSTIN: ${propertySettings?.gstNumber || "20ABCDE1234F1Z5"}
                   </div>
                 </div>
                 <div class="text-right">
-                  <h2 class="text-2xl font-extrabold text-indigo-accent tracking-widest mb-4">TAX INVOICE</h2>
-                  <div class="space-y-4">
+                  <h2 class="text-xl font-extrabold text-indigo-accent tracking-widest mb-2">TAX INVOICE</h2>
+                  <div class="space-y-2">
                     <div>
                       <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Invoice No</p>
                       <p class="text-sm font-extrabold text-slate-900">#${booking.invoiceNumber || "INV-" + new Date().getFullYear() + "-" + (booking.id.includes("-") ? booking.id.split("-")[1]?.substring(0, 4) : booking.id.substring(0, 4))}</p>
@@ -2371,18 +2377,18 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 </div>
               </div>
 
-              <div class="grid grid-cols-2 gap-12 mb-16 pt-8 border-t border-gray-100">
-                <div class="space-y-4">
+              <div class="grid grid-cols-2 gap-6 mb-6 pt-4 border-t border-gray-100">
+                <div class="space-y-2">
                   <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Guest Details</p>
                   <div>
-                    <h3 class="text-xl font-extrabold text-slate-900 mb-1">${booking.guestName.toUpperCase()}</h3>
+                    <h3 class="text-lg font-extrabold text-slate-900 mb-0.5">${booking.guestName.toUpperCase()}</h3>
                     <p class="text-[11px] text-slate-500 font-medium">${booking.guestDetails?.address || "Address Not Provided"}</p>
-                    <p class="text-[11px] text-slate-500 font-medium mt-4">Ph: ${booking.guestDetails?.phoneNumber || "N/A"}</p>
+                    <p class="text-[11px] text-slate-500 font-medium mt-2">Ph: ${booking.guestDetails?.phoneNumber || "N/A"}</p>
                   </div>
                 </div>
-                <div class="space-y-4 text-right">
+                <div class="space-y-2 text-right">
                   <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Stay Information</p>
-                  <div class="space-y-2">
+                  <div class="space-y-1">
                     <div class="flex justify-end gap-12">
                       <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Room No</span>
                       <span class="text-[11px] font-extrabold text-slate-900">#${booking.roomNumber || "101"}</span>
@@ -2403,14 +2409,14 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 </div>
               </div>
 
-              <div class="mb-12 flex-grow">
+              <div class="mb-4">
                 <table class="w-full">
                   <thead>
                     <tr class="border-b-2 border-slate-900 text-slate-400">
-                      <th class="py-4 text-left text-[9px] font-bold uppercase tracking-widest">Description</th>
-                      <th class="py-4 text-center text-[9px] font-bold uppercase tracking-widest w-24">Qty</th>
-                      <th class="py-4 text-right text-[9px] font-bold uppercase tracking-widest w-32">Rate</th>
-                      <th class="py-4 text-right text-[9px] font-bold uppercase tracking-widest w-32">Amount</th>
+                      <th class="py-2 text-left text-[9px] font-bold uppercase tracking-widest">Description</th>
+                      <th class="py-2 text-center text-[9px] font-bold uppercase tracking-widest w-24">Qty</th>
+                      <th class="py-2 text-right text-[9px] font-bold uppercase tracking-widest w-32">Rate</th>
+                      <th class="py-2 text-right text-[9px] font-bold uppercase tracking-widest w-32">Amount</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-gray-100">
@@ -2418,13 +2424,13 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                       .map(
                         (item) => `
                       <tr>
-                        <td class="py-6">
-                          <p class="font-extrabold text-slate-900 uppercase">${item.description.toUpperCase()}</p>
-                          <p class="text-[10px] text-slate-400 font-bold mt-1 uppercase">${item.category} (Incl. ${item.rate}% GST)</p>
+                        <td class="py-2.5">
+                          <p class="font-extrabold text-slate-900 uppercase text-sm">${item.description.toUpperCase()}</p>
+                          <p class="text-[9px] text-slate-400 font-bold mt-0.5 uppercase">${item.category} (Incl. ${item.rate}% GST)</p>
                         </td>
-                        <td class="py-6 text-center text-sm font-extrabold text-slate-900 tabular-nums">1</td>
-                        <td class="py-6 text-right text-sm font-extrabold text-slate-900 tabular-nums">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td class="py-6 text-right text-sm font-extrabold text-slate-900 tabular-nums">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="py-2.5 text-center text-sm font-extrabold text-slate-900 tabular-nums">1</td>
+                        <td class="py-2.5 text-right text-sm font-extrabold text-slate-900 tabular-nums">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="py-2.5 text-right text-sm font-extrabold text-slate-900 tabular-nums">₹${item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       </tr>
                     `,
                       )
@@ -2433,7 +2439,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 </table>
               </div>
 
-              <div class="flex flex-col items-end space-y-4 py-8 border-t border-gray-100">
+              <div class="flex flex-col items-end space-y-2 py-4 border-t border-gray-100">
                 <div class="flex justify-between w-full max-w-xs px-4">
                   <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gross Total</span>
                   <span class="text-sm font-extrabold text-slate-900 tabular-nums">₹${grossTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -2448,7 +2454,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                 `
                     : ""
                 }
-                <div class="h-px bg-gray-50 w-full max-w-xs my-2"></div>
+                <div class="h-px bg-gray-50 w-full max-w-xs my-1"></div>
                 <div class="flex justify-between w-full max-w-xs px-4">
                   <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Subtotal (Net)</span>
                   <span class="text-sm font-extrabold text-slate-900 tabular-nums">₹${netSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -2461,14 +2467,14 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                   <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">SGST</span>
                   <span class="text-sm font-extrabold text-slate-700 tabular-nums">₹${sgst.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
-                <div class="h-px bg-gray-100 w-full max-w-xs my-2"></div>
-                <div class="flex justify-between w-full max-w-xs px-4 py-4 rounded-xl">
+                <div class="h-px bg-gray-100 w-full max-w-xs my-1"></div>
+                <div class="flex justify-between w-full max-w-xs px-4 py-2 rounded-xl">
                   <span class="text-[11px] font-extrabold text-slate-900 uppercase tracking-[0.2em]">Final Invoice Total</span>
-                  <span class="text-2xl font-extrabold text-indigo-accent tabular-nums">₹${finalNetInvoiceTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span class="text-xl font-extrabold text-indigo-accent tabular-nums">₹${finalNetInvoiceTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
 
-              <div class="mt-auto pt-12 border-t border-gray-100 flex justify-between items-end">
+              <div class="pt-6 border-t border-gray-100 flex justify-between items-end">
                  <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
                    Thank you for staying with us • Computer Generated
                  </div>
@@ -4038,6 +4044,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                             (1000 * 60 * 60 * 24),
                         ),
                       );
+                      const historyRoomTypeName =
+                        roomTypes.find((rt) => rt.id === past.roomTypeId)
+                          ?.name ||
+                        past.roomTypeId ||
+                        "—";
                       // Calculate paid amount from completed payments only
                       const hPaidTotal = (past.payments || [])
                         .filter((p) => p.status === "Completed")
@@ -4052,35 +4063,47 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           key={idx}
                           className="group relative bg-white border border-slate-100 rounded-3xl p-6 hover:border-indigo-200 hover:shadow-xl transition-all"
                         >
-                          <div className="flex flex-wrap items-start justify-between gap-6">
-                            <div className="flex items-start gap-5">
-                              <div className="w-14 h-14 bg-slate-50 rounded-2xl flex flex-col items-center justify-center group-hover:bg-indigo-50 transition-colors shrink-0">
-                                <p className="text-[10px] font-black text-slate-400 group-hover:text-indigo-600 uppercase pt-1">
+                          <div className="grid grid-cols-1 gap-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-6">
+                            <div className="flex min-w-0 items-start gap-4 sm:gap-5">
+                              <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl bg-slate-50 transition-colors group-hover:bg-indigo-50">
+                                <p className="pt-1 text-[10px] font-black uppercase text-slate-400 group-hover:text-indigo-600">
                                   {checkIn.toLocaleDateString(undefined, {
                                     month: "short",
                                   })}
                                 </p>
-                                <p className="text-xl font-black text-slate-800 group-hover:text-indigo-700 leading-none pb-1">
+                                <p className="pb-1 text-xl font-black leading-none text-slate-800 group-hover:text-indigo-700">
                                   {checkIn.getDate()}
                                 </p>
                               </div>
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-3">
-                                  <p className="text-base font-black text-slate-800 tracking-tight">
+                              <div className="min-w-0 flex-1 space-y-2">
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                  <p className="text-base font-black tracking-tight text-slate-800">
                                     {formatDate(past.checkIn)}
                                   </p>
-                                  <ArrowRightCircle className="w-4 h-4 text-slate-300" />
+                                  <ArrowRightCircle className="h-4 w-4 shrink-0 text-slate-300" />
                                   <p className="text-sm font-bold text-slate-400">
                                     {formatDate(past.checkOut)}
                                   </p>
                                 </div>
-                                <div className="flex items-center gap-4">
-                                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-                                    <Bed className="w-3.5 h-3.5 text-indigo-400" />{" "}
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] font-black uppercase tracking-widest">
+                                  <span className="flex min-w-0 max-w-full items-center gap-1.5 text-slate-500">
+                                    <Bed className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
+                                    <span className="break-words">
+                                      {historyRoomTypeName}
+                                    </span>
+                                  </span>
+                                  <span
+                                    className="hidden h-1 w-1 shrink-0 rounded-full bg-slate-200 sm:inline-block"
+                                    aria-hidden
+                                  />
+                                  <span className="text-slate-600">
                                     Room {past.roomNumber || "N/A"}
                                   </span>
-                                  <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
-                                  <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100/50">
+                                  <span
+                                    className="h-1 w-1 shrink-0 rounded-full bg-slate-200"
+                                    aria-hidden
+                                  />
+                                  <span className="rounded-lg border border-indigo-100/50 bg-indigo-50 px-2 py-0.5 text-indigo-600">
                                     {hNights}{" "}
                                     {hNights === 1 ? "Night" : "Nights"}
                                   </span>
@@ -4088,28 +4111,28 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-8">
+                            <div className="flex shrink-0 flex-row items-start justify-between gap-6 border-t border-slate-100 pt-4 sm:justify-end sm:border-t-0 sm:pt-0 sm:gap-8">
                               <div className="text-right">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                                <p className="mb-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
                                   Stay Total
                                 </p>
-                                <p className="text-sm font-black text-slate-900 tabular-nums">
+                                <p className="text-sm font-black tabular-nums text-slate-900">
                                   ₹{hPaidTotal.toLocaleString()}
                                 </p>
-                                <p className="text-[8px] font-bold text-slate-400 uppercase">
+                                <p className="text-[8px] font-bold uppercase text-slate-400">
                                   (Paid + ₹{hExtrasPaid.toLocaleString()}{" "}
                                   Extras)
                                 </p>
                               </div>
                               <div className="text-right">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                                <p className="mb-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
                                   Booking Channel
                                 </p>
                                 <span
-                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-tighter shadow-sm border ${
+                                  className={`inline-flex px-2.5 py-1 text-[10px] font-black uppercase tracking-tighter shadow-sm border rounded-lg ${
                                     past.source === "Direct"
-                                      ? "bg-emerald-50 text-emerald-600 border-emerald-100"
-                                      : "bg-blue-50 text-blue-600 border-blue-100"
+                                      ? "border-emerald-100 bg-emerald-50 text-emerald-600"
+                                      : "border-blue-100 bg-blue-50 text-blue-600"
                                   }`}
                                 >
                                   {past.source}
@@ -4360,10 +4383,11 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                           </div>
                           <span className="text-xs font-bold text-rose-400 tabular-nums">
                             -₹
-                            {(booking.discount.type === "percentage"
-                              ? (roomBaseTotal || 0) *
-                                ((booking.discount.value || 0) / 100)
-                              : booking.discount.value || 0
+                            {(
+                              booking.discount.type === "percentage"
+                                ? (roomBaseTotal || 0) *
+                                  ((booking.discount.value || 0) / 100)
+                                : booking.discount.value || 0
                             ).toLocaleString()}
                           </span>
                         </div>
@@ -4613,88 +4637,98 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                                       incl. tax
                                     </p>
                                   )}
-                                  <button
-                                    className={`text-[8px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5 transition-all px-2 py-1 rounded-md mt-1.5 ${item.isPaid ? "text-emerald-400 bg-emerald-400/10 border border-emerald-400/30" : "text-rose-400 bg-rose-400/10 border border-rose-400/30 animate-pulse"} ${!canEdit ? "opacity-50 cursor-not-allowed" : ""}`}
-                                    disabled={!canEdit}
-                                    onClick={() => {
-                                      if (!canEdit) return;
-                                      if (item.isPaid) {
-                                        const targetBooking =
-                                          allStayBookings.find(
-                                            (b) =>
-                                              b.id === item.sourceBookingId,
-                                          );
-                                        if (!targetBooking) return;
+                                  {item.type === "payment" ? (
+                                    <p className="text-[8px] font-black uppercase tracking-[0.2em] text-emerald-400/80 mt-1.5 text-right">
+                                      Received
+                                      {(item as Payment).method
+                                        ? ` · ${(item as Payment).method}`
+                                        : ""}
+                                    </p>
+                                  ) : (
+                                    <button
+                                      className={`text-[8px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5 transition-all px-2 py-1 rounded-md mt-1.5 ${item.isPaid ? "text-emerald-400 bg-emerald-400/10 border border-emerald-400/30" : "text-rose-400 bg-rose-400/10 border border-rose-400/30 animate-pulse"} ${!canEdit ? "opacity-50 cursor-not-allowed" : ""}`}
+                                      disabled={!canEdit}
+                                      onClick={() => {
+                                        if (!canEdit) return;
+                                        if (item.isPaid) {
+                                          const targetBooking =
+                                            allStayBookings.find(
+                                              (b) =>
+                                                b.id === item.sourceBookingId,
+                                            );
+                                          if (!targetBooking) return;
 
-                                        const newFolio = (
-                                          targetBooking.folio || []
-                                        ).map((f) =>
-                                          f.id === item.id
-                                            ? {
-                                                ...f,
-                                                isPaid: false,
-                                                paymentMethod: undefined,
-                                                paymentId: undefined,
-                                              }
-                                            : f,
-                                        );
-
-                                        if (onUpdateBooking) {
-                                          onUpdateBooking({
-                                            ...targetBooking,
-                                            folio: newFolio,
-                                          });
-                                        } else {
-                                          onUpdateFolio?.(
-                                            targetBooking.id,
-                                            newFolio,
+                                          const newFolio = (
+                                            targetBooking.folio || []
+                                          ).map((f) =>
+                                            f.id === item.id
+                                              ? {
+                                                  ...f,
+                                                  isPaid: false,
+                                                  paymentMethod: undefined,
+                                                  paymentId: undefined,
+                                                }
+                                              : f,
                                           );
-                                        }
-                                      } else {
-                                        setTargetFolioItem(item);
-                                        setPaymentAmount(
-                                          item.amount.toString(),
-                                        );
-                                        setPaymentCategory("Folio");
-                                        setShowPaymentModal(true);
-                                      }
-                                    }}
-                                  >
-                                    {item.isPaid ? (
-                                      <div className="flex items-center gap-2">
-                                        <CheckCircle2 className="w-3 h-3" />
-                                        <span>
-                                          {item.paymentMethod || "Settled"}
-                                        </span>
-                                        <Printer
-                                          className="w-3 h-3 opacity-50 hover:opacity-100 transition-opacity ml-1"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            const linkedPayment =
-                                              booking.payments?.find(
-                                                (p) => p.id === item.paymentId,
-                                              );
-                                            printReceipt({
-                                              description: item.description,
-                                              amount: item.amount,
-                                              timestamp: item.timestamp,
-                                              paymentMethod: item.paymentMethod,
-                                              receiptNumber:
-                                                linkedPayment?.receiptNumber,
+
+                                          if (onUpdateBooking) {
+                                            onUpdateBooking({
+                                              ...targetBooking,
+                                              folio: newFolio,
                                             });
-                                          }}
-                                        />
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center gap-2">
-                                        {netOutstanding <= 0 &&
-                                          totalPayments > 0 && (
-                                            <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shadow-sm shadow-emerald-400/50" />
-                                          )}
-                                        <span>Mark as Paid</span>
-                                      </div>
-                                    )}
-                                  </button>
+                                          } else {
+                                            onUpdateFolio?.(
+                                              targetBooking.id,
+                                              newFolio,
+                                            );
+                                          }
+                                        } else {
+                                          setTargetFolioItem(item);
+                                          setPaymentAmount(
+                                            item.amount.toString(),
+                                          );
+                                          setPaymentCategory("Folio");
+                                          setShowPaymentModal(true);
+                                        }
+                                      }}
+                                    >
+                                      {item.isPaid ? (
+                                        <div className="flex items-center gap-2">
+                                          <CheckCircle2 className="w-3 h-3" />
+                                          <span>
+                                            {item.paymentMethod || "Settled"}
+                                          </span>
+                                          <Printer
+                                            className="w-3 h-3 opacity-50 hover:opacity-100 transition-opacity ml-1"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const linkedPayment =
+                                                booking.payments?.find(
+                                                  (p) => p.id === item.paymentId,
+                                                );
+                                              printReceipt({
+                                                description: item.description,
+                                                amount: item.amount,
+                                                timestamp: item.timestamp,
+                                                paymentMethod:
+                                                  item.paymentMethod,
+                                                receiptNumber:
+                                                  linkedPayment?.receiptNumber,
+                                              });
+                                            }}
+                                          />
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center gap-2">
+                                          {netOutstanding <= 0 &&
+                                            totalPayments > 0 && (
+                                              <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shadow-sm shadow-emerald-400/50" />
+                                            )}
+                                          <span>Mark as Paid</span>
+                                        </div>
+                                      )}
+                                    </button>
+                                  )}
                                 </div>
                                 <button
                                   onClick={() => {

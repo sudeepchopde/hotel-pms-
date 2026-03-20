@@ -18,9 +18,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     setError(null);
 
     try {
-      // Use local API
-      // In production, allow changing base URL via props or env
-      const API_BASE_URL = import.meta.env.VITE_API_URL || "";
+      // Use local API; in production, base URL can be configured via env
+      const rawBaseUrl = import.meta.env.VITE_API_URL || "";
+      const API_BASE_URL = rawBaseUrl.replace(/\/+$/, "");
 
       const res = await fetch(`${API_BASE_URL}/api/login`, {
         method: "POST",
@@ -30,15 +30,34 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
         body: JSON.stringify({ username, password }),
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || "Login failed");
+      const responseText = await res.text();
+      let data: any = null;
+
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error(
+            "Failed to parse login response JSON",
+            parseError,
+            responseText,
+          );
+        }
       }
 
-      const user = await res.json();
-      onLogin(user);
+      if (!res.ok) {
+        const message =
+          (data && (data.detail || data.message)) || "Login failed";
+        throw new Error(message);
+      }
+
+      if (!data) {
+        throw new Error("Login failed: empty response from server");
+      }
+
+      onLogin(data as UserResponse);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "An unexpected error occurred");
     } finally {
       setIsLoading(false);
     }

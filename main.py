@@ -2316,9 +2316,21 @@ def generate_upfront_folio_for_booking(booking: Booking, db) -> list:
         d_start = datetime.strptime(booking.checkIn, '%Y-%m-%d').date()
         d_end = datetime.strptime(booking.checkOut, '%Y-%m-%d').date()
         
-        e_adult_rate = (rt_db.extra_adult_rate or 0)
-        e_child_rate = (rt_db.extra_child_rate or 0)
-        e_bed_rate = (rt_db.extra_bed_charge or 0)
+        e_adult_rate = (
+            booking.extraAdultRatePerNight
+            if booking.extraAdultRatePerNight is not None
+            else (rt_db.extra_adult_rate or 0)
+        )
+        e_child_rate = (
+            booking.extraChildRatePerNight
+            if booking.extraChildRatePerNight is not None
+            else (rt_db.extra_child_rate or 0)
+        )
+        e_bed_rate = (
+            booking.extraBedChargePerNight
+            if booking.extraBedChargePerNight is not None
+            else (rt_db.extra_bed_charge or 0)
+        )
         
         # OTA Markup Logic
         markup_percentage = 0.0

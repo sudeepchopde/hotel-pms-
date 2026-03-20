@@ -6,8 +6,6 @@ import {
   Calendar,
   User,
   Bed,
-  Maximize2,
-  Minimize2,
   GripVertical,
   CheckCircle2,
   AlertOctagon,
@@ -31,6 +29,7 @@ import {
   Globe,
   Plane,
   LayoutGrid,
+  List,
   Briefcase,
   Flag,
   Zap,
@@ -96,6 +95,15 @@ const CELL_WIDTH = 140;
 const CELL_HEIGHT = 48;
 const HEADER_HEIGHT = 48; // Matching room row height
 const STICKY_HEADER_TOTAL_HEIGHT = 104; // Monthly row (24) + Date row (48) + padding-y (16*2)
+
+/** 0 = category header only, 1 = rows for rooms with bookings in range (default), 2 = all rooms */
+type CategoryExpandLevel = 0 | 1 | 2;
+
+function categoryExpandIcon(level: CategoryExpandLevel, className: string) {
+  if (level === 0) return <ChevronRight className={className} />;
+  if (level === 1) return <List className={className} />;
+  return <LayoutGrid className={className} />;
+}
 
 const STATUS_STYLES: Record<string, string> = {
   Confirmed: "bg-blue-600 text-white shadow-blue-900/10",
@@ -314,8 +322,12 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
     d.setDate(d.getDate() - 1); // Default to start from yesterday
     return d;
   });
-  const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>(
-    {},
+  const [categoryExpandLevel, setCategoryExpandLevel] = useState<
+    Record<string, CategoryExpandLevel>
+  >({});
+  /** Week/month: which column date drives Live Activity arrivals/departures; null = use default in range */
+  const [activityFocusDate, setActivityFocusDate] = useState<string | null>(
+    null,
   );
   const [isLoading, setIsLoading] = useState(false);
   const [lastMovedBookingId, setLastMovedBookingId] = useState<string | null>(
@@ -417,11 +429,12 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
     }
   }, [isSearchOpen]);
 
-  const toggleExpand = (id: string) => {
-    setExpandedTypes((prev) => ({
-      ...prev,
-      [id]: !effectiveExpandedTypes[id],
-    }));
+  const cycleCategoryExpand = (id: string) => {
+    setCategoryExpandLevel((prev) => {
+      const current: CategoryExpandLevel = prev[id] ?? 1;
+      const next = ((current + 1) % 3) as CategoryExpandLevel;
+      return { ...prev, [id]: next };
+    });
   };
 
   const timelineDates = useMemo(() => {
@@ -465,6 +478,37 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
     }
     return dates;
   }, [startDate, viewMode]);
+
+  const defaultActivityFocusDate = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+    const d = now.getDate();
+    const todayMatch = timelineDates.find((dt) => {
+      const [Y, M, D] = dt.split("-").map(Number);
+      return Y === y && M === m && D === d;
+    });
+    return todayMatch ?? timelineDates[0] ?? "";
+  }, [timelineDates]);
+
+  const arrivalsDeparturesDate = useMemo(() => {
+    if (viewMode === "day" && timelineDates[0]) return timelineDates[0];
+    return activityFocusDate ?? defaultActivityFocusDate;
+  }, [
+    viewMode,
+    timelineDates,
+    activityFocusDate,
+    defaultActivityFocusDate,
+  ]);
+
+  const activityPanelIsToday = useMemo(() => {
+    if (!arrivalsDeparturesDate) return false;
+    const [Y, M, D] = arrivalsDeparturesDate.split("-").map(Number);
+    const n = new Date();
+    return (
+      Y === n.getFullYear() && M === n.getMonth() + 1 && D === n.getDate()
+    );
+  }, [arrivalsDeparturesDate]);
 
   const monthSpans = useMemo(() => {
     const spans: { name: string; count: number }[] = [];
@@ -627,27 +671,17 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
     return autoBookings.filter((b) => !seenAutoBookingIds.has(b.id));
   }, [autoBookings, seenAutoBookingIds]);
 
-  const effectiveExpandedTypes = useMemo(() => {
-    const result: Record<string, boolean> = {};
-    const tStart = timelineDates[0];
-    const tEnd = timelineDates[timelineDates.length - 1];
-
+  const effectiveCategoryExpandLevel = useMemo(() => {
+    const result: Record<string, CategoryExpandLevel> = {};
     roomTypes.forEach((rt) => {
-      if (expandedTypes[rt.id] !== undefined) {
-        result[rt.id] = expandedTypes[rt.id];
-        return;
-      }
-
-      const hasBooking = assignedBookings.some((b) => {
-        if (b.roomTypeId !== rt.id) return false;
-        return b.checkIn <= tEnd && b.checkOut > tStart;
-      });
-      result[rt.id] = hasBooking;
+      result[rt.id] = categoryExpandLevel[rt.id] ?? 1;
     });
     return result;
-  }, [roomTypes, expandedTypes, assignedBookings, timelineDates]);
+  }, [roomTypes, categoryExpandLevel]);
 
   const gridRows = useMemo(() => {
+    const tStart = timelineDates[0];
+    const tEnd = timelineDates[timelineDates.length - 1];
     const rows: {
       type: "header" | "room";
       id: string;
@@ -664,25 +698,53 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
         capacity: rt.totalCapacity,
         category: rt,
       });
-      if (effectiveExpandedTypes[rt.id]) {
-        const rooms =
-          rt.roomNumbers ||
-          Array.from(
-            { length: rt.totalCapacity },
-            (_, i) => `${rt.name.substring(0, 2).toUpperCase()}-${101 + i}`,
-          );
-        rooms.forEach((roomNum) => {
-          rows.push({
-            type: "room",
-            id: roomNum,
-            name: roomNum,
-            parentId: rt.id,
-          });
+      const level = effectiveCategoryExpandLevel[rt.id];
+      if (level === 0) return;
+
+      const allRooms =
+        rt.roomNumbers && rt.roomNumbers.length > 0
+          ? [...rt.roomNumbers]
+          : Array.from(
+              { length: rt.totalCapacity },
+              (_, i) =>
+                `${rt.name.substring(0, 2).toUpperCase()}-${101 + i}`,
+            );
+
+      let roomList: string[];
+      if (level === 2) {
+        roomList = allRooms;
+      } else {
+        const booked = new Set<string>();
+        assignedBookings.forEach((b) => {
+          if (b.roomTypeId !== rt.id) return;
+          if (!(b.checkIn <= tEnd && b.checkOut > tStart)) return;
+          if (b.roomNumber && b.roomNumber !== "Unassigned") {
+            booked.add(b.roomNumber);
+          }
         });
+        const orderedBooked = allRooms.filter((r) => booked.has(r));
+        const extras = [...booked]
+          .filter((r) => !allRooms.includes(r))
+          .sort((a, b) => a.localeCompare(b));
+        roomList = [...orderedBooked, ...extras];
       }
+
+      roomList.forEach((roomNum) => {
+        rows.push({
+          type: "room",
+          id: roomNum,
+          name: roomNum,
+          parentId: rt.id,
+        });
+      });
     });
     return rows;
-  }, [roomTypes, effectiveExpandedTypes]);
+  }, [
+    roomTypes,
+    effectiveCategoryExpandLevel,
+    assignedBookings,
+    timelineDates,
+  ]);
 
   // Get all bookings related to the selected booking by reservationId
   const relatedBookings = useMemo(() => {
@@ -692,12 +754,11 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
     return assignedBookings.filter((b) => (b as any).reservationId === resId);
   }, [selectedBooking, assignedBookings]);
 
-  const todayStr = new Date().toISOString().split("T")[0];
-
   // Group arrivals by reservationId to show one entry per multi-room booking
   const todaysArrivals = useMemo(() => {
     const arrivals = assignedBookings.filter(
-      (b) => b.checkIn === todayStr && b.status === "Confirmed",
+      (b) =>
+        b.checkIn === arrivalsDeparturesDate && b.status === "Confirmed",
     );
     const grouped: Record<string, Booking[]> = {};
     arrivals.forEach((b) => {
@@ -712,13 +773,14 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
         _allRooms: group,
       }))
       .sort((a, b) => a.guestName.localeCompare(b.guestName));
-  }, [assignedBookings, todayStr]);
+  }, [assignedBookings, arrivalsDeparturesDate]);
 
   const todaysDepartures = useMemo(
     () =>
       assignedBookings
         .filter((b) => {
-          if (b.checkOut !== todayStr || b.status !== "CheckedIn") return false;
+          if (b.checkOut !== arrivalsDeparturesDate || b.status !== "CheckedIn")
+            return false;
           // Exclude room transfer segments: if this booking has a reservationId
           // and there's another active booking in the same reservation with a later checkIn,
           // this is just a completed room segment, not an actual departure.
@@ -737,7 +799,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
           return true;
         })
         .sort((a, b) => a.guestName.localeCompare(b.guestName)),
-    [assignedBookings, todayStr],
+    [assignedBookings, arrivalsDeparturesDate],
   );
 
   const dailyOccupancy = useMemo(() => {
@@ -1224,6 +1286,9 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
       extraAdults?: number;
       extraChildren?: number;
       extraBeds?: number;
+      extraAdultRatePerNight?: number;
+      extraChildRatePerNight?: number;
+      extraBedChargePerNight?: number;
     }>;
     source?: "Direct" | "MMT" | "Booking.com" | "Expedia";
   }) => {
@@ -1352,12 +1417,16 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
       const extraChildren = room.extraChildren || 0;
       const extraBeds = room.extraBeds || 0;
 
-      if (roomType) {
-        totalAmount += extraAdults * (roomType.extraAdultRate || 0) * duration;
-        totalAmount +=
-          extraChildren * (roomType.extraChildRate || 0) * duration;
-        totalAmount += extraBeds * (roomType.extraBedCharge || 0) * duration;
-      }
+      const adultExtraRate =
+        room.extraAdultRatePerNight ?? roomType?.extraAdultRate ?? 0;
+      const childExtraRate =
+        room.extraChildRatePerNight ?? roomType?.extraChildRate ?? 0;
+      const bedExtraRate =
+        room.extraBedChargePerNight ?? roomType?.extraBedCharge ?? 0;
+
+      totalAmount += extraAdults * adultExtraRate * duration;
+      totalAmount += extraChildren * childExtraRate * duration;
+      totalAmount += extraBeds * bedExtraRate * duration;
 
       return {
         id: `${(data.source || "Direct").toLowerCase().replace(/[^a-z0-9]/g, "")}-${Date.now()}-${idx}`,
@@ -1374,6 +1443,9 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
         extraAdults: room.extraAdults || 0,
         extraChildren: room.extraChildren || 0,
         extraBeds: room.extraBeds || 0,
+        extraAdultRatePerNight: adultExtraRate,
+        extraChildRatePerNight: childExtraRate,
+        extraBedChargePerNight: bedExtraRate,
         reservationId,
         channelSync: {},
         guestDetails: {
@@ -1509,35 +1581,31 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
     >
       <div className="flex h-full bg-[#f8fafc] font-inter relative overflow-hidden">
         <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden relative">
-          <header className="px-6 py-4 flex items-center justify-between bg-white border-b border-slate-100 z-[60] shadow-sm relative shrink-0">
-            <div className="flex items-center gap-6">
+          <header className="px-4 py-2 flex items-center justify-between bg-white border-b border-slate-100 z-[60] shadow-sm relative shrink-0">
+            <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <div className="p-2 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-200">
-                  <LayoutGrid className="w-5 h-5" />
+                <div className="p-1.5 bg-indigo-600 rounded-lg text-white shadow-md shadow-indigo-200/80">
+                  <LayoutGrid className="w-4 h-4" />
                 </div>
-                <div>
-                  <h2 className="text-lg font-black text-slate-900 leading-none">
-                    Front Desk
-                  </h2>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                    Grid System v3.0
-                  </p>
-                </div>
+                <h2 className="text-base font-black text-slate-900 leading-tight">
+                  Front Desk
+                </h2>
               </div>
-              <div className="h-8 w-px bg-slate-100 mx-2"></div>
-              <div className="flex bg-white rounded-xl border border-slate-200 p-1 shadow-sm h-12">
+              <div className="h-6 w-px bg-slate-100 mx-1"></div>
+              <div className="flex bg-white rounded-xl border border-slate-200 p-0.5 shadow-sm h-10">
                 <button
                   onClick={() => {
                     const d = new Date();
                     d.setHours(0, 0, 0, 0);
                     if (viewMode === "week") d.setDate(d.getDate() - 1);
                     setStartDate(d);
+                    setActivityFocusDate(null);
                   }}
-                  className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-all"
+                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-lg transition-all"
                 >
                   Today
                 </button>
-                <div className="w-px h-4 bg-slate-200 self-center mx-1"></div>
+                <div className="w-px h-3.5 bg-slate-200 self-center mx-0.5"></div>
                 <button
                   onClick={() => {
                     const d = new Date(startDate);
@@ -1546,7 +1614,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                     else d.setDate(d.getDate() - 7);
                     setStartDate(d);
                   }}
-                  className="p-2 text-slate-400 hover:text-indigo-600 rounded-lg"
+                  className="p-1.5 text-slate-400 hover:text-indigo-600 rounded-lg"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -1558,15 +1626,15 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                     else d.setDate(d.getDate() + 7);
                     setStartDate(d);
                   }}
-                  className="p-2 text-slate-400 hover:text-indigo-600 rounded-lg"
+                  className="p-1.5 text-slate-400 hover:text-indigo-600 rounded-lg"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
 
-                <div className="w-px h-4 bg-slate-200 self-center mx-1"></div>
+                <div className="w-px h-3.5 bg-slate-200 self-center mx-0.5"></div>
 
                 <div className="relative group">
-                  <button className="h-full px-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-50 rounded-lg transition-all">
+                  <button className="h-full px-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-50 rounded-lg transition-all">
                     {viewMode} View
                     <Calendar className="w-3.5 h-3.5 text-indigo-500" />
                   </button>
@@ -1584,10 +1652,10 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                 </div>
 
                 <div
-                  className="relative flex items-center px-4 hover:bg-slate-50 transition-all rounded-lg cursor-pointer"
+                  className="relative flex items-center px-3 hover:bg-slate-50 transition-all rounded-lg cursor-pointer h-full"
                   onClick={() => jumpDateRef.current?.showPicker()}
                 >
-                  <Calendar className="w-4 h-4 text-slate-400" />
+                  <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 ml-2 min-w-[120px] text-center">
                     {viewMode === "month"
                       ? startDate.toLocaleDateString("en-US", {
@@ -1606,6 +1674,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                         const selected = new Date(e.target.value);
                         selected.setHours(0, 0, 0, 0);
                         setStartDate(selected);
+                        setActivityFocusDate(null);
                       }
                     }}
                     className="absolute inset-0 opacity-0 cursor-pointer pointer-events-none"
@@ -1630,7 +1699,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                   setSearchQuery("");
                   setSearchHighlightIdx(0);
                 }}
-                className="h-12 flex items-center gap-2 px-4 rounded-xl bg-white border-2 border-slate-100 text-slate-400 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/50 transition-all shadow-sm"
+                className="h-10 flex items-center gap-2 px-3 rounded-xl bg-white border-2 border-slate-100 text-slate-400 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/50 transition-all shadow-sm"
                 title="Search Bookings (Ctrl+K)"
               >
                 <Search className="w-4 h-4" />
@@ -1654,7 +1723,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                       });
                     }
                   }}
-                  className={`h-12 flex items-center gap-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${unseenAutoBookings.length > 0 ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100" : "bg-white border-slate-100 text-slate-400 hover:border-slate-200"}`}
+                  className={`h-10 flex items-center gap-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${unseenAutoBookings.length > 0 ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100" : "bg-white border-slate-100 text-slate-400 hover:border-slate-200"}`}
                 >
                   <Mail
                     className={`w-3.5 h-3.5 ${unseenAutoBookings.length > 0 ? "animate-bounce" : ""}`}
@@ -1722,7 +1791,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
 
               <button
                 onClick={() => setIsNewBookingModalOpen(true)}
-                className="h-12 flex items-center gap-2 px-6 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl hover:scale-105 active:scale-95"
+                className="h-10 flex items-center gap-2 px-5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg hover:scale-[1.02] active:scale-95"
               >
                 <Plus className="w-4 h-4" /> New Booking
               </button>
@@ -1731,7 +1800,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
               {!isActivityPanelOpen && (
                 <button
                   onClick={() => setIsActivityPanelOpen(true)}
-                  className="h-12 w-12 flex items-center justify-center rounded-xl bg-white border-2 border-slate-100 text-slate-400 hover:border-amber-300 hover:text-amber-500 hover:bg-amber-50 transition-all shrink-0 shadow-sm"
+                  className="h-10 w-10 flex items-center justify-center rounded-xl bg-white border-2 border-slate-100 text-slate-400 hover:border-amber-300 hover:text-amber-500 hover:bg-amber-50 transition-all shrink-0 shadow-sm"
                   title="Open Live Activity"
                 >
                   <Zap className="w-5 h-5" />
@@ -1969,10 +2038,13 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                         const isToday =
                           new Date().toDateString() === d.toDateString();
                         const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                        const isActivityColumn = date === arrivalsDeparturesDate;
                         return (
                           <div
                             key={date}
-                            className={`flex flex-col items-center justify-center border-r border-slate-100 last:border-0 shrink-0 overflow-hidden relative ${isWeekend ? "bg-slate-50/50" : ""} ${isToday ? "bg-cyan-400/10 ring-2 ring-inset ring-cyan-400/40 z-10" : ""}`}
+                            title="Click to show this date in Live Activity"
+                            onClick={() => setActivityFocusDate(date)}
+                            className={`flex flex-col items-center justify-center border-r border-slate-100 last:border-0 shrink-0 overflow-hidden relative cursor-pointer select-none hover:bg-indigo-50/40 transition-colors ${isWeekend ? "bg-slate-50/50" : ""} ${isToday ? "bg-cyan-400/10 ring-2 ring-inset ring-cyan-400/40 z-10" : ""} ${isActivityColumn && !isToday ? "ring-2 ring-inset ring-indigo-400/70 z-[11] bg-indigo-50/30" : ""} ${isActivityColumn && isToday ? "ring-2 ring-inset ring-indigo-500/80 z-[11]" : ""}`}
                             style={{ width: CELL_WIDTH }}
                           >
                             {isToday && (
@@ -1986,7 +2058,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                               })}
                             </span>
                             <div
-                              className={`w-7 h-7 flex items-center justify-center rounded-full text-sm font-black transition-all tabular-nums ${isToday ? "bg-cyan-600 text-white shadow-lg shadow-cyan-200" : "text-slate-800"}`}
+                              className={`w-7 h-7 flex items-center justify-center rounded-full text-sm font-black transition-all tabular-nums ${isToday ? "bg-cyan-600 text-white shadow-lg shadow-cyan-200" : "text-slate-800"} ${isActivityColumn && !isToday ? "bg-indigo-600 text-white shadow-md" : ""}`}
                             >
                               {d.getDate()}
                             </div>
@@ -2050,6 +2122,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                                 d.toDateString() === new Date().toDateString();
                               const isCurrentMonth =
                                 d.getMonth() === startDate.getMonth();
+                              const isActivityDay = date === arrivalsDeparturesDate;
                               const dayBookings = assignedBookings.filter(
                                 (b) =>
                                   b.checkIn <= date &&
@@ -2073,7 +2146,12 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                                 >
                                   <div className="flex justify-between items-start mb-0.5">
                                     <span
-                                      className={`w-5 h-5 flex items-center justify-center rounded-full text-[9px] font-black tabular-nums transition-all ${isToday ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" : "text-slate-800"}`}
+                                      title="Click: Live Activity for this date (new booking uses the rest of the cell)"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActivityFocusDate(date);
+                                      }}
+                                      className={`w-5 h-5 flex items-center justify-center rounded-full text-[9px] font-black tabular-nums transition-all cursor-pointer hover:ring-2 hover:ring-indigo-300 ${isToday ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" : "text-slate-800"} ${isActivityDay ? "ring-2 ring-amber-500 ring-offset-1" : ""}`}
                                     >
                                       {d.getDate()}
                                     </span>
@@ -2122,12 +2200,13 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                                           CATEGORY_GRADIENTS.length
                                         : 0
                                     ];
-                                  const isExpanded =
-                                    effectiveExpandedTypes[row.id];
+                                  const expandLevel =
+                                    effectiveCategoryExpandLevel[row.id];
                                   return (
                                     <div
                                       key={row.id}
-                                      onClick={() => toggleExpand(row.id)}
+                                      onClick={() => cycleCategoryExpand(row.id)}
+                                      title="Click: collapsed → booked rooms only → all rooms"
                                       className="mt-6 first:mt-0 rounded-2xl shadow-xl px-5 py-3 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] border border-white/20 relative overflow-hidden group"
                                       style={gradientStyle}
                                     >
@@ -2146,11 +2225,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                                         </div>
                                       </div>
                                       <div className="p-2 bg-white/20 rounded-lg text-white hover:bg-white/30 transition-colors shadow-sm relative z-10">
-                                        {isExpanded ? (
-                                          <Minimize2 className="w-4 h-4" />
-                                        ) : (
-                                          <Maximize2 className="w-4 h-4" />
-                                        )}
+                                        {categoryExpandIcon(expandLevel, "w-4 h-4")}
                                       </div>
                                     </div>
                                   );
@@ -2258,12 +2333,6 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
 
                             {gridRows.map((row) => {
                               const isHeader = row.type === "header";
-                              const effectiveExpandedTypes =
-                                Object.keys(expandedTypes).length === 0
-                                  ? Object.fromEntries(
-                                      roomTypes.map((rt) => [rt.id, true]),
-                                    )
-                                  : expandedTypes;
 
                               if (isHeader) {
                                 // Re-using the high-fidelity header logic from before
@@ -2285,13 +2354,16 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                                         CATEGORY_GRADIENTS.length
                                       : 0
                                   ];
+                                const headerExpandLevel =
+                                  effectiveCategoryExpandLevel[row.id];
                                 return (
                                   <div
                                     key={row.id}
                                     className="sticky top-[72px] z-30 flex flex-col md:flex-row gap-3 pt-3"
                                   >
                                     <div
-                                      onClick={() => toggleExpand(row.id)}
+                                      onClick={() => cycleCategoryExpand(row.id)}
+                                      title="Click: collapsed → booked rooms only → all rooms"
                                       className="h-[48px] w-full md:w-44 shrink-0 rounded-xl shadow-xl px-3 py-1 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] border border-white/20 backdrop-blur-lg relative overflow-hidden group sticky left-0 z-40"
                                       style={gradientStyle}
                                     >
@@ -2317,10 +2389,9 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                                       </div>
                                       <div className="flex items-center gap-2 relative z-10">
                                         <div className="p-1 bg-white/20 rounded-md text-white hover:bg-white/30 transition-colors shadow-sm shrink-0">
-                                          {effectiveExpandedTypes[row.id] ? (
-                                            <Minimize2 className="w-3 h-3" />
-                                          ) : (
-                                            <Maximize2 className="w-3 h-3" />
+                                          {categoryExpandIcon(
+                                            headerExpandLevel,
+                                            "w-3 h-3",
                                           )}
                                         </div>
                                       </div>
@@ -2331,7 +2402,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                                         <div
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            toggleExpand(row.id);
+                                            cycleCategoryExpand(row.id);
                                           }}
                                           className="absolute z-20 flex items-center justify-center h-full border-x-2 border-cyan-400/40 bg-cyan-400/10 shadow-[0_0_20px_rgba(34,211,238,0.1)] transition-all duration-500 cursor-pointer group/today-col hover:bg-cyan-400/20"
                                           style={{
@@ -2355,10 +2426,13 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                                       )}
                                       <div className="relative z-10 flex-1 flex items-center justify-end px-6 opacity-0 group-hover/lane:opacity-100 transition-opacity">
                                         <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                                          Click heading to{" "}
-                                          {effectiveExpandedTypes[row.id]
-                                            ? "collapse"
-                                            : "expand"}
+                                          Click heading to cycle view (
+                                          {headerExpandLevel === 0
+                                            ? "collapsed"
+                                            : headerExpandLevel === 1
+                                              ? "booked rooms"
+                                              : "all rooms"}
+                                          )
                                         </span>
                                       </div>
                                     </div>
@@ -2568,11 +2642,21 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
                   Live Activity
                 </h3>
                 <p className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-widest">
-                  {new Date().toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                  })}
+                  {arrivalsDeparturesDate
+                    ? new Date(
+                        `${arrivalsDeparturesDate}T12:00:00`,
+                      ).toLocaleDateString("en-US", {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })
+                    : ""}
+                  {activityPanelIsToday ? (
+                    <span className="text-indigo-600 ml-1 normal-case">
+                      · Today
+                    </span>
+                  ) : null}
                 </p>
               </div>
               <button
@@ -2586,7 +2670,9 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
               <div className="space-y-2 p-2 bg-indigo-50/40 rounded-xl border border-indigo-100/50">
                 <div className="flex items-center justify-between">
                   <h4 className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                    Today's Arrivals
+                    {activityPanelIsToday
+                      ? "Today's Arrivals"
+                      : "Arrivals"}
                   </h4>
                   <span className="text-[8px] font-black bg-indigo-600 text-white px-1.5 py-0.5 rounded-md shadow-md">
                     {todaysArrivals.length}
@@ -2651,7 +2737,9 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
               <div className="space-y-2 p-2 bg-rose-50/40 rounded-xl border border-rose-100/50">
                 <div className="flex items-center justify-between">
                   <h4 className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                    Pending Departures
+                    {activityPanelIsToday
+                      ? "Pending Departures"
+                      : "Departures"}
                   </h4>
                   <span className="text-[8px] font-black bg-rose-600 text-white px-1.5 py-0.5 rounded-md shadow-md">
                     {todaysDepartures.length}
