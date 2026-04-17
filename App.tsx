@@ -393,6 +393,33 @@ const App: React.FC = () => {
     localStorage.removeItem("pms_user");
   };
 
+  /** Collapse sidebar after choosing a section so main content is visible on small screens (Tailwind md: 768px). */
+  const collapseSidebarIfMobile = React.useCallback(() => {
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 767px)").matches
+    ) {
+      setIsSidebarCollapsed(true);
+    }
+  }, []);
+
+  /** Tap rail / logo / gaps to expand again (mobile has no hover). */
+  const expandSidebarIfMobileTouch = React.useCallback(
+    (e: React.MouseEvent<HTMLDivElement | HTMLNavElement>) => {
+      if (
+        typeof window === "undefined" ||
+        !window.matchMedia("(max-width: 767px)").matches
+      ) {
+        return;
+      }
+      if (!isSidebarCollapsed) return;
+      const target = e.target as HTMLElement;
+      if (target.closest("button")) return;
+      setIsSidebarCollapsed(false);
+    },
+    [isSidebarCollapsed],
+  );
+
   const renderNavItem = (item: (typeof DEFAULT_NAV_ITEMS)[0]) => (
     <div
       key={item.id}
@@ -424,9 +451,13 @@ const App: React.FC = () => {
                   user?.allowed_sections.includes(id) ||
                   user?.allowed_sections.includes("settings_hub"),
               );
-              if (firstAllowed) setActiveTab(firstAllowed as any);
-            } else {
-              item.id !== "flow" && setActiveTab(item.id as any);
+              if (firstAllowed) {
+                setActiveTab(firstAllowed as any);
+                collapseSidebarIfMobile();
+              }
+            } else if (item.id !== "flow") {
+              setActiveTab(item.id as any);
+              collapseSidebarIfMobile();
             }
           }}
           className={`flex flex-1 items-center gap-3 min-w-0 ${item.id === "flow" ? "cursor-not-allowed opacity-50" : ""}`}
@@ -1319,7 +1350,8 @@ const App: React.FC = () => {
       <nav
         onMouseEnter={() => setIsSidebarCollapsed(false)}
         onMouseLeave={() => setIsSidebarCollapsed(true)}
-        className={`flex flex-col gap-3 shrink-0 shadow-xl z-20 border-r border-slate-700/30 bg-slate-800 text-white transition-all duration-300 ${isSidebarCollapsed ? "w-20 p-2 items-center" : "w-full md:w-64 px-4 py-4"}`}
+        onClick={expandSidebarIfMobileTouch}
+        className={`flex flex-col gap-3 shrink-0 shadow-xl z-20 border-r border-slate-700/30 bg-slate-800 text-white transition-all duration-300 ${isSidebarCollapsed ? "w-20 max-md:cursor-pointer p-2 items-center" : "w-full md:w-64 px-4 py-4"}`}
       >
         <div className="flex items-center justify-between">
           <div
@@ -1345,9 +1377,19 @@ const App: React.FC = () => {
 
         <div className="relative pt-2 w-full">
           <button
-            onClick={() =>
-              !isSidebarCollapsed && setIsHotelMenuOpen(!isHotelMenuOpen)
-            }
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (
+                typeof window !== "undefined" &&
+                window.matchMedia("(max-width: 767px)").matches &&
+                isSidebarCollapsed
+              ) {
+                setIsSidebarCollapsed(false);
+                return;
+              }
+              if (!isSidebarCollapsed) setIsHotelMenuOpen(!isHotelMenuOpen);
+            }}
             className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-between"} p-3 bg-slate-700/40 hover:bg-slate-700 border border-slate-600/30 rounded-xl transition-all group`}
           >
             <div className="flex items-center gap-3 overflow-hidden">
@@ -1382,6 +1424,7 @@ const App: React.FC = () => {
                   onClick={() => {
                     setSelectedHotel(hotel);
                     setIsHotelMenuOpen(false);
+                    collapseSidebarIfMobile();
                   }}
                   className={`w-full text-left p-4 hover:bg-slate-700 transition-colors border-b border-slate-700 last:border-0 ${
                     selectedHotel.id === hotel.id ? "bg-slate-700/50" : ""

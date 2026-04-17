@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { User, Lock, ArrowRight, Loader2 } from "lucide-react";
 import { UserResponse } from "../types";
+import { API_BASE_URL } from "../api";
 
 interface LoginPageProps {
   onLogin: (user: UserResponse) => void;
@@ -18,11 +19,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     setError(null);
 
     try {
-      // Use local API; in production, base URL can be configured via env
-      const rawBaseUrl = import.meta.env.VITE_API_URL || "";
-      const API_BASE_URL = rawBaseUrl.replace(/\/+$/, "");
-
-      const res = await fetch(`${API_BASE_URL}/api/login`, {
+      // Default: same as api.ts (`/api`). Override with VITE_API_URL e.g. http://127.0.0.1:8000/api if not using Vite proxy
+      const apiRoot = (
+        import.meta.env.VITE_API_URL || API_BASE_URL
+      ).replace(/\/+$/, "");
+      const res = await fetch(`${apiRoot}/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

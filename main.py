@@ -306,13 +306,19 @@ def login(request: Request, user: UserLogin, db=Depends(get_db)):
         LOGIN_ATTEMPTS[client_ip].append(now)
 
     if not (USE_DATABASE() and db):
-        # Fallback for demo/no-db mode
+        # Fallback when PostgreSQL is unreachable (check startup logs + /api/db-status)
         if user.username == "admin" and user.password == "admin123":
              return UserResponse(
                 id=1, username="admin", full_name="System Admin", 
                 role="admin", allowed_sections=[]
              )
-        raise HTTPException(status_code=503, detail="Database not available")
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Database unavailable. Fix DATABASE_URL in .env and restart the server, "
+                "or sign in with username admin / password admin123 (emergency access)."
+            ),
+        )
         
     try:
         db_user = db.query(UserDB).filter(UserDB.username == user.username).first()
