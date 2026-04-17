@@ -1,0 +1,61 @@
+# Hotel PMS local infrastructure: Pi-hole (DNS) + Nginx Proxy Manager (HTTPS)
+#
+# Before first start: free port 53 (see infra/SETUP_PIHOLE_NPM.md) and create .env
+#
+# Usage:
+#   cd infra && cp .env.example .env && docker compose up -d
+
+services:
+  pihole:
+    image: pihole/pihole:latest
+    container_name: pihole
+    hostname: pihole
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      # Admin UI on 8080 so host port 80 stays free for NPM
+      - "8080:80/tcp"
+    environment:
+      TZ: ${TZ:-UTC}
+      WEBPASSWORD: ${PIHOLE_WEBPASSWORD:-changeme}
+      # Optional: this host’s LAN IP (Pi-hole UI / DNS answers)
+      FTLCONF_LOCAL_IPV4: ${PIHOLE_LOCAL_IPV4:-}
+      # Upstream DNS so first boot can resolve (gravity / blocklists) even if host DNS is unset
+      FTLCONF_dns_upstreams: ${PIHOLE_UPSTREAM_DNS:-1.1.1.1;1.0.0.1}
+    volumes:
+      - pihole-etc:/etc/pihole
+      - pihole-dnsmasq:/etc/dnsmasq.d
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+    networks:
+      - hotel-infra
+
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    ports:
+      - "80:80"
+      - "443:443"
+      - "81:81"
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      - npm-data:/data
+      - npm-letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
+    # Reach FastAPI/nginx on the Docker host (e.g. 127.0.0.1:8000)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - hotel-infra
+
+volumes:
+  pihole-etc:
+  pihole-dnsmasq:
+  npm-data:
+  npm-letsencrypt:
+
+networks:
+  hotel-infra:
+    driver: bridge

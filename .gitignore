@@ -32,6 +32,9 @@ __pycache__/
 debug_log.txt
 error.log
 
+# SSL certs
+certs/
+
 # Database dumps
 *.dump
 *.sql
