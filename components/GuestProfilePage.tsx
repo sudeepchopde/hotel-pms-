@@ -1396,16 +1396,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   };
 
   const handlePrintScan = () => {
-    const src =
-      activeSide === "front"
-        ? idImages.front
-        : activeSide === "back"
-          ? idImages.back
-          : activeSide === "visa"
-            ? idImages.visa
-            : activeAdditionalIndex >= 100
-              ? idImages.formPages[activeAdditionalIndex - 100]
-              : idImages.additional[activeAdditionalIndex];
+    const src = currentImageSrc;
 
     if (!src) return;
 
@@ -1534,14 +1525,29 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
   const backSrc = idImages.back;
   const visaSrc = idImages.visa;
 
-  const currentImageSrc =
-    activeSide === "front"
-      ? frontSrc
-      : activeSide === "back"
-        ? backSrc || frontSrc
-        : activeSide === "visa"
-          ? visaSrc || frontSrc
-          : idImages.additional?.[activeAdditionalIndex] || frontSrc;
+  const currentImageSrc = (() => {
+    const selectedSrc =
+      activeSide === "front"
+        ? frontSrc
+        : activeSide === "back"
+          ? backSrc
+          : activeSide === "visa"
+            ? visaSrc
+            : activeAdditionalIndex >= 100
+              ? idImages.formPages?.[activeAdditionalIndex - 100]
+              : idImages.additional?.[activeAdditionalIndex];
+
+    // If the selected tab has no image yet, keep showing any scanned image instead of blanking out.
+    return (
+      selectedSrc ||
+      frontSrc ||
+      backSrc ||
+      visaSrc ||
+      idImages.formPages?.[0] ||
+      idImages.additional?.[0] ||
+      null
+    );
+  })();
 
   const handleAddCharge = () => {
     if (!chargeDescription || !chargeAmount) return;
@@ -3214,20 +3220,7 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
                     ) : (
                       <>
                         {(() => {
-                          const src =
-                            activeSide === "front"
-                              ? idImages.front
-                              : activeSide === "back"
-                                ? idImages.back
-                                : activeSide === "visa"
-                                  ? idImages.visa
-                                  : activeAdditionalIndex >= 100
-                                    ? idImages.formPages[
-                                        activeAdditionalIndex - 100
-                                      ]
-                                    : idImages.additional[
-                                        activeAdditionalIndex
-                                      ];
+                          const src = currentImageSrc;
 
                           if (!src)
                             return (

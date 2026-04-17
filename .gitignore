@@ -39,3 +39,4 @@ certs/
 *.dump
 *.sql
 !schema.sql
+infra/.env.save
