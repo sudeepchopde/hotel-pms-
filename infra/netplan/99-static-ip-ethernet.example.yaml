@@ -1,0 +1,24 @@
+# Copy to /etc/netplan/ (e.g. 99-static-ip.yaml), edit INTERFACE + gateway, then:
+#   sudo chmod 600 /etc/netplan/99-static-ip.yaml
+#   sudo netplan try
+#   sudo netplan apply
+#
+# Find interface:  ip -br link
+# Find gateway:     ip route | awk '/default/ {print $3; exit}'
+
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    # Rename key to your interface (see: ip -br link) e.g. enp2s0, eno1
+    enp0s25:
+      dhcp4: false
+      addresses:
+        - 192.168.31.90/24
+      routes:
+        - to: default
+          via: 192.168.31.1
+      nameservers:
+        addresses:
+          - 127.0.0.1
+          - 1.1.1.1

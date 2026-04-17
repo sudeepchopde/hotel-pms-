@@ -1,0 +1,28 @@
+# Wi-Fi static IP — replace INTERFACE, SSID, PASSWORD, gateway.
+# Copy to /etc/netplan/99-static-ip.yaml
+#
+#   sudo chmod 600 /etc/netplan/99-static-ip.yaml
+#   sudo netplan try
+#   sudo netplan apply
+#
+# If you already have a working Wi-Fi connection, get SSID from:
+#   nmcli -t -f active,ssid dev wifi | grep '^yes'
+
+network:
+  version: 2
+  renderer: networkd
+  wifis:
+    wlp4s0:
+      dhcp4: false
+      addresses:
+        - 192.168.31.90/24
+      routes:
+        - to: default
+          via: 192.168.31.1
+      nameservers:
+        addresses:
+          - 127.0.0.1
+          - 1.1.1.1
+      access-points:
+        "YOUR_WIFI_SSID":
+          password: "YOUR_WIFI_PASSWORD"

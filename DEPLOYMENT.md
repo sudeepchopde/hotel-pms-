@@ -69,7 +69,6 @@ npm run build
 Confirm `dist/index.html` exists.
 
 If you don’t use nvm, install Node 18+ from Ubuntu or NodeSource and run `npm install` / `npm run build` from the project folder.
-
 ---
 
 ## 3. Run the FastAPI app on `0.0.0.0:8000`
@@ -227,6 +226,93 @@ Both are valid; only one process should listen on 8000.
 
 ---
 
-## 9. No port forwarding / CGNAT
+## 9. Cloudflare Tunnel (no router port forwarding / CGNAT)
 
-If your ISP does not allow inbound connections to your public IP, Let’s Encrypt HTTP-01 and public `https://pms.…` **will not work** on that link. Options: **VPS with a real public IP**, **Cloudflare Tunnel**, or **LAN-only** access with HTTP / self-signed HTTPS.
+Use this when the app runs on a **home LAN** (e.g. `192.168.x.x`) and you do **not** want to forward ports 80/443 on your router. Traffic goes **out** from your PC to Cloudflare; browsers hit Cloudflare’s edge, then the tunnel.
+
+### Prerequisites
+
+1. A **Cloudflare** account ([dash.cloudflare.com](https://dash.cloudflare.com)).
+2. **`hotelsatsangi.com`** added to Cloudflare and using **Cloudflare nameservers** (in Hostinger, change the domain’s nameservers to the pair Cloudflare shows). Until the zone is on Cloudflare, tunnel hostnames for that domain are awkward; the standard path is **DNS at Cloudflare** for this domain.
+3. **Nginx** (or the app) listening on **`127.0.0.1:80`** or **`localhost:80`** — the tunnel will connect to `http://localhost:80`. Your existing nginx reverse proxy to `127.0.0.1:8000` is fine.
+
+### A. Install `cloudflared` (Ubuntu)
+
+`cloudflared` is **not** in Ubuntu’s default repos. **`E: Unable to locate package cloudflared`** means you ran `apt install` without adding Cloudflare’s APT source first.
+
+**Run these three steps in order** (copy the whole block):
+
+```bash
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-main.gpg
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt update && sudo apt install -y cloudflared
+```
+
+Verify: `cloudflared --version`
+
+**Fallback (no repo):** download the `.deb` for your CPU from [cloudflared releases](https://github.com/cloudflare/cloudflared/releases) (e.g. `cloudflared-linux-amd64.deb` on typical PCs), then:
+
+```bash
+sudo dpkg -i cloudflared-linux-amd64.deb
+```
+
+### B. Create the tunnel (Zero Trust UI — recommended)
+
+1. Open **[Cloudflare Zero Trust](https://one.dash.cloudflare.com/)** → **Networks** → **Tunnels**.
+2. **Create a tunnel** → name it e.g. `hotel-pms` → **Save tunnel**.
+3. Choose **Debian** / copy the install token if shown, or use **Configure** → **Public hostname**:
+   - **Subdomain:** `pms`
+   - **Domain:** `hotelsatsangi.com`
+   - **Service type:** `HTTP`
+   - **URL:** `localhost:80` (nginx) **or** `localhost:8000` (direct to FastAPI; prefer nginx if you use it).
+4. Save. Cloudflare will create/update **DNS** for `pms` to point at the tunnel (often a **CNAME** to `xxxx.cfargotunnel.com`).
+
+### C. Run the connector on this machine
+
+After the UI gives you a **token** or **config**:
+
+```bash
+sudo cloudflared service install <TOKEN_FROM_DASHBOARD>
+sudo systemctl enable --now cloudflared
+sudo systemctl status cloudflared
+```
+
+If you use a **config file** instead:
+
+```yaml
+# /etc/cloudflared/config.yml (example — paths vary)
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: pms.hotelsatsangi.com
+    service: http://localhost:80
+  - service: http_status:404
+```
+
+Then:
+
+```bash
+sudo cloudflared --config /etc/cloudflared/config.yml tunnel run
+```
+
+Use `systemd` unit from Cloudflare’s docs or `cloudflared service install` so it starts on boot.
+
+### D. DNS cleanup
+
+- **Remove** any **A record** for `pms` pointing to your home **public IP** (`49.37.x.x`) if you added one — it conflicts with the tunnel’s **CNAME**.
+- Let the tunnel (or Zero Trust) own **`pms.hotelsatsangi.com`** as **Proxied** (orange cloud).
+
+### E. Verify
+
+```bash
+curl -sS -o /dev/null -w "HTTP %{http_code}\n" https://pms.hotelsatsangi.com/
+```
+
+You should get **HTTP 200** (or 30x). Browsers use **HTTPS** on Cloudflare automatically.
+
+### Notes
+
+- **No port forwarding** on the home router for 80/443 to this machine.
+- **UFW** can stay restrictive; outbound HTTPS to Cloudflare must be allowed (default allow).
+- Optional: restrict tunnel access in Zero Trust (**Access** policies) for staff-only login.
