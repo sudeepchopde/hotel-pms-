@@ -28,6 +28,8 @@ import {
   SyncEvent,
   GuestDetails,
   UserResponse,
+  RateRulesConfig,
+  OTAConnection,
 } from "../types";
 import { lookupGuest } from "../api";
 
@@ -79,6 +81,8 @@ interface NewBookingModalProps {
   }) => void;
   prefill?: { checkIn: string; roomTypeId: string; roomId?: string } | null;
   user?: UserResponse | null;
+  rules?: RateRulesConfig | null;
+  connections?: OTAConnection[];
 }
 
 export default function NewBookingModal({
@@ -88,6 +92,8 @@ export default function NewBookingModal({
   syncEvents,
   onCreateBookings,
   prefill,
+  rules,
+  connections = [],
 }: NewBookingModalProps) {
   const [step, setStep] = useState(1);
   const [guestName, setGuestName] = useState("");
@@ -121,6 +127,59 @@ export default function NewBookingModal({
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const today = new Date().toISOString().split("T")[0];
+
+  const getSuggestedNightlyRate = useCallback(
+    (room: {
+      roomTypeId: string;
+      checkIn: string;
+      customRate?: number;
+    }) => {
+      const roomType = roomTypes.find((rt) => rt.id === room.roomTypeId);
+      if (!roomType) return 0;
+
+      // Manual override always takes precedence in the UI.
+      if (room.customRate !== undefined) return room.customRate;
+
+      let nightly = roomType.basePrice || 0;
+      const date = new Date(room.checkIn);
+      const dateStr = date.toISOString().split("T")[0];
+
+      // Match backend behavior for direct bookings: special events > weekly rule.
+      if (source === "Direct" && rules) {
+        const event = rules.specialEvents?.find(
+          (e) => dateStr >= e.startDate && dateStr <= e.endDate,
+        );
+        if (event) {
+          if (event.modifierType === "percentage") {
+            nightly = nightly * event.modifierValue;
+          } else {
+            nightly = nightly + event.modifierValue;
+          }
+        } else if (
+          rules.weeklyRules?.isActive &&
+          rules.weeklyRules.activeDays.includes(date.getDay())
+        ) {
+          if (rules.weeklyRules.modifierType === "percentage") {
+            nightly = nightly * rules.weeklyRules.modifierValue;
+          } else {
+            nightly = nightly + rules.weeklyRules.modifierValue;
+          }
+        }
+      } else if (source !== "Direct") {
+        const conn = connections.find((c) => c.name === source);
+        if (conn?.markupValue) {
+          if (conn.markupType === "percentage") {
+            nightly += (nightly * conn.markupValue) / 100;
+          } else {
+            nightly += conn.markupValue;
+          }
+        }
+      }
+
+      return Math.round(nightly);
+    },
+    [roomTypes, source, rules, connections],
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -1047,10 +1106,7 @@ export default function NewBookingModal({
                           <input
                             type="number"
                             min="0"
-                            placeholder={String(
-                              roomTypes.find((rt) => rt.id === room.roomTypeId)
-                                ?.basePrice || 0,
-                            )}
+                              placeholder={String(getSuggestedNightlyRate(room))}
                             value={room.customRate ?? ""}
                             onChange={(e) =>
                               handleUpdateRoom(
@@ -1065,11 +1121,8 @@ export default function NewBookingModal({
                           />
                         </div>
                         <p className="text-[9px] text-slate-400">
-                          Default: ₹
-                          {(
-                            roomTypes.find((rt) => rt.id === room.roomTypeId)
-                              ?.basePrice || 0
-                          ).toLocaleString()}
+                          Suggested rate: ₹
+                          {getSuggestedNightlyRate(room).toLocaleString()}
                         </p>
                       </div>
                     )}

@@ -2935,6 +2935,8 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
           onCreateBookings={handleCreateBookings}
           prefill={bookingPrefill}
           user={user}
+          rules={rules}
+          connections={connections}
         />
       </div>
     </DndContext>

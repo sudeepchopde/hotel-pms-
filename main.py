@@ -626,7 +626,11 @@ def process_ocr(request: OCRRequest, db=Depends(get_db)):
     if USE_DATABASE() and db:
         prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
         if prop and prop.gemini_api_key:
-            api_key = prop.gemini_api_key
+            try:
+                api_key = decrypt_field(prop.gemini_api_key)
+            except Exception:
+                # Backward compatibility for older plaintext values
+                api_key = prop.gemini_api_key
     
     # Fallback to env var if not in DB (for dev)
     if not api_key:
@@ -690,7 +694,10 @@ def process_ocr(request: OCRRequest, db=Depends(get_db)):
 
         for model_name in models_to_try:
             try:
-                print(f"Attempting OCR with model: {model_name}")
+                try:
+                    logger.info("Attempting OCR with model: %s", model_name)
+                except Exception:
+                    pass
                 response = client.models.generate_content(
                     model=model_name,
                     contents=[
@@ -701,7 +708,10 @@ def process_ocr(request: OCRRequest, db=Depends(get_db)):
                 if response:
                     break
             except Exception as e:
-                print(f"Model {model_name} failed: {e}")
+                try:
+                    logger.warning("OCR model %s failed: %s", model_name, str(e))
+                except Exception:
+                    pass
                 last_error = e
                 # Continue to next model
         
@@ -717,8 +727,11 @@ def process_ocr(request: OCRRequest, db=Depends(get_db)):
             return {"text": text}
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        try:
+            logger.exception("OCR processing failed")
+        except Exception:
+            # Avoid masking the real OCR error if logging sink is unavailable.
+            pass
         raise HTTPException(status_code=500, detail=str(e))
 
 # ========== EMAIL RESERVATION PARSER ==========
@@ -758,7 +771,11 @@ def handle_inbound_email(email: InboundEmail, db=Depends(get_db)):
     if USE_DATABASE() and db:
         prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
         if prop and prop.gemini_api_key:
-            api_key = prop.gemini_api_key
+            try:
+                api_key = decrypt_field(prop.gemini_api_key)
+            except Exception:
+                # Backward compatibility for older plaintext values
+                api_key = prop.gemini_api_key
     if not api_key:
         api_key = os.getenv("GEMINI_API_KEY")
 
@@ -1486,6 +1503,13 @@ def calculate_yield_price(base_price: float, date_obj, rules) -> float:
 
 def db_property_to_pydantic(db_prop):
     _load_db_imports()
+    decrypted_gemini_key = None
+    if hasattr(db_prop, "gemini_api_key") and db_prop.gemini_api_key:
+        try:
+            decrypted_gemini_key = decrypt_field(db_prop.gemini_api_key)
+        except Exception:
+            # Backward compatibility for older plaintext values
+            decrypted_gemini_key = db_prop.gemini_api_key
     return PropertySettings(
         name=db_prop.name,
         address=db_prop.address,
@@ -1498,7 +1522,7 @@ def db_property_to_pydantic(db_prop):
         razorpayKeyId=db_prop.razorpay_key_id if hasattr(db_prop, 'razorpay_key_id') else None,
         razorpayKeySecret=mask_secret(db_prop.razorpay_key_secret) if hasattr(db_prop, 'razorpay_key_secret') and db_prop.razorpay_key_secret else None,
         publicBaseUrl=db_prop.public_base_url if hasattr(db_prop, 'public_base_url') else None,
-        geminiApiKey=mask_secret(db_prop.gemini_api_key) if hasattr(db_prop, 'gemini_api_key') and db_prop.gemini_api_key else None,
+        geminiApiKey=mask_secret(decrypted_gemini_key) if decrypted_gemini_key else None,
         lastInvoiceNumber=db_prop.last_invoice_number if hasattr(db_prop, 'last_invoice_number') else 0,
         checkInTime=db_prop.check_in_time if hasattr(db_prop, 'check_in_time') else "12:00",
         checkOutTime=db_prop.check_out_time if hasattr(db_prop, 'check_out_time') else "11:00",
@@ -2349,7 +2373,40 @@ def generate_upfront_folio_for_booking(booking: Booking, db) -> list:
                 elif conn.markup_type == 'fixed':
                     markup_fixed = conn.markup_value
 
+        total_nights = max(1, (d_end - d_start).days)
+        extra_adults = float(booking.extraAdults or 0)
+        extra_children = float(booking.extraChildren or 0)
+        extra_beds = float(booking.extraBeds or 0)
+        extras_per_night_total = (
+            (extra_adults * e_adult_rate)
+            + (extra_children * e_child_rate)
+            + (extra_beds * e_bed_rate)
+        )
+        extras_stay_total = extras_per_night_total * total_nights
+
+        # If a direct booking carries a custom total amount, distribute the room component
+        # across stay nights so "Daily Room Rent" and invoice totals stay aligned.
+        use_custom_direct_amount = (
+            booking.source == 'Direct'
+            and booking.amount is not None
+            and float(booking.amount) > 0
+        )
+        custom_room_nightly_amounts = []
+        if use_custom_direct_amount:
+            target_room_total = max(0.0, float(booking.amount) - extras_stay_total)
+            base_room_night = round(target_room_total / total_nights, 2)
+            custom_room_nightly_amounts = [base_room_night] * total_nights
+            rounding_delta = round(
+                target_room_total - sum(custom_room_nightly_amounts),
+                2,
+            )
+            custom_room_nightly_amounts[-1] = round(
+                custom_room_nightly_amounts[-1] + rounding_delta,
+                2,
+            )
+
         curr_d = d_start
+        night_idx = 0
         while curr_d < d_end:
             date_key = curr_d.strftime('%Y-%m-%d')
             
@@ -2366,11 +2423,17 @@ def generate_upfront_folio_for_booking(booking: Booking, db) -> list:
                 final_rent += (final_rent * markup_percentage) / 100
             final_rent += markup_fixed
 
+            room_rent_amount = (
+                custom_room_nightly_amounts[night_idx]
+                if use_custom_direct_amount
+                else round(final_rent - (yield_adjustment if yield_adjustment > 0 else 0), 2)
+            )
+
             # Add main room rent
             clean_folio.append({
                 "id": f"folio-room-{str(uuid.uuid4())[:8]}",
                 "description": f"Daily Room Rent ({date_key})",
-                "amount": round(final_rent - (yield_adjustment if yield_adjustment > 0 else 0), 2),
+                "amount": room_rent_amount,
                 "category": "Room",
                 "isPaid": False,
                 "isInclusive": True,
@@ -2379,7 +2442,7 @@ def generate_upfront_folio_for_booking(booking: Booking, db) -> list:
             
             # Reflection: If yield rule increased the price, show it as a separate "Supplement"
             # as requested to make extra charges visible.
-            if yield_adjustment > 0:
+            if yield_adjustment > 0 and not use_custom_direct_amount:
                 clean_folio.append({
                     "id": f"folio-yield-{str(uuid.uuid4())[:8]}",
                     "description": f"Peak/Weekend Supplement ({date_key})",
@@ -2421,6 +2484,7 @@ def generate_upfront_folio_for_booking(booking: Booking, db) -> list:
                     "timestamp": f"{date_key}T12:00:00Z"
                 })
             curr_d += timedelta(days=1)
+            night_idx += 1
             
         return clean_folio
     except Exception as e:
@@ -2449,8 +2513,8 @@ def create_booking(booking: Booking, db=Depends(get_db)):
             # Note: Existing logic used booking.amount. 
             # To fix the "800 flat" issue, we should prioritize the folio sum if it's Direct.
             calc_amount = sum(f.get('amount', 0) for f in folio_items)
-            final_amount = booking.amount
-            if booking.source == 'Direct' or not final_amount:
+            final_amount = booking.amount if booking.amount is not None else 0
+            if not final_amount:
                 final_amount = calc_amount
 
             db_booking = BookingDB(
@@ -2535,6 +2599,12 @@ def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
                         if booking.guestDetails: # Check again to be safe
                             booking.guestDetails.profileId = profile_id
 
+                folio_items = generate_upfront_folio_for_booking(booking, db)
+                calc_amount = sum(f.get('amount', 0) for f in folio_items)
+                final_amount = booking.amount if booking.amount is not None else 0
+                if not final_amount:
+                    final_amount = calc_amount
+
                 db_booking = BookingDB(
                     id=booking.id,
                     room_type_id=booking.roomTypeId,
@@ -2547,7 +2617,7 @@ def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
                     check_out=booking.checkOut,
                     reservation_id=booking.reservationId,
                     channel_sync=booking.channelSync or {},
-                    amount=booking.amount,
+                    amount=final_amount,
                     rejection_reason=booking.rejectionReason,
                     guest_details=booking.guestDetails.dict() if booking.guestDetails else None,
                     number_of_rooms=booking.numberOfRooms,
@@ -2556,7 +2626,7 @@ def create_bulk_bookings(bookings: List[Booking], db=Depends(get_db)):
                     extra_beds=booking.extraBeds,
                     special_requests=booking.specialRequests,
                     is_vip=booking.isVIP or False,
-                    folio=generate_upfront_folio_for_booking(booking, db),
+                    folio=folio_items,
                     discount=booking.discount,
                     extra_adults=booking.extraAdults or 0,
                     extra_children=booking.extraChildren or 0,

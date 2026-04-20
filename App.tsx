@@ -47,6 +47,9 @@ import {
   AlertCircle,
   GripVertical,
   Bell,
+  BellOff,
+  Volume2,
+  VolumeX,
   ChefHat,
   Brush,
   ChevronRight,
@@ -302,6 +305,23 @@ const INITIAL_ROOM_TYPES: RoomType[] = [
 ];
 
 const App: React.FC = () => {
+  const [notificationPreferences, setNotificationPreferences] = useState(() => {
+    if (typeof window === "undefined") {
+      return { showNotifications: true, playSound: true };
+    }
+    try {
+      const raw = localStorage.getItem("pms_notification_preferences");
+      if (!raw) return { showNotifications: true, playSound: true };
+      const parsed = JSON.parse(raw);
+      return {
+        showNotifications: parsed.showNotifications !== false,
+        playSound: parsed.playSound !== false,
+      };
+    } catch {
+      return { showNotifications: true, playSound: true };
+    }
+  });
+
   if (window.location.pathname === "/guest-form") {
     return <GuestRegistrationForm />;
   }
@@ -357,6 +377,17 @@ const App: React.FC = () => {
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "pms_notification_preferences",
+        JSON.stringify(notificationPreferences),
+      );
+    } catch (e) {
+      console.warn("Failed to persist notification preferences", e);
+    }
+  }, [notificationPreferences]);
 
   // Register global navigation function for child components
   useEffect(() => {
@@ -748,7 +779,11 @@ const App: React.FC = () => {
             const isRecent =
               new Date(latest.createdAt).getTime() > Date.now() - 60000;
 
-            if (shouldShowToast && isRecent) {
+            if (
+              shouldShowToast &&
+              isRecent &&
+              notificationPreferences.showNotifications
+            ) {
               setNotificationToast({
                 title: latest.title,
                 message: latest.message,
@@ -805,7 +840,7 @@ const App: React.FC = () => {
       clearInterval(pollNotifications);
       clearInterval(pollBookings);
     };
-  }, []);
+  }, [notificationPreferences.showNotifications]);
 
   // Poll for notification count and refresh when opening Notifications tab
   useEffect(() => {
@@ -839,7 +874,7 @@ const App: React.FC = () => {
 
   // Play sound on new notification toast
   useEffect(() => {
-    if (notificationToast) {
+    if (notificationToast && notificationPreferences.playSound) {
       try {
         // Simple cheerful chime
         const audio = new Audio(
@@ -858,7 +893,7 @@ const App: React.FC = () => {
         console.error("Audio init failed", e);
       }
     }
-  }, [notificationToast]);
+  }, [notificationToast, notificationPreferences.playSound]);
 
   // Security State
   const [verificationAttempts, setVerificationAttempts] = useState<
@@ -1603,7 +1638,63 @@ const App: React.FC = () => {
             onToggleQR={toggleQROrdering}
           />
         )}
-        {activeTab === "notifications" && <NotificationsView />}
+        {activeTab === "notifications" && (
+          <div className="p-4 md:p-6 space-y-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-slate-500">
+                  Notification Controls
+                </p>
+                <p className="text-sm text-slate-600">
+                  Turn off popups or just mute notification sound.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() =>
+                    setNotificationPreferences((prev) => ({
+                      ...prev,
+                      showNotifications: !prev.showNotifications,
+                    }))
+                  }
+                  className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider border transition-all flex items-center gap-2 ${
+                    notificationPreferences.showNotifications
+                      ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                      : "bg-slate-100 text-slate-500 border-slate-200"
+                  }`}
+                >
+                  {notificationPreferences.showNotifications ? (
+                    <Bell className="w-4 h-4" />
+                  ) : (
+                    <BellOff className="w-4 h-4" />
+                  )}
+                  Popups
+                </button>
+                <button
+                  onClick={() =>
+                    setNotificationPreferences((prev) => ({
+                      ...prev,
+                      playSound: !prev.playSound,
+                    }))
+                  }
+                  className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider border transition-all flex items-center gap-2 ${
+                    notificationPreferences.playSound
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : "bg-slate-100 text-slate-500 border-slate-200"
+                  }`}
+                >
+                  {notificationPreferences.playSound ? (
+                    <Volume2 className="w-4 h-4" />
+                  ) : (
+                    <VolumeX className="w-4 h-4" />
+                  )}
+                  Sound
+                </button>
+              </div>
+            </div>
+            <NotificationsView />
+          </div>
+        )}
         {activeTab === "kitchen" && <KitchenDisplay />}
         {activeTab === "housekeeping" && (
           <HousekeepingView

@@ -5,16 +5,21 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
+  const keyPath = path.resolve(__dirname, 'certs/key.pem');
+  const certPath = path.resolve(__dirname, 'certs/cert.pem');
+  const hasHttpsCerts = fs.existsSync(keyPath) && fs.existsSync(certPath);
   return {
     plugins: [react()],
     server: {
       port: 3001,
       host: '0.0.0.0',
       strictPort: true,
-      https: {
-        key: fs.readFileSync(path.resolve(__dirname, 'certs/key.pem')),
-        cert: fs.readFileSync(path.resolve(__dirname, 'certs/cert.pem')),
-      },
+      https: hasHttpsCerts
+        ? {
+            key: fs.readFileSync(keyPath),
+            cert: fs.readFileSync(certPath),
+          }
+        : false,
       proxy: {
         // Only match /api/ paths, not /api.ts
         '^/api/': {
