@@ -1989,7 +1989,7 @@ const FrontDeskView: React.FC<FrontDeskViewProps> = ({
             className={`flex-1 overflow-auto custom-scrollbar bg-slate-50/50 ${isPanning ? "cursor-grabbing select-none" : ""}`}
           >
             <div
-              className={`${viewMode === "week" ? "min-w-max pb-24" : "h-full flex flex-col pt-4"}`}
+              className={`${viewMode === "week" ? "min-w-max" : "h-full flex flex-col pt-4"}`}
             >
               {/* FROZEN DATES PANE (VERTICAL STICKY) - Only for Week/Timeline view */}
               {viewMode === "week" && (

@@ -1428,34 +1428,76 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
     setShowDeleteConfirm(true);
   };
 
-  const confirmDeleteScan = () => {
+  const confirmDeleteScan = async () => {
     if (!pendingDeleteSide) return;
     const { side, addIdx } = pendingDeleteSide;
 
-    setIdImages((prev) => {
-      const updated = { ...prev };
-      if (side === "front") updated.front = null;
-      else if (side === "back") updated.back = null;
-      else if (side === "visa") updated.visa = null;
-      else if (side === "additional") {
-        if (addIdx >= 100) {
-          const idx = addIdx - 100;
-          updated.formPages = updated.formPages.filter((_, i) => i !== idx);
-        } else {
-          updated.additional = updated.additional.filter(
-            (_, i) => i !== addIdx,
-          );
-        }
-        setActiveSide("front");
-        setActiveAdditionalIndex(0);
+    const nextImages = { ...idImages };
+    if (side === "front") nextImages.front = null;
+    else if (side === "back") nextImages.back = null;
+    else if (side === "visa") nextImages.visa = null;
+    else if (side === "additional") {
+      if (addIdx >= 100) {
+        const idx = addIdx - 100;
+        nextImages.formPages = nextImages.formPages.filter((_, i) => i !== idx);
+      } else {
+        nextImages.additional = nextImages.additional.filter((_, i) => i !== addIdx);
       }
-      return updated;
-    });
-    setToastMessage(
-      "Scan deleted. Remember to Save/Check-in to persist changes.",
-    );
+      setActiveSide("front");
+      setActiveAdditionalIndex(0);
+    }
+
+    setIdImages(nextImages);
     setShowDeleteConfirm(false);
     setPendingDeleteSide(null);
+
+    try {
+      let updatedBooking: Booking;
+      if (isAddingAccessory) {
+        const accessories = [...(booking.accessoryGuests || [])];
+        if (editingAccessoryIndex === null || !accessories[editingAccessoryIndex]) {
+          setToastMessage("No accessory guest selected for scan deletion.");
+          return;
+        }
+        accessories[editingAccessoryIndex] = {
+          ...accessories[editingAccessoryIndex],
+          idImage: nextImages.front || "",
+          idImageBack: nextImages.back || "",
+          visaPage: nextImages.visa || "",
+          additionalDocs: nextImages.additional,
+          formPages: nextImages.formPages,
+        };
+        updatedBooking = {
+          ...booking,
+          accessoryGuests: accessories,
+          timestamp: Date.now(),
+        };
+      } else {
+        updatedBooking = {
+          ...booking,
+          guestName: editableDetails.name || booking.guestName,
+          guestDetails: {
+            ...(booking.guestDetails || {}),
+            ...editableDetails,
+            idImage: nextImages.front || "",
+            idImageBack: nextImages.back || "",
+            visaPage: nextImages.visa || "",
+            additionalDocs: nextImages.additional,
+            formPages: nextImages.formPages,
+          },
+          timestamp: Date.now(),
+        };
+      }
+
+      const persisted = await updateBooking(updatedBooking);
+      onUpdateBooking?.(persisted);
+      setToastMessage("Scan deleted and saved.");
+    } catch (err: any) {
+      console.error("Failed to persist deleted scan", err);
+      setToastMessage(
+        `Scan removed locally but save failed: ${err?.message || "Unknown error"}`,
+      );
+    }
   };
 
   const handleRetakeScan = () => {
@@ -1501,6 +1543,95 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
 
   const isForeigner =
     (editableDetails.nationality || "Indian").toLowerCase() !== "indian";
+
+  useEffect(() => {
+    const hasAnyScans =
+      !!idImages.front ||
+      !!idImages.back ||
+      !!idImages.visa ||
+      idImages.additional.length > 0 ||
+      idImages.formPages.length > 0;
+
+    if (isAddingAccessory || hasAnyScans) return;
+
+    const loadImagesFromProfile = async () => {
+      const phoneToLookup =
+        editableDetails.phoneNumber || booking.guestDetails?.phoneNumber;
+      const profileIdToMatch =
+        editableDetails.profileId || booking.guestDetails?.profileId;
+      const nameToMatch = editableDetails.name || booking.guestName;
+
+      if (!phoneToLookup && !profileIdToMatch && !nameToMatch) return;
+
+      try {
+        const candidates = await lookupGuest(
+          nameToMatch,
+          phoneToLookup,
+          true,
+        );
+        if (!Array.isArray(candidates) || candidates.length === 0) return;
+
+        let matched = candidates[0];
+        if (profileIdToMatch) {
+          const byId = candidates.find(
+            (g) =>
+              String(g.profileId || g.id || "") === String(profileIdToMatch),
+          );
+          if (byId) matched = byId;
+        }
+
+        const nextImages = {
+          front: matched?.idImage || null,
+          back: matched?.idImageBack || null,
+          visa: matched?.visaPage || null,
+          additional: matched?.additionalDocs || [],
+          formPages: matched?.formPages || [],
+        };
+
+        const hasProfileScans =
+          !!nextImages.front ||
+          !!nextImages.back ||
+          !!nextImages.visa ||
+          nextImages.additional.length > 0 ||
+          nextImages.formPages.length > 0;
+
+        if (!hasProfileScans) return;
+
+        setIdImages((prev) => {
+          const alreadyHasScans =
+            !!prev.front ||
+            !!prev.back ||
+            !!prev.visa ||
+            prev.additional.length > 0 ||
+            prev.formPages.length > 0;
+          return alreadyHasScans ? prev : nextImages;
+        });
+
+        if ((nextImages.front || nextImages.back) && !isIdRevealed) {
+          setIsIdRevealed(true);
+        }
+      } catch (err) {
+        console.error("Failed to rehydrate guest scan images", err);
+      }
+    };
+
+    loadImagesFromProfile();
+  }, [
+    booking.id,
+    booking.guestDetails?.phoneNumber,
+    booking.guestDetails?.profileId,
+    booking.guestName,
+    editableDetails.phoneNumber,
+    editableDetails.profileId,
+    editableDetails.name,
+    idImages.front,
+    idImages.back,
+    idImages.visa,
+    idImages.additional.length,
+    idImages.formPages.length,
+    isAddingAccessory,
+    isIdRevealed,
+  ]);
 
   useEffect(() => {
     const loadHistory = async () => {

@@ -1539,6 +1539,7 @@ def _sync_guest_profile(gd, check_in_date, db):
         return None
         
     logger.info(f"Syncing guest profile: name='{gd.name}', phone='{gd.phoneNumber}' (norm='{norm_phone}'), profileId={gd.profileId}")
+    fields_set = getattr(gd, "__fields_set__", set())
         
     existing_profile = None
     if gd.profileId:
@@ -1591,11 +1592,16 @@ def _sync_guest_profile(gd, check_in_date, db):
         if gd.arrivalPort: existing_profile.arrival_port = gd.arrivalPort
         if gd.nextDestination: existing_profile.next_destination = gd.nextDestination
         if gd.purposeOfVisit: existing_profile.purpose_of_visit = gd.purposeOfVisit
-        if gd.idImage: existing_profile.id_image = gd.idImage
-        if gd.idImageBack: existing_profile.id_image_back = gd.idImageBack
-        if gd.visaPage: existing_profile.visa_page = gd.visaPage
-        if gd.additionalDocs: existing_profile.additional_docs = gd.additionalDocs
-        if gd.formPages: existing_profile.form_pages = gd.formPages
+        if "idImage" in fields_set:
+            existing_profile.id_image = gd.idImage or None
+        if "idImageBack" in fields_set:
+            existing_profile.id_image_back = gd.idImageBack or None
+        if "visaPage" in fields_set:
+            existing_profile.visa_page = gd.visaPage or None
+        if "additionalDocs" in fields_set:
+            existing_profile.additional_docs = gd.additionalDocs or []
+        if "formPages" in fields_set:
+            existing_profile.form_pages = gd.formPages or []
         if gd.serialNumber: existing_profile.serial_number = gd.serialNumber
         if gd.fatherOrHusbandName: existing_profile.father_or_husband_name = gd.fatherOrHusbandName
         if gd.city: existing_profile.city = gd.city
@@ -1604,7 +1610,8 @@ def _sync_guest_profile(gd, check_in_date, db):
         if gd.country: existing_profile.country = gd.country
         if gd.arrivalTime: existing_profile.arrival_time = gd.arrivalTime
         if gd.departureTime: existing_profile.departure_time = gd.departureTime
-        if gd.signature: existing_profile.signature = gd.signature
+        if "signature" in fields_set:
+            existing_profile.signature = gd.signature or None
         
         existing_profile.last_check_in = check_in_date
         db.flush()
@@ -2690,9 +2697,17 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
             if not db_booking:
                 raise HTTPException(status_code=404, detail="Booking not found")
             
-            # Track old status for notification triggers
+            # Track old status for notification triggers.
+            # Guardrail: once checked out, stale client PUTs must not reopen the stay.
             old_status = db_booking.status
             new_status = booking.status
+            is_checkout_locked = old_status == "CheckedOut"
+            if is_checkout_locked and new_status != "CheckedOut":
+                logger.warning(
+                    f"Ignoring stale status downgrade for booking {booking_id}: "
+                    f"{new_status} -> CheckedOut"
+                )
+                new_status = "CheckedOut"
 
             # Apply late check-in adjustment rule for unpaid direct bookings
             if old_status == 'Confirmed' and new_status == 'CheckedIn':
@@ -2750,7 +2765,7 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
             db_booking.room_type_id = booking.roomTypeId
             db_booking.room_number = booking.roomNumber
             db_booking.guest_name = booking.guestName
-            db_booking.status = booking.status
+            db_booking.status = new_status
             db_booking.check_in = booking.checkIn
             db_booking.check_out = booking.checkOut
             db_booking.reservation_id = booking.reservationId
@@ -2763,17 +2778,17 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
             db_booking.extra_children = booking.extraChildren or 0
             db_booking.special_requests = booking.specialRequests
             db_booking.is_vip = booking.isVIP or False
-            db_booking.is_settled = booking.isSettled or False
-            db_booking.invoice_number = booking.invoiceNumber
-            
-            # Generate folio and update amount
-            db_booking.folio = generate_upfront_folio_for_booking(booking, db)
-            if booking.source == 'Direct' or not booking.amount:
-                db_booking.amount = sum(f.get('amount', 0) for f in db_booking.folio)
-            else:
-                db_booking.amount = booking.amount
+            db_booking.is_settled = True if new_status == "CheckedOut" else (booking.isSettled or False)
+            db_booking.invoice_number = booking.invoiceNumber or db_booking.invoice_number
 
-            db_booking.payments = [p.dict() for p in booking.payments] if booking.payments else []
+            # Keep financial snapshot immutable after checkout; stale profile saves should not rewrite folio/payments.
+            if new_status != "CheckedOut":
+                db_booking.folio = generate_upfront_folio_for_booking(booking, db)
+                if booking.source == 'Direct' or not booking.amount:
+                    db_booking.amount = sum(f.get('amount', 0) for f in db_booking.folio)
+                else:
+                    db_booking.amount = booking.amount
+                db_booking.payments = [p.dict() for p in booking.payments] if booking.payments else []
             db_booking.discount = booking.discount
             
             import time
