@@ -373,6 +373,58 @@ const App: React.FC = () => {
   const lastNotificationIdRef = React.useRef<string | null>(null);
   const activeTabRef = React.useRef(activeTab);
 
+  const hasSectionAccess = React.useCallback(
+    (sectionId: string) => {
+      if (!user) return false;
+      if (user.role === "admin") return true;
+      const allowed = user.allowed_sections || [];
+      return (
+        allowed.includes(sectionId) ||
+        allowed.includes(`${sectionId}:view`) ||
+        allowed.some((permission) => permission.startsWith(`${sectionId}:`))
+      );
+    },
+    [user],
+  );
+
+  const getFirstAllowedTab = React.useCallback((allowedSections: string[]) => {
+    const preferredOrder = [
+      "frontdesk",
+      "dashboard",
+      "guests",
+      "kitchen",
+      "housekeeping",
+      "compliance",
+      "analysis",
+      "reports",
+      "notifications",
+      "security",
+      "email_parsing",
+    ];
+
+    const hasSection = (sectionId: string) =>
+      allowedSections.includes(sectionId) ||
+      allowedSections.includes(`${sectionId}:view`) ||
+      allowedSections.some((permission) =>
+        permission.startsWith(`${sectionId}:`),
+      );
+
+    const firstVisible = preferredOrder.find(hasSection);
+    if (firstVisible) return firstVisible;
+
+    // Any settings permission should land the user in settings area.
+    if (
+      hasSection("settings") ||
+      ["setup", "rules", "settings", "users", "settings_hub"].some((id) =>
+        allowedSections.includes(id),
+      )
+    ) {
+      return "settings";
+    }
+
+    return null;
+  }, []);
+
   // Keep Sync Ref
   useEffect(() => {
     activeTabRef.current = activeTab;
@@ -407,14 +459,18 @@ const App: React.FC = () => {
     if (loggedInUser.role === "admin") {
       setActiveTab("frontdesk");
     } else {
-      if (loggedInUser.allowed_sections.includes("frontdesk")) {
+      const allowed = loggedInUser.allowed_sections || [];
+      if (
+        allowed.includes("frontdesk") ||
+        allowed.includes("frontdesk:view") ||
+        allowed.some((permission) => permission.startsWith("frontdesk:"))
+      ) {
         setActiveTab("frontdesk");
-      } else if (loggedInUser.allowed_sections.length > 0) {
-        let initialTab = loggedInUser.allowed_sections[0];
-        if (initialTab === "settings_hub") {
-          initialTab = "users"; // Default sub-tab within settings
+      } else if (allowed.length > 0) {
+        const initialTab = getFirstAllowedTab(allowed);
+        if (initialTab) {
+          setActiveTab(initialTab as any);
         }
-        setActiveTab(initialTab as any);
       }
     }
   };
@@ -479,6 +535,7 @@ const App: React.FC = () => {
               const firstAllowed = settingsItems.find(
                 (id) =>
                   user?.role === "admin" ||
+                  hasSectionAccess(id) ||
                   user?.allowed_sections.includes(id) ||
                   user?.allowed_sections.includes("settings_hub"),
               );
@@ -541,20 +598,19 @@ const App: React.FC = () => {
     if (user && user.role !== "admin") {
       // Admin-only tabs
       if (activeTab === "users") {
-        if (user.allowed_sections.length > 0)
-          setActiveTab(user.allowed_sections[0] as any);
+        const fallback = getFirstAllowedTab(user.allowed_sections || []);
+        if (fallback) setActiveTab(fallback as any);
         return;
       }
 
       // Check specific section permission
-      if (!user.allowed_sections.includes(activeTab)) {
+      if (!hasSectionAccess(activeTab)) {
         // If current tab is not allowed, redirect to first allowed
-        if (user.allowed_sections.length > 0) {
-          setActiveTab(user.allowed_sections[0] as any);
-        }
+        const fallback = getFirstAllowedTab(user.allowed_sections || []);
+        if (fallback) setActiveTab(fallback as any);
       }
     }
-  }, [user, activeTab]);
+  }, [user, activeTab, hasSectionAccess, getFirstAllowedTab]);
 
   // Navigation items order state
   const [navItems, setNavItems] = useState(DEFAULT_NAV_ITEMS);
@@ -1485,11 +1541,15 @@ const App: React.FC = () => {
               if (user.role === "admin") return true;
               if (item.id === "settings_hub") {
                 const settingsItems = ["setup", "rules", "settings", "users"];
-                return settingsItems.some((id) =>
-                  user.allowed_sections.includes(id),
+                return settingsItems.some(
+                  (id) =>
+                    hasSectionAccess(id) || user.allowed_sections.includes(id),
                 );
               }
-              return user.allowed_sections.includes(item.id);
+              return (
+                hasSectionAccess(item.id) ||
+                user.allowed_sections.includes(item.id)
+              );
             })
             .map((item) => renderNavItem(item))}
         </div>

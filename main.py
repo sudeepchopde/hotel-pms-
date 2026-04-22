@@ -2775,6 +2775,31 @@ def update_booking(booking_id: str, booking: Booking, db=Depends(get_db)):
 
             db_booking.payments = [p.dict() for p in booking.payments] if booking.payments else []
             db_booking.discount = booking.discount
+
+            # If booking transitions to checked out, mark the room as dirty for housekeeping.
+            if (
+                old_status != "CheckedOut"
+                and new_status == "CheckedOut"
+                and db_booking.room_number
+            ):
+                status_entry = (
+                    db.query(RoomStatusDB)
+                    .filter(RoomStatusDB.room_number == db_booking.room_number)
+                    .first()
+                )
+                if status_entry:
+                    status_entry.status = "Dirty"
+                else:
+                    db.add(
+                        RoomStatusDB(
+                            room_number=db_booking.room_number,
+                            status="Dirty",
+                            priority="High",
+                            notes="Auto-marked dirty on checkout",
+                            last_cleaned=None,
+                            housekeeper=None,
+                        )
+                    )
             
             import time
             db_booking.timestamp = int(time.time() * 1000)
@@ -3011,10 +3036,44 @@ def transfer_booking(booking_id: str, transfer: RoomTransferRequest, db=Depends(
 @app.post("/api/bookings/{booking_id}/checkout")
 def checkout_booking(booking_id: str, db=Depends(get_db)):
     if not USE_DATABASE() or not db:
-        raise HTTPException(status_code=400, detail="Database required for checkout processing")
+        # Fallback mode: mark booking checked out in local fallback store.
+        fallback = get_fallback_bookings()
+        idx = next((i for i, b in enumerate(fallback) if b.id == booking_id), -1)
+        if idx < 0:
+            raise HTTPException(status_code=404, detail="Booking not found")
+        fb_booking = fallback[idx]
+        fb_booking.status = "CheckedOut"
+        fb_booking.isSettled = True
+        fb_booking.timestamp = int(time_sys.time() * 1000)
+        fallback[idx] = fb_booking
+        save_fallback_bookings(fallback)
+        return {
+            "status": "success",
+            "invoiceNumber": None,
+            "invoicePath": None,
+            "receiptPath": None,
+            "booking": fb_booking.dict() if hasattr(fb_booking, "dict") else fb_booking
+        }
     
     booking = db.query(BookingDB).filter(BookingDB.id == booking_id).first()
     if not booking:
+        # Resiliency: if booking isn't in DB, still try fallback store.
+        fallback = get_fallback_bookings()
+        idx = next((i for i, b in enumerate(fallback) if b.id == booking_id), -1)
+        if idx >= 0:
+            fb_booking = fallback[idx]
+            fb_booking.status = "CheckedOut"
+            fb_booking.isSettled = True
+            fb_booking.timestamp = int(time_sys.time() * 1000)
+            fallback[idx] = fb_booking
+            save_fallback_bookings(fallback)
+            return {
+                "status": "success",
+                "invoiceNumber": None,
+                "invoicePath": None,
+                "receiptPath": None,
+                "booking": fb_booking.dict() if hasattr(fb_booking, "dict") else fb_booking
+            }
         raise HTTPException(status_code=404, detail="Booking not found")
     
     prop = db.query(PropertySettingsDB).filter(PropertySettingsDB.id == "default").first()
@@ -3086,6 +3145,27 @@ def checkout_booking(booking_id: str, db=Depends(get_db)):
     booking.invoice_number = invoice_num
     booking.status = "CheckedOut"
     booking.is_settled = True # Finalized
+
+    # Auto-mark housekeeping status as Dirty on checkout.
+    if booking.room_number:
+        status_entry = (
+            db.query(RoomStatusDB)
+            .filter(RoomStatusDB.room_number == booking.room_number)
+            .first()
+        )
+        if status_entry:
+            status_entry.status = "Dirty"
+        else:
+            db.add(
+                RoomStatusDB(
+                    room_number=booking.room_number,
+                    status="Dirty",
+                    priority="High",
+                    notes="Auto-marked dirty on checkout",
+                    last_cleaned=None,
+                    housekeeper=None,
+                )
+            )
     
     # Reflect zero balance (mark all folio as paid)
     current_folio = booking.folio or []

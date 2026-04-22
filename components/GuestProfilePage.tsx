@@ -2073,7 +2073,16 @@ const GuestProfilePage: React.FC<GuestProfilePageProps> = ({
       const response = await fetch(`/api/bookings/${booking.id}/checkout`, {
         method: "POST",
       });
-      if (!response.ok) throw new Error("Checkout failed");
+      if (!response.ok) {
+        // Fallback: if backend can't locate this booking in checkout endpoint,
+        // still finalize status through the standard update flow.
+        if (response.status === 404 && onUpdateStatus) {
+          onUpdateStatus(booking.id, "CheckedOut");
+          setToastMessage("Checkout completed (status updated).");
+          return;
+        }
+        throw new Error("Checkout failed");
+      }
       const data = await response.json();
 
       setCheckoutDocs({ invoice: data.invoicePath, receipt: data.receiptPath });
