@@ -4,6 +4,13 @@
   --app-bg: #f8fafc;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+  min-height: 100%;
+}
+
 body {
   background-color: var(--app-bg);
   margin: 0;

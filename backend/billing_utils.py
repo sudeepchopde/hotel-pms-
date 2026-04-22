@@ -138,6 +138,7 @@ def generate_invoice_pdf(booking_data, property_settings, invoice_num, filepath)
     # Folio items
     total_folio_tax = 0
     for item in booking_data.get('folio', []):
+        cat = item.get('category', 'Other')
         cat_upper = (item.get('category', 'Other')).upper()
         desc_upper = (item.get('description', '')).upper()
         f_rate = property_settings.get('otherGstRate', gst_rate) # Default to 12.0 consistency
