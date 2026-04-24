@@ -90,6 +90,9 @@ const GuestsView: React.FC<GuestsViewProps> = ({
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<
+    "stay_latest" | "stay_oldest" | "status" | "status_then_stay"
+  >("stay_latest");
 
   const INITIAL_FILTERS = {
     status: [] as string[],
@@ -188,6 +191,42 @@ const GuestsView: React.FC<GuestsViewProps> = ({
       return true;
     });
   }, [guestList, searchQuery, filters]);
+
+  const sortedGuests = useMemo(() => {
+    const statusOrder: Record<string, number> = {
+      CheckedIn: 0,
+      Confirmed: 1,
+      Rejected: 2,
+      CheckedOut: 3,
+      Cancelled: 4,
+    };
+
+    const getStayTimestamp = (booking: Booking) =>
+      new Date(booking.checkIn).getTime() || 0;
+
+    return [...filteredGuests].sort((a, b) => {
+      if (sortBy === "stay_oldest") {
+        return getStayTimestamp(a) - getStayTimestamp(b);
+      }
+
+      if (sortBy === "status") {
+        const aRank = statusOrder[a.status] ?? 99;
+        const bRank = statusOrder[b.status] ?? 99;
+        if (aRank !== bRank) return aRank - bRank;
+        return getStayTimestamp(b) - getStayTimestamp(a);
+      }
+
+      if (sortBy === "status_then_stay") {
+        const aRank = statusOrder[a.status] ?? 99;
+        const bRank = statusOrder[b.status] ?? 99;
+        if (aRank !== bRank) return aRank - bRank;
+        return getStayTimestamp(b) - getStayTimestamp(a);
+      }
+
+      // Default: latest stay first
+      return getStayTimestamp(b) - getStayTimestamp(a);
+    });
+  }, [filteredGuests, sortBy]);
 
   // Sync selectedBooking state with syncEvents when external updates happen
   useEffect(() => {
@@ -346,6 +385,24 @@ const GuestsView: React.FC<GuestsViewProps> = ({
               </span>
             )}
           </button>
+
+          <div className="flex items-center gap-2 bg-white border-2 border-slate-100 rounded-2xl px-3 py-2 shadow-sm">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              Sort
+            </span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              className="text-xs font-bold text-slate-700 bg-transparent outline-none"
+            >
+              <option value="stay_latest">Stay Period: Latest First</option>
+              <option value="stay_oldest">Stay Period: Oldest First</option>
+              <option value="status">Status</option>
+              <option value="status_then_stay">
+                Status + Stay Period
+              </option>
+            </select>
+          </div>
 
           {isFilterOpen && (
             <div className="absolute right-0 top-full mt-4 w-[380px] bg-white rounded-[2rem] shadow-2xl border border-slate-100 z-[100] p-6 animate-in slide-in-from-top-4 duration-300">
@@ -646,8 +703,8 @@ const GuestsView: React.FC<GuestsViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredGuests.length > 0 ? (
-                filteredGuests.map((guest) => (
+              {sortedGuests.length > 0 ? (
+                sortedGuests.map((guest) => (
                   <tr
                     key={guest.id}
                     className="hover:bg-slate-50/30 transition-colors group cursor-pointer"
